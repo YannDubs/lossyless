@@ -1,0 +1,5 @@
+# @package _group_
+name: resnet
+arch: resnet
+arch_kwargs:
+  complexity: 0

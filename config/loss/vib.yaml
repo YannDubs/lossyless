@@ -1,0 +1,16 @@
+# @package _global_
+# uses global so that can change things
+
+loss:
+  name: vib
+  mode: direct
+
+data:
+  kwargs:
+    dataset_kwargs:
+      additional_target: "aug_idx"
+      n_inputs: 1
+
+decoder:
+  out_shape: ${data.length}
+

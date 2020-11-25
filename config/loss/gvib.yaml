@@ -1,0 +1,16 @@
+# @package _global_
+# uses global so that can change dataset
+
+loss:
+  name: gvib
+  mode: direct
+  
+  
+data:
+  kwargs:
+    dataset_kwargs:
+      additional_target: "idx"
+      n_inputs: 1
+
+decoder:
+  out_shape: ${data.noaug_length}

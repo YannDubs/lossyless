@@ -1,0 +1,15 @@
+# @package _global_
+# uses global so that can change dataset
+
+loss:
+  name: taskvib
+  mode: direct
+
+data:
+  kwargs:
+    dataset_kwargs:
+      additional_target: target
+      n_inputs: 1
+
+decoder:
+  out_shape: ${data.num_classes}

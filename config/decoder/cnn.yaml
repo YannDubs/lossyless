@@ -1,0 +1,5 @@
+# @package _group_
+name: cnn
+arch: cnn
+arch_kwargs:
+  complexity: 2

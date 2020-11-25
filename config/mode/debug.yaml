@@ -1,0 +1,16 @@
+# @package _global_
+
+name: debug_${now:%Y-%m-%d_%H-%M-%S}
+is_debug: True # enter debug mode
+
+trainer:
+  # DEBUGGING
+  track_grad_norm: -1 # use 2 to track L2 norms of grad
+  overfit_batches: 0.01 # use 0.01 to make sure you can overfit 1% of training data => training works
+  weights_summary: top # full to print show the entire model 
+  profiler: simple # use `simple` or `"advanced"` to find bottleneck
+
+callbacks:
+  gpu_stats:
+    memory_utilization: true
+    gpu_utilization: true

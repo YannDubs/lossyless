@@ -1,0 +1,127 @@
+defaults:
+  - hydra/job_logging: colorlog
+  - hydra/hydra_logging: colorlog
+  
+  - data: toyMiniFashionMnist
+  - encoder: cnn
+  - prior: unitgaussian
+  - decoder: mlp
+  - loss: vae
+  - coder: none
+
+### GENERAL ###
+name: ???
+seed: 123
+is_debug: False # enter debug mode
+
+long_name: ${name}/d_${data.name}/l_${loss.name}/e_${encoder.name}/p_${prior.name}/d_${decoder.name}/c_${coder.name}/o_${optimizer.name}/z_${loss.n_z_samples}/b_${loss.kwargs.beta}/s_${seed}
+
+paths:
+  base_dir: ???
+  data: ${paths.base_dir}/data
+  pretrained: ${paths.base_dir}/pretrained/${long_name}
+  logs: ${paths.base_dir}/logs
+  eval: ${paths.base_dir}/results/${long_name}/eval.csv
+
+optimizer: # might need to be a group at some point
+  name: adam # not used yet but can change if needed
+  lr: 1e-3
+  scheduling_factor: 100 # by how much to reduce lr during training
+
+logger:
+  loggers: ["csv","wandb"]
+
+  csv:
+    save_dir: ${paths.logs}/csv/${long_name}/
+    name: ${now:%Y-%m-%d_%H-%M-%S}
+
+  wandb:
+    name: ${now:%Y-%m-%d_%H-%M-%S}
+    project: lossyless
+    group: ${name}
+    offline: false # Run offline (data can be streamed later to wandb servers).
+
+callbacks:
+  compressor_chckpt:
+    filepath: ${paths.pretrained} 
+    monitor: train_loss
+    mode: "min"
+    verbose: true
+
+  online_eval:
+    dataset: ${data.name}
+    drop_p: 0
+    hidden_dim: 1024
+    z_dim: ${encoder.z_dim}
+    num_classes: ${data.num_classes}
+
+
+predictor:
+  is_online_eval: true
+
+
+trainer:
+  #default_root_dir: ${paths.results}
+  max_epochs: 100
+  terminate_on_nan: true
+  progress_bar_refresh_rate: 0 # increase to show progress bar
+  resume_from_checkpoint: null # string to checkpoint if want to resume
+  gradient_clip_val: 0 # increase to clip grad
+
+  
+  # ENGINEERING / SPEED
+  gpus: 1 
+  num_nodes: 1  # number gpu nodes
+  precision: 16 # use 16 bit for speed 
+
+  # DEBUGGING
+  fast_dev_run: false # use true to make a quick test (not full epoch)
+  track_grad_norm: -1 # use 2 to track L2 norms of grad
+  overfit_batches: 0.0 # use 0.01 to make sure you can overfit 1% of training data => training works
+  weights_summary: top # full to print show the entire model 
+  profiler: null # use `simple` or `"advanced"` to find bottleneck
+
+### GROUP DEFAULTS ###
+data:
+  name: ???
+  dataset: ???
+  noaug_length: ???
+  length: ???
+  shape: ???
+  num_classes: ???
+
+  kwargs:
+    data_dir: ${paths.data}
+
+encoder:
+  name: ???
+  z_dim: 10
+  arch: ???
+  arch_kwargs:
+    complexity: ???
+  fam: diaggaussian
+  fam_kwargs: {}
+
+decoder:
+  name: ???
+  arch: ???
+  arch_kwargs:
+    complexity: ???
+
+coder:
+  name: ???
+
+
+prior:
+  name: ???
+  fam: ???
+  fam_kwargs: {}
+
+loss:
+  name: ???
+  n_z_samples: 1 # number of samples tu use inside log (like IWAE)
+  kwargs: 
+    beta: 1
+    is_img_out: False # whether predicting an image
+
+### HYDRA ###

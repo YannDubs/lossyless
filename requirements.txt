@@ -1,0 +1,8 @@
+numpy
+hydra-core
+hydra_colorlog
+pytorch-lightning
+pytorch-lightning-bolts
+sklearn
+matplotlib
+seaborn

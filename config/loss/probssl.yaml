@@ -1,0 +1,15 @@
+# @package _global_
+# uses global so that can change dataset
+
+loss:
+  name: probssl
+  mode: direct
+  
+data:
+  kwargs:
+    dataset_kwargs:
+      additional_target: Null
+      n_inputs: 2
+
+decoder:
+  out_shape: ${encoder.z_dim}

@@ -1,0 +1,5 @@
+# @package _group_
+name: mlp
+arch: flattenmlp # uses flattenmlp because giving image (3D tensor) as input
+arch_kwargs:
+  complexity: 2
