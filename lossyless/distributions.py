@@ -9,7 +9,7 @@ import torch
 from torch.distributions import Categorical, Independent, Normal
 import einops
 
-from .helpers import weights_init, batch_flatten, batch_unflatten, prod
+from .helpers import weights_init, batch_flatten, batch_unflatten, prod, Delta
 
 __all__ = ["CondDist", "get_marginalDist"]
 
@@ -41,6 +41,8 @@ class CondDist(nn.Module):
             self.Family = DiagGaussian
         elif family == "uniform":
             self.Family = Uniform
+        elif family == "deterministic":
+            self.Family = Deterministic
         else:
             raise ValueError(f"Unkown family={family}.")
 
@@ -96,11 +98,23 @@ class Distributions:
 
 
 class DiagGaussian(Distributions, Independent):
+    """Gaussian with diagonal covariance."""
+
     n_param = 2
 
     def __init__(self, diag_loc, diag_log_var):
+
         diag_scale = torch.exp(0.5 * diag_log_var)
         super().__init__(Normal(diag_loc, diag_scale), 1)
+
+
+class Deterministic(Distributions, Independent):
+    """Delta function distribution (i.e. no stochasticity)."""
+
+    n_param = 1
+
+    def __init__(self, param):
+        super().__init__(Delta(param), 1)
 
 
 ### MARGINAL DISTRIBUTIONS ###
@@ -158,8 +172,13 @@ class MarginalDiagGaussian(nn.Module):
 
 
 # TODO
-# MarginalUniform
+# class MarginalVamp(nn.Module):
+#     """Trained Gaussian using VampPrior, i.e. uses a approximates the REAL marginal using
+#     pseudoinputs p(z) ~= 1/k \sum p(z|u^k) where x^k are trained."""
 
 # TODO
-# MarginalVamp
+# class MarginalFlow(nn.Module):
+
+# TODO
+# MarginalUniform
 

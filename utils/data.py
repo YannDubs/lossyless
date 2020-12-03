@@ -9,7 +9,10 @@ from pl_bolts.datamodules import (
 from pl_bolts.datamodules.mnist_datamodule import MNISTDataModule
 from pl_bolts.datamodules.fashion_mnist_datamodule import FashionMNISTDataModule
 from pytorch_lightning import LightningDataModule
-from torch.nn.functional import normalize
+
+import torch
+import torch.distributions as dist
+
 
 from torchvision.datasets import CIFAR10, MNIST, FashionMNIST
 from torchvision.transforms.functional import rotate
@@ -22,18 +25,28 @@ import random
 from torch.utils.data import DataLoader, random_split
 from torchvision import transforms as transform_lib
 
-from lossyless.helpers import to_numpy, concatenate, tmp_seed, get_normalization
+from utils.visualizations.distributions import setup_grid
+from utils.helpers import MinMaxScaler
+from lossyless.helpers import (
+    to_numpy,
+    concatenate,
+    tmp_seed,
+    get_normalization,
+    BASE_LOG,
+    atleast_ndim,
+)
 
 DATASETS_DICT = {
     "cifar10": "CIFAR10Module",
     "toymnist": "ToyMNISTModule",
     "toyfashionmnist": "ToyFashionMNISTModule",
+    "distribution": "DistributionDataModule",
 }
 DATASETS = list(DATASETS_DICT.keys())
 DIR = os.path.abspath(os.path.dirname(__file__))
 
 
-__all__ = ["get_datamodule"]
+__all__ = ["get_datamodule", "BananaDistribution"]
 
 
 ### HELPERS ###
@@ -60,7 +73,7 @@ def get_augmentations(augmentations=[], params={}):
     return pil_augmentations, tensor_augmentations
 
 
-### BASE DATASET ###
+### BASE IMG DATASET ###
 
 
 class LossylessDatasetToyImg:
@@ -163,7 +176,7 @@ class LossylessDatasetToyImg:
         elif self.additional_target == "idx":
             targets += [notaugmented_idx]
         elif self.additional_target == "target":
-            # duplicate but makes coder simpler
+            # duplicate but makes code simpler
             targets += [target]
         else:
             raise ValueError(f"Unkown self.additional_target={self.additional_target}")
@@ -182,10 +195,10 @@ class LossylessDatasetToyImg:
     @property
     def entropies(self):
         return {
-            "X": math.log(len(self), base=2),
-            "G_rot": math.log(self.n_rotations, base=2),
-            "G_lum": math.log(self.n_luminosity, base=2),
-            "C": math.log(len(self.noaug_length), base=2),
+            "X": math.log(len(self), base=BASE_LOG),
+            "G_rot": math.log(self.n_rotations, base=BASE_LOG),
+            "G_lum": math.log(self.n_luminosity, base=BASE_LOG),
+            "M": math.log(len(self.noaug_length), base=BASE_LOG),
         }
 
     def augment_rotations_(self):
@@ -545,3 +558,271 @@ class ToyFashionMNISTModule(LossylessDataModule):
 
 ### KODAK ###
 # TODO
+
+### Distribution Dataset ###
+class BananaTransform(dist.Transform):
+    """Transform from gaussian to banana."""
+
+    def __init__(self, curvature, factor=10):
+        super().__init__()
+        self.bijective = True
+        self.curvature = curvature
+        self.factor = factor
+
+    def _call(self, x):
+        shift = torch.zeros_like(x)
+        shift[..., 1] = self.curvature * (torch.pow(x[..., 0], 2) - self.factor ** 2)
+        return x + shift
+
+    def _inverse(self, y):
+        shift = torch.zeros_like(y)
+        shift[..., 1] = self.curvature * (torch.pow(y[..., 0], 2) - self.factor ** 2)
+        return y - shift
+
+    def log_abs_det_jacobian(self, x, y):
+        return torch.zeros_like(x)
+
+
+class RotateTransform(dist.Transform):
+    """Rotate a distribution from `angle` degrees."""
+
+    def __init__(self, angle):
+        super().__init__()
+        self.bijective = True
+        self.angle = angle * math.pi / 180
+
+        self.rot_mat = self.get_rot_mat(self.angle)
+        self.inv_rot_mat = self.get_rot_mat(-self.angle)
+
+    def get_rot_mat(self, angle):
+        angle = torch.tensor([angle])
+        cos, sin = torch.cos(angle), torch.sin(angle)
+        return torch.tensor([[cos, sin], [-sin, cos]])
+
+    def _call(self, x):
+        return x @ self.rot_mat
+
+    def _inverse(self, y):
+        return y @ self.inv_rot_mat
+
+    def log_abs_det_jacobian(self, x, y):
+        return torch.zeros_like(x)
+
+
+class BananaDistribution(dist.TransformedDistribution):
+    """2D banana distribution.
+    
+    Parameters
+    ----------
+    curvature : float, optional
+        Controls the strength of the curvature of the banana-shape.
+        
+    factor : float, optional
+        Controls the elongation of the banana-shape.
+        
+    asymmetry : float, optional
+        Controls the asymmetry of the banana-shape.
+        
+    location : torch.Tensor, optional
+        Controls the location of the banana-shape.
+        
+    angles : float, optional
+        Controls the angle rotation of the banana-shape.
+
+    scale : float, optional
+        Rescales the entire distribution (while keeping entropy of underlying distribution correct)
+        This is useful to make sure that the inputs during training are not too large / small.
+    """
+
+    arg_constraints = {}
+    has_rsample = True
+
+    def __init__(
+        self,
+        curvature=0.05,
+        factor=4,
+        asymmetry=0.0,
+        location=torch.tensor([-3.0, -4]),
+        angle=-40,
+        scale=0.2,
+    ):
+        base_dist = dist.MultivariateNormal(
+            loc=torch.zeros(2),
+            scale_tril=torch.tensor(
+                [[factor * scale, 0.0], [asymmetry * scale, 1.0 * scale]]
+            ),
+        )
+        transforms = dist.ComposeTransform(
+            [
+                BananaTransform(curvature / scale, factor=factor * scale),
+                RotateTransform(angle),
+                dist.AffineTransform(location * scale, torch.ones(2)),
+            ]
+        )
+        super().__init__(base_dist, transforms)
+
+        self.curvature = curvature
+        self.factor = factor
+        self.rotate = rotate
+
+
+class LossylessDatasetToyDistribution:
+    """Base class for toy 2D distribution datasets used for lossy compression but lossless predicitons.
+
+    Parameters
+    -----------
+    additional_target : {"max_inv", "input", "target"}, optional
+        Additional target to append to the target. "max_inv" is the maximal invariant. "input"
+        is the input (sample). "target" uses agin the target (i.e. duplicate).
+
+    n_inputs : int, optional
+        Number of sample (from same orbit) for each example in a batch. Does not work currently.
+    
+    length : int, optional 
+        Size of the dataset.
+
+    distribution : torch.Distribution, optional
+        Main distribution to sample from.
+
+    group : {"rotation","y_translation","x_translation"}, optional
+        Group with respect to which to be invariant.
+
+    func_target : callable, optional
+        Function that creates the target using the maximal invariant for the group (not that any
+        target that is conditionally G-invariant and deterministic has to be a function of the max inv),
+
+    range_lim : int, optional
+        Range for plotting and estiomating entropies [-range_lim,range_lim]^2.
+    """
+
+    shape = (2,)
+    y_dim = 1
+
+    def __init__(
+        self,
+        *args,
+        additional_target=None,
+        n_inputs=1,
+        length=10000,
+        distribution=BananaDistribution(),
+        group="rotation",
+        func_target=lambda m: m,
+        range_lim=3,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+
+        assert n_inputs == 1
+
+        self.additional_target = additional_target
+        self.n_inputs = n_inputs
+        self.length = length
+        self.distribution = distribution
+        self.group = group
+        self.range_lim = range_lim
+
+        self.data = distribution.sample([length])
+
+        # scaling before  maximal invariant is ok because scaling does not change radius if not is_scale_each_dims
+        # if scaler is None:
+        #     self.scaler = MinMaxScaler(is_scale_each_dims=True).fit(self.data)
+        # else:
+        #     self.scaler = scaler
+        # self.data = self.scaler.transform(self.data)  # make sure in [0,1]
+
+        # make sure y_dim is a dimension to enable use of mse_loss (as y_pred will have y_dim as dimension)
+        self.max_invariants = atleast_ndim(self.get_max_invariants(), 2)
+        self.targets = func_target(self.max_invariants)
+
+    def __len__(self):
+        return self.length
+
+    def get_max_invariants(self):
+        if self.group == "rotation":
+            return self.data.norm(2, dim=-1)  # L2 norm
+        elif self.group == "y_translation":
+            return self.data[:, 0]  # max inv is x coord
+        elif self.group == "x_translation":
+            return self.data[:, 1]  # max inv is y coord
+        else:
+            raise ValueError(f"Unkown group={self.group}.")
+
+    def __getitem__(self, index):
+        sample = self.data[index]
+        target = self.targets[index]
+
+        targets = [target]
+
+        if self.additional_target is None:
+            targets += [None]  # just so that all the code is the same
+        elif self.additional_target == "input":
+            targets += [sample]
+        elif self.additional_target == "max_inv":
+            targets += [self.max_invariants[index]]
+        elif self.additional_target == "target":
+            targets += [target]
+        else:
+            raise ValueError(f"Unkown additional_target={self.additional_target}")
+
+        return sample, targets
+
+    @property
+    def entropies(self):
+        if hasattr(self, "_entropies"):
+            return self._entropies
+
+        entropies = dict(X=self.distribution.base_dist.entropy() / math.log(BASE_LOG),)
+        n_pts = int(1e4)
+
+        if self.group == "rotation":
+            pass  # TODO needs to marginalize theta in polar coordinates to get H[rho]
+        elif "translation" in self.group:
+            is_x = "x_" in self.group
+            range_lim = 15
+            _, __, zz = setup_grid(range_lim=range_lim, n_pts=n_pts)
+            log_probs = self.distribution.log_prob(zz).view(n_pts, n_pts)
+            d = (range_lim * 2) / n_pts
+            # p(x) = \int p(x,y) dy
+            log_marg_probs = (log_probs + math.log(d)).sum(1 if is_x else 0)
+            # normalize so that approximate pmf (can use discrete entropy).
+            # log (p(x)/(\sum p(x))) = log p(x) - log_sum_exp p(x)
+            log_normalized = log_marg_probs - torch.logsumexp(log_marg_probs, 0)
+            # uses histogram estimator https://en.wikipedia.org/wiki/Entropy_estimation#Histogram_estimator
+            H_M = -(log_normalized.exp() * (log_normalized - math.log(d))).sum()
+            entropies["M"] = H_M / math.log(BASE_LOG)
+        else:
+            raise ValueError(f"Unkown group={self.group}.")
+
+        self._entropies = entropies
+        return entropies
+
+
+class DistributionDataModule(LossylessDataModule):
+    _DATASET = LossylessDatasetToyDistribution
+
+    def setup(self, stage=None):
+        if stage == "fit" or stage is None:
+
+            dataset = self.Dataset(**self.dataset_kwargs)
+            self.noaug_length = dataset.length  # train and valid
+
+            self.dataset_train, self.dataset_val = random_split(
+                dataset,
+                [len(dataset) - self.val_split, self.val_split],
+                generator=torch.Generator().manual_seed(self.seed),
+            )
+
+        if stage == "test" or stage is None:
+            self.dataset_test = self.Dataset(
+                **self.dataset_kwargs
+            )  # scaler=self.scaler,
+
+    def default_transforms(self):
+        pass  # no transformation
+
+    def prepare_data(self):
+        pass
+
+    @property
+    def y_dim(self):
+        return self.Dataset.y_dim

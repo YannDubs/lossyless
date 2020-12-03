@@ -153,14 +153,26 @@ class Resnet(nn.Module):
     is_pretrained : bool, optional
         Whether to load a model pretrained on imagenet. Might not work well with `is_small=True`.
         The last last fully connected layer will only be pretrained if `out_dim=1000`.
+
+    norm_layer : nn.Module or {"identity","batch"}, optional
+        Normalizing layer to use.
     """
 
-    def __init__(self, in_shape, out_dim, base="resnet18", is_pretrained=False):
+    def __init__(
+        self,
+        in_shape,
+        out_dim,
+        base="resnet18",
+        is_pretrained=False,
+        norm_layer="batchnorm",
+    ):
         super().__init__()
         self.in_shape = in_shape
         self.out_dim = out_dim
         self.resnet = torchvision.models.__dict__[base](
-            pretrained=is_pretrained, num_classes=out_dim
+            pretrained=is_pretrained,
+            num_classes=out_dim,
+            norm_layer=get_norm_layer(norm_layer, 2),
         )
 
         if self.in_shape[1] < 100:
@@ -208,12 +220,15 @@ class CNN(nn.Module):
     hid_dim : int, optional
         Base number of temporary channels (will be multiplied by 2 after each layer).
 
+    norm_layer : callable or {"batchnorm", "identity"}
+        Layer to return.
+
     kwargs :
         Additional arguments to `ConvBlock`.
     """
 
     def __init__(
-        self, in_shape, out_dim, hid_dim=32, **kwargs,
+        self, in_shape, out_dim, hid_dim=32, norm_layer="batchnorm", **kwargs,
     ):
 
         super().__init__()
@@ -227,6 +242,7 @@ class CNN(nn.Module):
         self.in_shape = in_shape
         self.out_dim = out_dim
         self.hid_dim = hid_dim
+        self.norm_layer = norm_layer
 
         assert self.in_shape[1] == self.in_shape[2] == 32
 
@@ -241,7 +257,7 @@ class CNN(nn.Module):
         layers = []
         in_chan = channels[0]
         for out_chan in channels[1:]:
-            layers += self.make_block(in_chan, out_chan)
+            layers += self.make_block(in_chan, out_chan, **kwargs)
             in_chan = out_chan
 
         # mult by 4 because you stopped at 2*2 images
@@ -261,9 +277,10 @@ class CNN(nn.Module):
         self.reset_parameters()
 
     def make_block(self, in_chan, out_chan, **kwargs):
+        Normalization = get_norm_layer(self.norm_layer, 2)
         if self.is_transpose:
             return [
-                nn.BatchNorm2d(in_chan),
+                Normalization(in_chan),
                 nn.ReLU(),
                 nn.ConvTranspose2d(
                     in_chan,
@@ -280,7 +297,7 @@ class CNN(nn.Module):
                 nn.Conv2d(
                     in_chan, out_chan, stride=2, padding=1, kernel_size=3, **kwargs
                 ),
-                nn.BatchNorm2d(out_chan),
+                Normalization(out_chan),
                 nn.ReLU(),
             ]
 

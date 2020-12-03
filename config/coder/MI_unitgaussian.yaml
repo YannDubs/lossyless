@@ -1,0 +1,9 @@
+# @package _group_
+
+name: MI_unitgaussian
+
+
+kwargs:
+  prior_fam: unitgaussian
+  prior_kwargs: {}
+

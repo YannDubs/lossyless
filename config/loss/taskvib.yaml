@@ -5,6 +5,9 @@ loss:
   name: taskvib
   mode: direct
 
+  kwargs: 
+      is_classification: ${data.is_classification}
+
 data:
   kwargs:
     dataset_kwargs:
@@ -12,4 +15,4 @@ data:
       n_inputs: 1
 
 decoder:
-  out_shape: ${data.num_classes}
+  out_shape: ${data.y_dim_pred}

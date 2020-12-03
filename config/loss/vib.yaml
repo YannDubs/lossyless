@@ -5,6 +5,9 @@ loss:
   name: vib
   mode: direct
 
+  kwargs: 
+      is_classification: True
+
 data:
   kwargs:
     dataset_kwargs:

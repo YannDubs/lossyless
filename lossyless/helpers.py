@@ -6,7 +6,9 @@ import torch
 import itertools
 from torchvision.datasets import CIFAR10
 from torchvision import transforms as transform_lib
-
+from torch.distributions import Distribution, constraints
+from torch.distributions.utils import broadcast_all
+from numbers import Number
 import contextlib
 import random
 from functools import reduce
@@ -104,11 +106,11 @@ def weights_init(module, nonlinearity="relu"):
         if isinstance(m, torch.nn.modules.conv._ConvNd):
             # used in https://github.com/brain-research/realistic-ssl-evaluation/
             nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity=nonlinearity)
-            nn.init.constant_(m.bias.data, 0)
+            nn.init.zeros_(m.bias)
 
         elif isinstance(m, nn.Linear):
             nn.init.kaiming_uniform_(m.weight, nonlinearity=nonlinearity)
-            nn.init.constant_(m.bias.data, 0)
+            nn.init.zeros_(m.bias)
 
         elif isinstance(m, nn.BatchNorm2d):
             try:
@@ -139,6 +141,11 @@ def batch_unflatten(x, shape):
 def prod(iterable):
     """Take product of iterable like."""
     return reduce(operator.mul, iterable, 1)
+
+
+def mean(array):
+    """Take mean of array like."""
+    return sum(array) / len(array)
 
 
 def get_exponential_decay_gamma(scheduling_factor, max_epochs):
@@ -212,4 +219,67 @@ def undo_normalization(Y_hat, targets, dataset):
         Y_hat, targets = denormalize(Y_hat), denormalize(targets)
 
     return Y_hat, targets
+
+
+def atleast_ndim(x, ndim):
+    """Reshapes a tensor so that it has at least n dimensions."""
+    return x.view(list(x.shape) + [1] * (ndim - x.ndim))
+
+
+# modified from: http://docs.pyro.ai/en/stable/_modules/pyro/distributions/delta.html#Delta
+class Delta(Distribution):
+    """
+    Degenerate discrete distribution (a single point).
+
+    Parameters
+    ----------
+    v: torch.Tensor
+        The single support element.
+
+    log_density: torch.Tensor, optional
+        An optional density for this Delta. This is useful to keep the class of :class:`Delta` 
+        distributions closed under differentiable transformation.
+
+    event_dim: int, optional
+        Optional event dimension.
+    """
+
+    has_rsample = True
+    arg_constraints = {"loc": constraints.real, "log_density": constraints.real}
+    support = constraints.real
+
+    def __init__(self, loc, log_density=0.0, validate_args=None):
+        self.loc, self.log_density = broadcast_all(loc, log_density)
+
+        if isinstance(loc, Number):
+            batch_shape = torch.Size()
+        else:
+            batch_shape = self.loc.size()
+
+        super().__init__(batch_shape, validate_args=validate_args)
+
+    @property
+    def mean(self):
+        return self.loc
+
+    @property
+    def variance(self):
+        return torch.zeros_like(self.loc)
+
+    def expand(self, batch_shape, _instance=None):
+        new = self._get_checked_instance(Delta, _instance)
+        batch_shape = torch.Size(batch_shape)
+        new.loc = self.loc.expand(batch_shape)
+        new.log_density = self.log_density.expand(batch_shape)
+        super().__init__(batch_shape, validate_args=False)
+        new._validate_args = self._validate_args
+        return new
+
+    def rsample(self, sample_shape=torch.Size()):
+        shape = list(sample_shape) + list(self.loc.shape)
+        return self.loc.expand(shape)
+
+    def log_prob(self, x):
+        log_prob = (x == self.loc).type(x.dtype).log()
+        return log_prob + self.log_density
 

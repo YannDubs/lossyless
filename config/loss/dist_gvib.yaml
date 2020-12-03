@@ -1,0 +1,18 @@
+# @package _global_
+# like gvib (i.e. prediction of maximal invariant) but for ditributions
+
+loss:
+  name: dist_gvib
+  mode: direct
+
+  kwargs: 
+      is_classification: False # not classification because regression of M(X)
+
+data:
+  kwargs:
+    dataset_kwargs:
+      additional_target: "max_inv"
+      n_inputs: 1
+
+decoder:
+  out_shape: 1 # the maximal invariant

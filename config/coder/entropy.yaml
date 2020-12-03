@@ -1,0 +1,11 @@
+# @package _global_
+
+coder:
+  name: entropy
+
+  kwargs:
+    init_scale: 10 # input should be at initialization in [-init_scale, init_scale]
+    filters: [3, 3, 3, 3] # size of the model 
+    
+encoder:
+  fam: deterministic # has to use a deterministic encoder with entropy coding to ensure that H[Z|X]=0

@@ -25,13 +25,76 @@ def save_img_wandb(pl_module, trainer, img, name, caption):
     trainer.logger[wandb_idx].experiment.log({name: [wandb_img]})
 
 
-class SSLOnlineEvaluator(ssl_online.SSLOnlineEvaluator):
-    #! check why not logging training waiting for lighning #4857
+class ClfOnlineEvaluator(ssl_online.SSLOnlineEvaluator):
+    def __init__(self, *args, y_dim_pred=None, **kwargs):
+        super().__init__(*args, num_classes=y_dim_pred, **kwargs)
 
     def to_device(self, batch, device):
         x, (y, _) = batch  # only return the real label
         batch = [x], y  # x assumes to be a list
         return super().to_device(batch, device)
+
+    #! waiting for #4955
+    def toggle_optimizer(self, trainer, pl_module):
+        """activates current optimizer."""
+        if len(trainer.optimizers) > 1:
+            for param in pl_module.non_linear_evaluator.parameters():
+                param.requires_grad = True
+
+    def on_train_batch_end(
+        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+    ):
+        self.toggle_optimizer(trainer, pl_module)
+        super().on_train_batch_end(
+            trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+        )
+
+
+class RgrsOnlineEvaluator(ClfOnlineEvaluator):
+    def on_train_batch_end(
+        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+    ):
+        """Only change with ClfOnlineEvaluator is lmse_oss and not computing accuracy."""
+        self.toggle_optimizer(trainer, pl_module)
+
+        x, y = self.to_device(batch, pl_module.device)
+
+        with torch.no_grad():
+            representations = self.get_representations(pl_module, x)
+
+        representations = representations.detach()
+
+        # forward pass
+        mlp_preds = pl_module.non_linear_evaluator(representations)
+        mlp_loss = F.mse_loss(mlp_preds, y)
+
+        # update finetune weights
+        mlp_loss.backward()
+        self.optimizer.step()
+        self.optimizer.zero_grad()
+
+        # log metrics
+        pl_module.log("online_train_loss", mlp_loss, on_step=True, on_epoch=False)
+
+    def on_validation_batch_end(
+        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+    ):
+        """Only change with ClfOnlineEvaluator is lmse_oss and not computing accuracy."""
+        x, y = self.to_device(batch, pl_module.device)
+
+        with torch.no_grad():
+            representations = self.get_representations(pl_module, x)
+
+        representations = representations.detach()
+
+        # forward pass
+        mlp_preds = pl_module.non_linear_evaluator(representations)
+        mlp_loss = F.mse_loss(mlp_preds, y)
+
+        # log metrics
+        pl_module.log(
+            "online_val_loss", mlp_loss, on_step=False, on_epoch=True, sync_dist=True
+        )
 
 
 class WandbReconstructImages(Callback):
@@ -49,8 +112,10 @@ class WandbReconstructImages(Callback):
         super().__init__()
 
     def on_train_epoch_end(self, trainer, pl_module, outputs):
-        x_hat = trainer.hiddens["y_hat"]
-        x = trainer.hiddens["target"]
+
+        #! waiting for torch lighning #1243
+        x_hat = pl_module._save["y_hat"].float()
+        x = pl_module._save["target"].float()
         # undo normalization for plotting
         x_hat, x = undo_normalization(x_hat, x, pl_module.hparams.data.dataset)
         caption = f"ep: {trainer.current_epoch}"

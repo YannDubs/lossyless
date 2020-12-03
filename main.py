@@ -3,15 +3,17 @@ import os
 
 import hydra
 import logging
-
+import compressai
 
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import TensorBoardLogger, CSVLogger, WandbLogger
 from pl_bolts.callbacks import PrintTableMetricsCallback
 from pytorch_lightning.callbacks import ModelCheckpoint, GPUStatsMonitor
+from torch.utils import data
 
 from lossyless.callbacks import (
-    SSLOnlineEvaluator,
+    ClfOnlineEvaluator,
+    RgrsOnlineEvaluator,
     WandbReconstructImages,
     WandbLatentDimInterpolator,
 )
@@ -36,6 +38,9 @@ def main(cfg):
     pl.seed_everything(cfg.seed)
     cfg.paths.base_dir = hydra.utils.get_original_cwd()
     create_folders(cfg.paths.base_dir, ["results", "logs", "pretrained"])
+
+    if cfg.coder.range_coder is not None:
+        compressai.set_entropy_coder(cfg.coder.range_coder)
 
     # DATA
     datamodule = instantiate_datamodule(cfg.data)
@@ -68,7 +73,10 @@ def get_trainer(cfg, is_compressor, module=None):
         chckpt_kwargs = cfg.callbacks.compressor_chckpt
 
         if cfg.predictor.is_online_eval:
-            callbacks += [SSLOnlineEvaluator(**cfg.callbacks.online_eval)]
+            if cfg.data.is_classification:
+                callbacks += [ClfOnlineEvaluator(**cfg.callbacks.online_eval)]
+            else:
+                callbacks += [RgrsOnlineEvaluator(**cfg.callbacks.online_eval)]
 
         if cfg.loss.kwargs.is_img_out:
             if "wandb" in cfg.logger.loggers:
@@ -113,7 +121,12 @@ def instantiate_datamodule(cfgd):
     cfgd.noaug_length = datamodule.noaug_length
     cfgd.length = len(datamodule.dataset_train)
     cfgd.shape = datamodule.shape
-    cfgd.num_classes = datamodule.num_classes
+    if hasattr(datamodule, "num_classes"):
+        cfgd.y_dim_pred = datamodule.num_classes
+        cfgd.is_classification = True
+    else:
+        cfgd.y_dim_pred = datamodule.y_dim
+        cfgd.is_classification = False
     return datamodule
 
 

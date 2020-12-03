@@ -4,17 +4,16 @@ defaults:
   
   - data: toyMiniFashionMnist
   - encoder: cnn
-  - prior: unitgaussian
   - decoder: mlp
   - loss: vae
-  - coder: none
+  - coder: MI_unitgaussian
 
 ### GENERAL ###
 name: ???
 seed: 123
 is_debug: False # enter debug mode
 
-long_name: ${name}/d_${data.name}/l_${loss.name}/e_${encoder.name}/p_${prior.name}/d_${decoder.name}/c_${coder.name}/o_${optimizer.name}/z_${loss.n_z_samples}/b_${loss.kwargs.beta}/s_${seed}
+long_name: ${name}/d_${data.name}/l_${loss.name}/e_${encoder.name}/d_${decoder.name}/c_${coder.name}/o_${optimizer.name}/dim_${encoder.z_dim}/z_${loss.n_z_samples}/b_${loss.kwargs.beta}/s_${seed}
 
 paths:
   base_dir: ???
@@ -27,6 +26,12 @@ optimizer: # might need to be a group at some point
   name: adam # not used yet but can change if needed
   lr: 1e-3
   scheduling_factor: 100 # by how much to reduce lr during training
+
+# only used if coder needs an optimizer
+optimizer_coder:
+  name: adam # not used yet but can change if needed
+  lr: 1e-3
+  scheduling_factor: 1 # by how much to reduce lr during training
 
 logger:
   loggers: ["csv","wandb"]
@@ -53,7 +58,7 @@ callbacks:
     drop_p: 0
     hidden_dim: 1024
     z_dim: ${encoder.z_dim}
-    num_classes: ${data.num_classes}
+    y_dim_pred: ${data.y_dim_pred}
 
 
 predictor:
@@ -88,7 +93,8 @@ data:
   noaug_length: ???
   length: ???
   shape: ???
-  num_classes: ???
+  y_dim_pred: ???
+  is_classification: ??? 
 
   kwargs:
     data_dir: ${paths.data}
@@ -110,12 +116,8 @@ decoder:
 
 coder:
   name: ???
-
-
-prior:
-  name: ???
-  fam: ???
-  fam_kwargs: {}
+  range_coder: null
+  kwargs: {}
 
 loss:
   name: ???

@@ -4,6 +4,8 @@
 loss:
   name: gvib
   mode: direct
+  kwargs: 
+      is_classification: True
   
   
 data:
