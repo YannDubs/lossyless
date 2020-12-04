@@ -263,7 +263,7 @@ class CNN(nn.Module):
         channels = [self.in_shape[0]]
         channels += [self.hid_dim * (2 ** i) for i in range(0, n_layers)]
         # by how much will increase after flattening
-        factor = (self.in_shape[1] * self.in_shape[2]) / ((2 ** n_layers) ** 2)
+        factor = (self.in_shape[1] * self.in_shape[2]) // ((2 ** n_layers) ** 2)
 
         if self.is_transpose:
             channels.reverse()

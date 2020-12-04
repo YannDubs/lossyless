@@ -30,6 +30,7 @@ class CompressionModule(pl.LightningModule):
     def get_encoder(self):
         """Return encoder: a mapping to a torch.Distribution (conditional distribution)."""
         cfg_enc = self.hparams.encoder
+
         return CondDist(
             self.hparams.data.shape,
             cfg_enc.z_dim,
@@ -122,9 +123,8 @@ class CompressionModule(pl.LightningModule):
 
             return loss
 
-        else:  # only if self.coder.is_need_optimizer
-            coder_loss = self.coder.loss()
-            # updates the coder
+        else:  # only if is_optimize_coder
+            coder_loss = self.coder.aux_loss()
             return coder_loss
 
     def validation_step(self, batch, batch_idx):
@@ -148,19 +148,22 @@ class CompressionModule(pl.LightningModule):
         """Make sure that you can actually use the coder during eval."""
         self.coder.update(force=True)
 
+    def parameters(self):
+        """Returns an iterator over the model parameters."""
+        for m in self.children():
+            # slightly different than default because calling .parameters() on each
+            # so can overide .parameters in submodules.
+            for p in m.parameters():
+                yield p
+
     def configure_optimizers(self):
+        aux_parameters = list(self.coder.aux_parameters())
+        is_optimize_coder = len(aux_parameters) > 0
 
         # model
         cfgo = self.hparams.optimizer
 
-        if self.coder.is_need_optimizer:
-            # use separate optimizer for coder and model
-            params = list(self.named_parameters())
-            params_model = [p for n, p in params if "coder" not in n]
-        else:
-            params_model = self.parameters()
-
-        optimizer = torch.optim.Adam(params_model, lr=cfgo.lr)
+        optimizer = torch.optim.Adam(self.parameters(), lr=cfgo.lr)
         gamma = get_exponential_decay_gamma(
             cfgo.scheduling_factor, self.hparams.trainer.max_epochs,
         )
@@ -170,9 +173,9 @@ class CompressionModule(pl.LightningModule):
         schedulers = [scheduler]
 
         # if coder needs parameters + optimizer
-        if self.coder.is_need_optimizer:
+        if is_optimize_coder:
             cfgoc = self.hparams.optimizer_coder
-            optimizer_coder = torch.optim.Adam(self.coder.parameters(), lr=cfgoc.lr)
+            optimizer_coder = torch.optim.Adam(aux_parameters, lr=cfgoc.lr)
             gamma_coder = get_exponential_decay_gamma(
                 cfgoc.scheduling_factor, self.hparams.trainer.max_epochs,
             )

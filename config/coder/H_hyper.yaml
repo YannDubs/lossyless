@@ -6,7 +6,7 @@ coder:
   kwargs:
     init_scale: 1 # input should be at initialization in [-init_scale, init_scale]. Larger might create overhead. You can use something like 10 for large images but smaller for smaller 
     filters: [3, 3, 3, 3] # size of the model 
-    factor_dim: 10
+    factor_dim: 5
     is_pred_mean: True
     
 encoder:

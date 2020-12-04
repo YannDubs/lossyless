@@ -228,6 +228,8 @@ def undo_normalization(Y_hat, targets, dataset):
 
 def atleast_ndim(x, ndim):
     """Reshapes a tensor so that it has at least n dimensions."""
+    if x is None:
+        return None
     return x.view(list(x.shape) + [1] * (ndim - x.ndim))
 
 

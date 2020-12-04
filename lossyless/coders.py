@@ -1,12 +1,12 @@
 import torch
 import math
 import compressai
-from compressai.entropy_models import GaussianConditional
+from compressai.entropy_models import GaussianConditional, EntropyModel
 from compressai.models.utils import update_registered_buffers
 import einops
 from .helpers import atleast_ndim, BASE_LOG, kl_divergence, weights_init
 from .distributions import get_marginalDist
-from .architectures import FlattenMLP
+from .architectures import MLP
 
 
 ### HELPERS ###
@@ -43,15 +43,22 @@ class EntropyBottleneck(compressai.entropy_models.EntropyBottleneck):
         return z_hat, q_z
 
     def compress(self, z):
-        z = einops.rearrange(z, "b (c e1 e2) -> b c e1 e2", e1=1, e2=1)
+        z = atleast_ndim(z, 4)
         return super().compress(z)
 
-    def decompress(self, z_compressed):
-        z_compressed = super().decompress(z_compressed, [1, 1])
-        z_compressed = einops.rearrange(
-            z_compressed, "b c e1 e2 -> b (c e1 e2)", e1=1, e2=1
-        )
-        return z_compressed
+    def decompress(self, z_strings):
+        # the following comes directly from compressai.EntropyBottleneck.decompress but ensures
+        # that can also work with multiple images (i.e. batch size > 1)
+        #! waiting for compressai #13 then replace by `z_hat = super().decompress(z_strings, [1,1])`
+        batch_size = len(z_strings)
+        output_size = (batch_size, self._quantized_cdf.size(0), 1, 1)
+        indexes = self._build_indexes(output_size)
+        medians = self._medians().detach()
+        medians = einops.repeat(medians, "c e1 e2 -> b c e1 e2", b=batch_size)
+        z_hat = EntropyModel.decompress(self, z_strings, indexes, medians)
+
+        z_hat = einops.rearrange(z_hat, "b c e1 e2 -> b (c e1 e2)", e1=1, e2=1)
+        return z_hat
 
 
 ### BASE ###
@@ -59,7 +66,6 @@ class Coder(compressai.models.CompressionModel):
     """Base class for a coder, i.e. a model that perform entropy/MI coding."""
 
     is_can_compress = True  # wether can compress
-    is_need_optimizer = False  # wether needs an additional optimizer
 
     def __init__(self):
         # directly call nn.Module because you don't want to call the constructor of `CompressionModel`
@@ -70,12 +76,12 @@ class Coder(compressai.models.CompressionModel):
         weights_init(self)
 
     # returning the loss is necessary to work with `EntropyBottleneck`
-    def forward(self, z_samples, p_Zlx):
-        """Performs the compression and returns loss.
+    def forward(self, z, p_Zlx):
+        """Performs the approx compression and returns loss.
 
         Parameters
         ----------
-        z_samples : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
+        z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
             Representation to compress.
 
         p_Zlx : torch.Distribution
@@ -83,7 +89,7 @@ class Coder(compressai.models.CompressionModel):
         
         Returns
         -------
-        z_samples_hat : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
+        z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
             Representation after compression.
 
         coding_loss : torch.Tensor shape=[n_z_dim, batch_shape]
@@ -95,11 +101,35 @@ class Coder(compressai.models.CompressionModel):
         raise NotImplementedError()
 
     def compress(self, z):
-        """Performs the actual compression. Note that this cannot contrain n_z as first dim."""
+        """Performs the actual compression. 
+        
+        Parameters
+        ----------
+        z : torch.Tensor shape=[batch_shape, z_dim]
+            Representation to compress. Note that there's no n_z_dim!
+        
+        Returns
+        -------
+        all_strings : list (len n_hyper) of list (len batch_shape) of bytes 
+            Compressed representations in bytes. The first list (of len n_latents) contains the 
+            representations for each hyper latents
+        """
         raise NotImplementedError()
 
-    def decompress(self, z_compressed):
-        """Performs the actual decompression."""
+    def decompress(self, all_strings):
+        """Performs the actual decompression.
+
+        Parameters
+        ----------
+        all_strings : list (len n_hyper) of list (len batch_shape) of bytes 
+            Compressed representations in bytes. The first list (of len n_latents) contains the 
+            representations for each hyper latents
+        
+        Returns
+        -------
+        z_hat : torch.Tensor shape=[batch_shape, z_dim]
+            Approx. decompressed representation. Note that there's no n_z_dim!
+        """
         raise NotImplementedError()
 
 
@@ -152,6 +182,7 @@ class MICoder(Coder):
 ### ENTROPY CODERS ###
 # all of the following assume that `p_Zlx` should be deterministic here (i.e. Delta distribution).
 # minor differences from and credits to them https://github.com/InterDigitalInc/CompressAI/blob/edd62b822186d81903c4a53c3f9b0806e9d7f388/compressai/models/priors.py
+# a little messy for reshaping as compressai assumes 4D image as inputs (but we compress 2D vectors)
 
 
 class HCoderFactorizedPrior(Coder):
@@ -172,8 +203,6 @@ class HCoderFactorizedPrior(Coder):
     preprint arXiv:1802.01436 (2018).
     """
 
-    is_need_optimizer = True  # wether needs an additional optimizer
-
     def __init__(self, z_dim, **kwargs):
         super().__init__()
         self.entropy_bottleneck = EntropyBottleneck(z_dim, **kwargs)
@@ -192,9 +221,9 @@ class HCoderFactorizedPrior(Coder):
         # list for generality when hyperprior
         return [self.entropy_bottleneck.compress(z)]
 
-    def decompress(self, z_compressed):
-        assert isinstance(z_compressed, list) and len(z_compressed) == 1
-        return self.entropy_bottleneck.decompress(z_compressed[0])
+    def decompress(self, all_strings):
+        assert isinstance(all_strings, list) and len(all_strings) == 1
+        return self.entropy_bottleneck.decompress(all_strings[0])
 
     def load_state_dict(self, state_dict):
         # Dynamically update the entropy bottleneck buffers related to the CDFs
@@ -246,9 +275,7 @@ class HCoderHyperprior(Coder):
     priors for learned image compression." Advances in Neural Information Processing Systems. 2018.
     """
 
-    is_need_optimizer = True  # wether needs an additional optimizer
-
-    def __init__(self, z_dim, factor_dim=10, is_pred_mean=True, **kwargs):
+    def __init__(self, z_dim, factor_dim=5, is_pred_mean=True, **kwargs):
         super().__init__()
         side_z_dim = z_dim // factor_dim
 
@@ -256,30 +283,32 @@ class HCoderHyperprior(Coder):
         self.entropy_bottleneck = EntropyBottleneck(side_z_dim, **kwargs)
         self.gaussian_conditional = GaussianConditional(None)
 
-        in_shape = [z_dim, 1, 1]
-        out_shape = [side_z_dim, 1, 1]
         kwargs_mlp = dict(n_hid_layers=2, hid_dim=max(z_dim, 256))
-        self.h_a = FlattenMLP(in_shape, out_shape, **kwargs_mlp)
+        self.h_a = MLP(z_dim, side_z_dim, **kwargs_mlp)
 
         if self.is_pred_mean:
-            in_shape = [z_dim * 2, 1, 1]
+            z_dim *= 2  # predicting mean and var
 
-        self.h_s = FlattenMLP(out_shape, in_shape, **kwargs_mlp)
+        self.h_s = MLP(side_z_dim, z_dim, **kwargs_mlp)
 
     def chunk_params(self, gaussian_params):
         if self.is_pred_mean:
-            scales_hat, means_hat = gaussian_params.chunk(2, 1)
+            scales_hat, means_hat = gaussian_params.chunk(2, -1)
         else:
             scales_hat, means_hat = gaussian_params, None
         return scales_hat, means_hat
 
-    def forward(self, z):
-        side_z = self.h_a(torch.abs(z))
+    def forward(self, z, _):
+
+        # shape: [n_z_dim, batch_shape, side_z_dim]
+        side_z = self.h_a(z)
         side_z_hat, q_s = self.entropy_bottleneck(side_z)
 
+        # scales_hat and means_hat (if not None). shape: [n_z_dim, batch_shape, z_dim]
         gaussian_params = self.h_s(side_z_hat)
         scales_hat, means_hat = self.chunk_params(gaussian_params)
 
+        # shape: [n_z_dim, batch_shape, z_dim]
         z_hat, q_zls = self.gaussian_conditional(z, scales_hat, means=means_hat)
 
         # - log q(s). shape :  [n_z_dim, batch_shape]
@@ -301,30 +330,47 @@ class HCoderHyperprior(Coder):
 
         return z_hat, neg_log_q_zs, logs
 
-    def compress(self, z):
-        side_z = self.h_a(torch.abs(z))
+    def get_indexes_means_hat(self, side_z_strings):
 
-        side_z_strings = self.entropy_bottleneck.compress(side_z)
-        side_z_hat = self.entropy_bottleneck.decompress(side_z_strings, [1, 1])
+        # side_z and side_z_hat. shape: [batch_shape, side_z_dim]
+        side_z_hat = self.entropy_bottleneck.decompress(side_z_strings)
 
+        # shape: [batch_shape, z_dim]
         gaussian_params = self.h_s(side_z_hat)
-        scales_hat, means_hat = self.chunk_params(gaussian_params)
 
+        # z, scales_hat, means_hat, indexes. shape: [batch_shape, z_dim, 1, 1]
+        scales_hat, means_hat = self.chunk_params(gaussian_params)
+        scales_hat = atleast_ndim(scales_hat, 4)
+        means_hat = atleast_ndim(scales_hat, 4)
+        means_hat = atleast_ndim(scales_hat, 4)
         indexes = self.gaussian_conditional.build_indexes(scales_hat)
+
+        return indexes, means_hat
+
+    def compress(self, z):
+
+        # side_z and side_z_hat. shape: [batch_shape, side_z_dim]
+        side_z = self.h_a(z)
+        # len n_z_dim list of bytes
+        side_z_strings = self.entropy_bottleneck.compress(side_z)
+
+        # shape: [batch_shape, z_dim, 1, 1]
+        indexes, means_hat = self.get_indexes_means_hat(side_z_strings)
+        z = atleast_ndim(z, 4)
+
         z_strings = self.gaussian_conditional.compress(z, indexes, means=means_hat)
         return [z_strings, side_z_strings]
 
-    def decompress(self, z_compressed):
-        assert isinstance(z_compressed, list) and len(z_compressed) == 2
-        side_z_hat = self.entropy_bottleneck.decompress(z_compressed[1], [1, 1])
+    def decompress(self, all_strings):
+        assert isinstance(all_strings, list) and len(all_strings) == 2
+        z_strings, side_z_strings = all_strings
+        # shape: [batch_shape, z_dim, 1, 1]
+        indexes, means_hat = self.get_indexes_means_hat(side_z_strings)
 
-        gaussian_params = self.h_s(side_z_hat)
-        scales_hat, means_hat = self.chunk_params(gaussian_params)
-
-        indexes = self.gaussian_conditional.build_indexes(scales_hat)
         z_hat = self.gaussian_conditional.decompress(
-            z_compressed[0], indexes, means=means_hat
+            z_strings, indexes, means=means_hat
         )
+        z_hat = einops.rearrange(z_hat, "b c e1 e2 -> b (c e1 e2)", e1=1, e2=1)
         return z_hat
 
     def load_state_dict(self, state_dict):
