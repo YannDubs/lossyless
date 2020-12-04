@@ -644,7 +644,7 @@ class BananaDistribution(dist.TransformedDistribution):
         asymmetry=0.0,
         location=torch.tensor([-3.0, -4]),
         angle=-40,
-        scale=0.2,
+        scale=0.1,
     ):
         base_dist = dist.MultivariateNormal(
             loc=torch.zeros(2),
