@@ -6,7 +6,7 @@ import torchvision
 import math
 
 import torch
-from torch.distributions import Categorical, Independent, Normal
+from torch.distributions import Categorical, Independent, Normal, MixtureSameFamily
 import einops
 
 from .helpers import weights_init, batch_flatten, batch_unflatten, prod, Delta
@@ -172,9 +172,60 @@ class MarginalDiagGaussian(nn.Module):
 
 
 # TODO
-# class MarginalVamp(nn.Module):
-#     """Trained Gaussian using VampPrior, i.e. uses a approximates the REAL marginal using
-#     pseudoinputs p(z) ~= 1/k \sum p(z|u^k) where x^k are trained."""
+class MarginalVamp(nn.Module):
+    """
+    Trained Gaussian using VampPrior [1], i.e. approximates the REAL marginal using
+    pseudoinputs p(z) ~= 1/k \sum p(z|u^k) where x^k are trained.
+
+    Parameters
+    ----------
+    out_dim : int
+        Size event.
+    
+    p_ZlX : CondDist
+        Instantiated conditional distribution
+
+    is_train_mixture : bool, optional
+        Whether to train the mixture model. This was not considered in [1],
+
+    References
+    ---------
+    [1] Tomczak, Jakub, and Max Welling. "VAE with a VampPrior." International Conference on 
+    Artificial Intelligence and Statistics. PMLR, 2018.
+    """
+
+    def __init__(self, out_dim, p_ZlX, n_pseudo=64, is_train_mixture=True):
+        super().__init__()
+        self.out_dim = out_dim
+        self.p_ZlX = p_ZlX
+        self.n_pseudo = n_pseudo
+        self.is_train_mixture = is_train_mixture
+
+        self.pseudoinputs = None
+        self.mixtures = torch.nn.Parameter(
+            torch.ones(self.n_pseudo), requires_grad=self.is_train_mixture
+        )
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        torch.nn.init.constant_(self.mixtures, 1)
+        self.pseudoinputs = None  # set_pseudoinput should always be called after reset
+
+    def set_pseudoinput_(self, X):
+        """Set the initial pseudo inputs to be like the data."""
+        self.pseudoinputs = torch.nn.Parameter(X)
+
+    def forward(self):
+
+        # batch shape: [n_pseudo] ; event shape: [z_dim]
+        p_Zlu = self.p_ZlX(self.pseudoinputs)
+
+        # p_Z. batch shape: [] ; event shape: [z_dim]
+        mixtures = Categorical(logits=self.mixtures)
+        p_Z = MixtureSameFamily(mixtures, p_Zlu)
+
+        return p_Z
+
 
 # TODO
 # class MarginalFlow(nn.Module):

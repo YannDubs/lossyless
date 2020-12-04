@@ -3,4 +3,5 @@ name: MI_vamp
 
 kwargs:
   prior_fam: vamp
-  prior_kwargs: {}
+  prior_kwargs: 
+    n_pseudo: 64

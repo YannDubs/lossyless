@@ -26,31 +26,37 @@ class Loss(nn.Module):
         super().__init__()
         self.beta = beta
 
-    def forward(self, Y_hat, targets, coding_loss):
+    def forward(self, Y_hat, targets, rate):
         n_z = Y_hat.size(0)
 
-        distortion_loss, logs = self.get_distortion(Y_hat, targets)
+        distortion, logs = self.get_distortion(Y_hat, targets)
 
-        # loss. shape: [n_z_samples, batch_size]
-        loss = distortion_loss + self.beta * coding_loss
+        # loose_loss for plotting. shape: []
+        loose_loss = (distortion + self.beta * rate).mean()
 
         # tightens bound using IWAE: log 1/k sum exp(loss). shape: [batch_size]
         if n_z > 1:
-            tight_loss = torch.logsumexp(loss, 0) - math.log(n_z)
+            rate = torch.logsumexp(rate, 0) - math.log(n_z)
+            distortion = torch.logsumexp(distortion, 0) - math.log(n_z)
         else:
-            tight_loss = loss.squeeze(0)
+            distortion = distortion.squeeze(0)
+            rate = rate.squeeze(0)
 
-        # E_x[loss]. shape: []
-        tight_loss = tight_loss.mean(0)
+        # E_x[...]. shape: shape: []
+        rate = rate.mean(0)
+        distortion = distortion.mean(0)
+        loss = distortion + self.beta * rate
 
         logs.update(
             dict(
-                loose_loss=loss.mean() / math.log(BASE_LOG),
-                loss=tight_loss / math.log(BASE_LOG),
+                loose_loss=loose_loss / math.log(BASE_LOG),
+                loss=loss / math.log(BASE_LOG),
+                rate=rate / math.log(BASE_LOG),
+                distortion=distortion / math.log(BASE_LOG),
             )
         )
 
-        return tight_loss, logs
+        return loss, logs
 
     def get_distortion(self, Y_hat, targets):
         raise NotImplementedError()

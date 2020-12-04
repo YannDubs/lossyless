@@ -18,7 +18,7 @@ from lossyless.callbacks import (
     WandbLatentDimInterpolator,
 )
 from lossyless import CompressionModule
-
+from lossyless.distributions import MarginalVamp
 from utils.helpers import create_folders, omegaconf2namespace
 from utils.data import get_datamodule
 
@@ -50,6 +50,9 @@ def main(cfg):
 
     # COMPRESSION
     compression_module = CompressionModule(hparams=cfg)
+
+    # some of the module compononets might needs data for initialization
+    initialize_(compression_module, datamodule)
 
     trainer = get_trainer(cfg, is_compressor=True, module=compression_module)
 
@@ -128,6 +131,18 @@ def instantiate_datamodule(cfgd):
         cfgd.y_dim_pred = datamodule.y_dim
         cfgd.is_classification = False
     return datamodule
+
+
+def initialize_(compression_module, datamodule):
+    coder = compression_module.coder
+    if hasattr(coder, "q_Z") and isinstance(coder.q_Z, MarginalVamp):
+        # initialize vamprior such that pseudoinputs are some random images
+        real_batch_size = datamodule.batch_size
+        datamodule.batch_size = coder.q_Z.n_pseudo
+        dataloader = datamodule.train_dataloader()
+        X, _ = iter(dataloader).next()
+        coder.q_Z.set_pseudoinput_(X)
+        datamodule.batch_size = real_batch_size
 
 
 if __name__ == "__main__":

@@ -53,6 +53,7 @@ class CompressionModule(pl.LightningModule):
             cfg_cod.name,
             z_dim=self.hparams.encoder.z_dim,
             p_ZlX=self.p_ZlX,
+            n_z_samples=self.hparams.loss.n_z_samples,
             **cfg_cod.kwargs,
         )
 
@@ -96,14 +97,14 @@ class CompressionModule(pl.LightningModule):
         z = p_Zlx.rsample([n_z])
 
         # z_hat shape: [n_z, batch_size, z_dim]
-        z_hat, coding_loss, coding_logs = self.coder(z, p_Zlx)
+        z_hat, rates, coding_logs = self.coder(z, p_Zlx, x)
         flat_z_hat = einops.rearrange(z_hat, "n_z b d -> (n_z b) d")
 
         # Y_hat. shape: [n_z_samples, batch_size, *y_shape]
         Y_hat = self.q_YlZ(flat_z_hat)  # Y_hat is suff statistic of q_{Y|z}
         Y_hat = einops.rearrange(Y_hat, "(n_z b) ... -> n_z b ...", n_z=n_z)
 
-        loss, logs = self.loss(Y_hat, aux_target, coding_loss)
+        loss, logs = self.loss(Y_hat, aux_target, rates)
         logs.update(coding_logs)
         logs.update(dict(zmin=z.min(), zmax=z.max(), zmean=z.mean()))  # DEV
 

@@ -130,12 +130,12 @@ def weights_init(module, nonlinearity="relu"):
 def batch_flatten(x):
     """Batch wise flattenting of an array."""
     shape = x.shape
-    return x.view(-1, shape[-1]), shape
+    return x.reshape(-1, shape[-1]), shape
 
 
 def batch_unflatten(x, shape):
     """Revert `batch_flatten`."""
-    return x.view(*shape[:-1], -1)
+    return x.reshape(*shape[:-1], -1)
 
 
 def prod(iterable):

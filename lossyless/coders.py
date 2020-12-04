@@ -10,13 +10,13 @@ from .architectures import MLP
 
 
 ### HELPERS ###
-def get_coder(name, z_dim, p_ZlX, **kwargs):
+def get_coder(name, z_dim, p_ZlX, n_z_samples, **kwargs):
     """Return the correct entropy coder."""
     if "H_" in name:
         if "fact" in name:
-            return HCoderFactorizedPrior(z_dim, **kwargs)
+            return HCoderFactorizedPrior(z_dim, n_z_samples=n_z_samples, **kwargs)
         elif "hyper" in name:
-            return HCoderHyperprior(z_dim, **kwargs)
+            return HCoderHyperprior(z_dim, n_z_samples=n_z_samples, **kwargs)
 
     elif "MI_" in name:
         q_Z = get_marginalDist(
@@ -65,7 +65,7 @@ class EntropyBottleneck(compressai.entropy_models.EntropyBottleneck):
 class Coder(compressai.models.CompressionModel):
     """Base class for a coder, i.e. a model that perform entropy/MI coding."""
 
-    is_can_compress = True  # wether can compress
+    is_can_compress = False  # wether can compress
 
     def __init__(self):
         # directly call nn.Module because you don't want to call the constructor of `CompressionModel`
@@ -76,7 +76,7 @@ class Coder(compressai.models.CompressionModel):
         weights_init(self)
 
     # returning the loss is necessary to work with `EntropyBottleneck`
-    def forward(self, z, p_Zlx):
+    def forward(self, z, p_Zlx, x):
         """Performs the approx compression and returns loss.
 
         Parameters
@@ -86,14 +86,17 @@ class Coder(compressai.models.CompressionModel):
 
         p_Zlx : torch.Distribution
             Encoder which should be used to perform compression.
+
+        x : torch.Tensor shape=[batch_shape, *x_shape]
+            Inputs. Not usually needed.
         
         Returns
         -------
         z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
             Representation after compression.
 
-        coding_loss : torch.Tensor shape=[n_z_dim, batch_shape]
-            Loss that is incurred for the current representation
+        rates : torch.Tensor shape=[n_z_dim, batch_shape]
+            Theoretical number of bits (rate) needed for compression.
 
         coding_logs : dict
             Additional values to log.
@@ -151,8 +154,6 @@ class MICoder(Coder):
         Prior to use for compression
     """
 
-    is_can_compress = False  # wether can compress
-
     def __init__(self, q_Z):
         super().__init__()
         self.q_Z = q_Z
@@ -160,9 +161,10 @@ class MICoder(Coder):
     def update(self, force):
         pass
 
-    def forward(self, z, p_Zlx):
+    def forward(self, z, p_Zlx, x):
         # batch shape: [] ; event shape: [z_dim]
-        q_Z = self.q_Z()  # conditioning on nothing to get the prior
+        # some priors can depend on x (if performing marginalization)
+        q_Z = self.q_Z()
 
         # E_x[KL[p(Z|x) || q(z)]]. shape: [n_z_samples, batch_size]
         kl = kl_divergence(p_Zlx, q_Z, z_samples=z, is_reduce=False)
@@ -194,6 +196,9 @@ class HCoderFactorizedPrior(Coder):
     z_dim : int
         Size of the representation.
 
+    n_z_samples : int, optional
+        Number of z samples. Currently if > 1 cannot perform actual compress.
+
     kwargs:
         Additional arguments to `EntropyBottleneck`.
 
@@ -203,11 +208,12 @@ class HCoderFactorizedPrior(Coder):
     preprint arXiv:1802.01436 (2018).
     """
 
-    def __init__(self, z_dim, **kwargs):
+    def __init__(self, z_dim, n_z_samples=1, **kwargs):
         super().__init__()
         self.entropy_bottleneck = EntropyBottleneck(z_dim, **kwargs)
+        self.is_can_compress = n_z_samples == 1
 
-    def forward(self, z, _):
+    def forward(self, z, _, __):
         z_hat, q_z = self.entropy_bottleneck(z)
 
         # - log q(z). shape :  [n_z_dim, batch_shape]
@@ -264,6 +270,9 @@ class HCoderHyperprior(Coder):
         Whether to learn the mean of the gaussian for the side information (as in mean scale hyper
         prior of [2]).
 
+    n_z_samples : int, optional
+        Number of z samples. Currently if > 1 cannot perform actual compress.
+
     kwargs:
         Additional arguments to `EntropyBottleneck`.
 
@@ -275,10 +284,11 @@ class HCoderHyperprior(Coder):
     priors for learned image compression." Advances in Neural Information Processing Systems. 2018.
     """
 
-    def __init__(self, z_dim, factor_dim=5, is_pred_mean=True, **kwargs):
+    def __init__(self, z_dim, factor_dim=5, is_pred_mean=True, n_z_samples=1, **kwargs):
         super().__init__()
         side_z_dim = z_dim // factor_dim
 
+        self.is_can_compress = n_z_samples == 1
         self.is_pred_mean = is_pred_mean
         self.entropy_bottleneck = EntropyBottleneck(side_z_dim, **kwargs)
         self.gaussian_conditional = GaussianConditional(None)
@@ -298,7 +308,7 @@ class HCoderHyperprior(Coder):
             scales_hat, means_hat = gaussian_params, None
         return scales_hat, means_hat
 
-    def forward(self, z, _):
+    def forward(self, z, _, __):
 
         # shape: [n_z_dim, batch_shape, side_z_dim]
         side_z = self.h_a(z)
