@@ -50,7 +50,7 @@ class CompressionModule(pl.LightningModule):
 
         return get_coder(
             cfg_cod.name,
-            channels=self.hparams.encoder.z_dim,
+            z_dim=self.hparams.encoder.z_dim,
             p_ZlX=self.p_ZlX,
             **cfg_cod.kwargs,
         )
@@ -104,6 +104,7 @@ class CompressionModule(pl.LightningModule):
 
         loss, logs = self.loss(Y_hat, aux_target, coding_loss)
         logs.update(coding_logs)
+        logs.update(dict(zmin=z.min(), zmax=z.max(), zmean=z.mean()))  # DEV
 
         other = dict(y_hat=Y_hat.mean(0).detach(), z=z.detach())
         return loss, other, logs
@@ -133,7 +134,7 @@ class CompressionModule(pl.LightningModule):
             z = other["z"]
             z = einops.rearrange(z, "n_z b d -> (n_z b) d", n_z=z.size(0))
             z_compressed = self.coder.compress(z)
-            logs["n_bytes"] = mean([len(zi) for zi in z_compressed])
+            logs["n_bits"] = mean([len(zi) for zi in z_compressed]) * 8  # len in bytes
 
         self.log_dict({f"val_{k}": v for k, v in logs.items()})
         return loss

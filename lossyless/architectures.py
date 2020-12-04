@@ -5,7 +5,8 @@ from torch.nn.modules.conv import Conv2d
 import torchvision
 import math
 from typing import Iterable
-from .helpers import weights_init, batch_flatten, batch_unflatten, prod
+from compressai.layers import GDN
+from .helpers import weights_init, batch_flatten, batch_unflatten, prod, is_pow2
 
 __all__ = ["get_Architecture"]
 
@@ -204,7 +205,7 @@ class CNN(nn.Module):
     
     Notes
     -----
-    - Only works for 32*32 images. 
+    - Only works for images whose width and height are power of 2. 
     - If `in_shape` and `out_dim` are reversed (i.e. `in_shape` is int) then will transpose the CNN.
 
     Parameters
@@ -223,12 +224,21 @@ class CNN(nn.Module):
     norm_layer : callable or {"batchnorm", "identity"}
         Layer to return.
 
+    activation : {"relu","gdn"}, optional
+        Activation to use.
+
     kwargs :
         Additional arguments to `ConvBlock`.
     """
 
     def __init__(
-        self, in_shape, out_dim, hid_dim=32, norm_layer="batchnorm", **kwargs,
+        self,
+        in_shape,
+        out_dim,
+        hid_dim=32,
+        norm_layer="batchnorm",
+        activation="relu",
+        **kwargs,
     ):
 
         super().__init__()
@@ -243,13 +253,17 @@ class CNN(nn.Module):
         self.out_dim = out_dim
         self.hid_dim = hid_dim
         self.norm_layer = norm_layer
+        self.activation = activation
 
-        assert self.in_shape[1] == self.in_shape[2] == 32
+        assert is_pow2(self.in_shape[1]) and is_pow2(self.in_shape[2])
 
-        n_layers = 4  # image size will go 32,16,8,4,2 (cannot go to 1 due to stride)
+        n_layers = 4
+        # for size 32 will go 32,16,8,4,2
         # channels for hid_dim=32: 3,32,64,128,256
         channels = [self.in_shape[0]]
         channels += [self.hid_dim * (2 ** i) for i in range(0, n_layers)]
+        # by how much will increase after flattening
+        factor = (self.in_shape[1] * self.in_shape[2]) / ((2 ** n_layers) ** 2)
 
         if self.is_transpose:
             channels.reverse()
@@ -260,16 +274,15 @@ class CNN(nn.Module):
             layers += self.make_block(in_chan, out_chan, **kwargs)
             in_chan = out_chan
 
-        # mult by 4 because you stopped at 2*2 images
         if self.is_transpose:
             layers = [
-                nn.Linear(self.out_dim, channels[0] * 4),
+                nn.Linear(self.out_dim, channels[0] * factor),
                 nn.Unflatten(dim=-1, unflattened_size=(channels[0], 2, 2)),
             ] + layers
         else:
             layers += [
                 nn.Flatten(start_dim=1),
-                nn.Linear(channels[-1] * 4, self.out_dim),
+                nn.Linear(channels[-1] * factor, self.out_dim),
             ]
 
         self.model = nn.Sequential(*layers)
@@ -279,9 +292,10 @@ class CNN(nn.Module):
     def make_block(self, in_chan, out_chan, **kwargs):
         Normalization = get_norm_layer(self.norm_layer, 2)
         if self.is_transpose:
+            Activation = get_Activation(self.activation, inverse=True)
             return [
                 Normalization(in_chan),
-                nn.ReLU(),
+                Activation(in_chan),
                 nn.ConvTranspose2d(
                     in_chan,
                     out_chan,
@@ -293,12 +307,13 @@ class CNN(nn.Module):
                 ),
             ]
         else:
+            Activation = get_Activation(self.activation, inverse=True)
             return [
                 nn.Conv2d(
                     in_chan, out_chan, stride=2, padding=1, kernel_size=3, **kwargs
                 ),
                 Normalization(out_chan),
-                nn.ReLU(),
+                Activation(out_chan),
             ]
 
     def reset_parameters(self):
@@ -329,3 +344,22 @@ def get_norm_layer(norm_layer, dim=2):
     else:
         Norm = norm_layer
     return Norm
+
+
+def get_Activation(activation, inverse=False):
+    """Return an uninistantiated activation that takes the number of channels as inputs.
+
+    Parameters
+    ----------
+    activation : {"relu","gdn"}
+        Activation to use.
+
+    inverse : bool, optional
+        Whether using the activation in a transposed model.
+    """
+    if activation == "relu":
+        return lambda *args: nn.ReLU()
+    elif activation == "gdn":
+        return partial(GDN, inverse=inverse)
+    else:
+        raise ValueError(f"Uknown activation={activation}")

@@ -12,8 +12,9 @@ defaults:
 name: ???
 seed: 123
 is_debug: False # enter debug mode
+time: ${now:%Y-%m-%d_%H-%M-%S}
 
-long_name: ${name}/d_${data.name}/l_${loss.name}/e_${encoder.name}/d_${decoder.name}/c_${coder.name}/o_${optimizer.name}/dim_${encoder.z_dim}/z_${loss.n_z_samples}/b_${loss.kwargs.beta}/s_${seed}
+long_name: ${name}/d_${data.name}/l_${loss.name}/e_${encoder.name}/d_${decoder.name}/c_${coder.name}/o_${optimizer.name}/dim_${encoder.z_dim}/z_${loss.n_z_samples}/b_${loss.kwargs.beta}/s_${seed}/${time}
 
 paths:
   base_dir: ???
@@ -38,10 +39,10 @@ logger:
 
   csv:
     save_dir: ${paths.logs}/csv/${long_name}/
-    name: ${now:%Y-%m-%d_%H-%M-%S}
+    name: ${time}
 
   wandb:
-    name: ${now:%Y-%m-%d_%H-%M-%S}
+    name: ${time}
     project: lossyless
     group: ${name}
     offline: false # Run offline (data can be streamed later to wandb servers).
