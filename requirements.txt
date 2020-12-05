@@ -6,3 +6,4 @@ pytorch-lightning-bolts
 sklearn
 matplotlib
 seaborn
+git+git://github.com/InterDigitalInc/CompressAI.git#egg=compressai

@@ -1,0 +1,9 @@
+# @package _global_
+distortion:
+  name: nce
+  mode: contrastive
+  
+data:
+  kwargs:
+    dataset_kwargs:
+      additional_target: other_representative

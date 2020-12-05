@@ -114,8 +114,8 @@ class WandbReconstructImages(Callback):
     def on_train_epoch_end(self, trainer, pl_module, outputs):
 
         #! waiting for torch lighning #1243
-        x_hat = pl_module._save["y_hat"].float()
-        x = pl_module._save["target"].float()
+        x_hat = pl_module._save["rec_img"].float()
+        x = pl_module._save["real_img"].float()
         # undo normalization for plotting
         x_hat, x = undo_normalization(x_hat, x, pl_module.hparams.data.dataset)
         caption = f"ep: {trainer.current_epoch}"

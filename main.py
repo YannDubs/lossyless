@@ -39,8 +39,8 @@ def main(cfg):
     cfg.paths.base_dir = hydra.utils.get_original_cwd()
     create_folders(cfg.paths.base_dir, ["results", "logs", "pretrained"])
 
-    if cfg.coder.range_coder is not None:
-        compressai.set_entropy_coder(cfg.coder.range_coder)
+    if cfg.rate.range_coder is not None:
+        compressai.set_entropy_coder(cfg.rate.range_coder)
 
     # DATA
     datamodule = instantiate_datamodule(cfg.data)
@@ -54,7 +54,7 @@ def main(cfg):
     # some of the module compononets might needs data for initialization
     initialize_(compression_module, datamodule)
 
-    trainer = get_trainer(cfg, is_compressor=True, module=compression_module)
+    trainer = get_trainer(cfg, compression_module, is_compressor=True)
 
     logger.info("TRAIN / EVALUATE compression rate.")
     trainer.fit(compression_module, datamodule=datamodule)
@@ -68,7 +68,7 @@ def main(cfg):
     # evaluate_prediction(trainer, datamodule, cfg)
 
 
-def get_trainer(cfg, is_compressor, module=None):
+def get_trainer(cfg, module, is_compressor):
 
     callbacks = []
 
@@ -81,8 +81,8 @@ def get_trainer(cfg, is_compressor, module=None):
             else:
                 callbacks += [RgrsOnlineEvaluator(**cfg.callbacks.online_eval)]
 
-        out_shape = cfg.decoder.out_shape
-        is_img_out = (not isinstance(out_shape, int)) and (len(out_shape) == 3)
+        de = module.distortion_estimator
+        is_img_out = hasattr(de, "is_img_out") and de.is_img_out
         if is_img_out:
             if "wandb" in cfg.logger.loggers:
                 callbacks += [
@@ -133,14 +133,14 @@ def instantiate_datamodule(cfgd):
 
 
 def initialize_(compression_module, datamodule):
-    coder = compression_module.coder
-    if hasattr(coder, "q_Z") and isinstance(coder.q_Z, MarginalVamp):
+    rate_est = compression_module.rate_estimator
+    if hasattr(rate_est, "q_Z") and isinstance(rate_est.q_Z, MarginalVamp):
         # initialize vamprior such that pseudoinputs are some random images
         real_batch_size = datamodule.batch_size
-        datamodule.batch_size = coder.q_Z.n_pseudo
+        datamodule.batch_size = rate_est.q_Z.n_pseudo
         dataloader = datamodule.train_dataloader()
         X, _ = iter(dataloader).next()
-        coder.q_Z.set_pseudoinput_(X)
+        rate_est.q_Z.set_pseudoinput_(X)
         datamodule.batch_size = real_batch_size
 
 

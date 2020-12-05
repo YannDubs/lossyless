@@ -189,7 +189,6 @@ class MarginalDiagGaussian(nn.Module):
         return Independent(Normal(self.loc, self.scale), 1)
 
 
-# TODO
 class MarginalVamp(nn.Module):
     """
     Trained Gaussian using VampPrior [1], i.e. approximates the REAL marginal using
@@ -201,7 +200,7 @@ class MarginalVamp(nn.Module):
         Size event.
     
     p_ZlX : CondDist
-        Instantiated conditional distribution
+        Instantiated conditional distribution.
 
     is_train_mixture : bool, optional
         Whether to train the mixture model. This was not considered in [1],

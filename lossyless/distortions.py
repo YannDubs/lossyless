@@ -1,0 +1,196 @@
+import torch.nn as nn
+import torch
+import math
+from torch.nn import functional as F
+import einops
+from .helpers import BASE_LOG, undo_normalization
+from .architectures import get_Architecture
+
+__all__ = ["get_distortion_estimator"]
+
+
+def get_distortion_estimator(name, p_ZlX, **kwargs):
+    if name == "direct":
+        return DirectDistortion(**kwargs)
+
+    elif name == "contrastive":
+        return ContrastiveDistortion(p_ZlX=p_ZlX, **kwargs)
+
+    else:
+        raise ValueError(f"Unkown loss={name}.")
+
+
+class DirectDistortion(nn.Module):
+    """Computes the loss using an direct variational bound (i.e. trying to predict an other variable).
+    
+    Parameters
+    ----------
+    z_dim : int
+        Dimensionality of the representation.
+
+    y_shape : tuple of int or int
+        Shape of Y.
+
+    arch : str, optional
+        Architecture of the decoder. See `get_Architecture`.
+
+    arch_kwargs : dict, optional
+        Additional parameters to `get_Architecture`. 
+
+    dataset : str, optional
+        Name of the dataset, used to undo normalization.
+
+    is_classification : str, optional
+        Wether you should perform classification instead of regression. It is not used if 
+        `is_img_out=True`, in which cross entropy is used only if the image is black and white.
+    """
+
+    def __init__(
+        self,
+        z_dim,
+        y_shape,
+        arch=None,
+        arch_kwargs=dict(complexity=2),
+        dataset=None,
+        is_classification=True,
+    ):
+        super().__init__()
+        self.dataset = dataset
+        self.is_classification = is_classification
+        self.is_img_out = (not isinstance(y_shape, int)) and (len(y_shape) == 3)
+
+        if arch is None:
+            arch = "cnn" if self.is_img_out else "mlp"
+        Decoder = get_Architecture(arch, **arch_kwargs)
+        self.q_YlZ = Decoder(z_dim, y_shape)
+
+    def forward(self, z_hat, aux_target):
+        """Compute the distortion.
+        
+        Parameters
+        ----------
+        z_hat : Tensor shape=[n_z, batch_size, z_dim]
+            Reconstructed representations.
+
+        aux_target : Tensor shape=[batch_size, *aux_target.shape]
+            Targets to predict.
+
+        Returns
+        -------
+        distortions : torch.Tensor shape=[n_z_dim, batch_shape]
+            Estimates distortion.
+
+        logs : dict
+            Additional values to log.
+
+        other : dict
+            Additional values to return.
+        """
+        n_z = z_hat.size(0)
+
+        flat_z_hat = einops.rearrange(z_hat, "n_z b d -> (n_z b) d")
+
+        # shape: [n_z_samples*batch_size, *y_shape]
+        Y_hat = self.q_YlZ(flat_z_hat)  # Y_hat is suff statistic of q_{Y|z}
+
+        aux_target = einops.repeat(aux_target, "b ... -> (n_z b) ...", n_z=n_z)
+
+        # -log p(yi|zi). shape: [n_z_samples, batch_size, *y_shape]
+        #! all of the following should really be written in a single line using log_prob where P_{Y|Z}
+        # is an actual conditional distribution (categorical if cross entropy, and gaussian for mse),
+        # but this might be less understandable for usual deep learning + less numberically stable
+        if not self.is_img_out:
+            if self.is_classification:
+                neg_log_q_ylz = F.cross_entropy(Y_hat, aux_target, reduction="none")
+            else:
+                neg_log_q_ylz = F.mse_loss(Y_hat, aux_target, reduction="none")
+        else:
+            if aux_target.shape[-3] == 1:
+                # black white image => uses categorical distribution, with logits for stability
+                neg_log_q_ylz = F.binary_cross_entropy_with_logits(
+                    Y_hat, aux_target, reduction="none"
+                )
+            elif aux_target.shape[-3] == 3:
+                # this is just to ensure that images are in [0,1] and compared in unormalized space
+                # black white doesn't need because uses logits
+                Y_hat, aux_target = undo_normalization(Y_hat, aux_target, self.dataset)
+                # color image => uses gaussian distribution
+                neg_log_q_ylz = F.mse_loss(Y_hat, aux_target, reduction="none")
+            else:
+                raise ValueError(
+                    f"shape={aux_target.shape} does not seem to come from an image"
+                )
+
+        # -log p(y|z). shape: [n_z_samples, batch_size]
+        #! mathematically should take a sum (log prod proba -> sum log proba), but usually people take mean
+        neg_log_q_ylz = einops.reduce(
+            neg_log_q_ylz, "(z b) ... -> z b", reduction="sum", z=n_z
+        )
+
+        logs = dict(H_q_YlZ=neg_log_q_ylz.mean() / math.log(BASE_LOG))
+
+        other = dict()
+        if self.is_img_out:
+            # for image plotting
+            other["rec_img"] = Y_hat[0].detach().cpu()
+            other["real_img"] = aux_target[0].detach().cpu()
+
+        return neg_log_q_ylz, logs, other
+
+
+class ContrastiveDistortion(nn.Module):
+    """Computes the loss using contrastive variational bound (i.e. with positive and negative examples).
+    
+    Parameters
+    ----------
+    p_ZlX : CondDist
+        Instantiated conditional distribution. Used to represent all the other positives.
+
+    kwargs :
+        Additional arguments to Loss.
+    """
+
+    def __init__(self, p_ZlX, **kwargs):
+        super().__init__(**kwargs)
+        self.p_ZlX = p_ZlX
+
+    def get_distortion(self, Y_hat, targets):
+        n_z = Y_hat.size(0)
+
+        # -log p(yi|zi). shape: [n_z_samples, batch_size, *y_shape]
+        #! all of the following should really be written in a single line using log_prob where P_{Y|Z}
+        # is an actual conditional distribution (categorical if cross entropy, and gaussian for mse),
+        # but this might be less understandable for usual deep learning + less numberically stable
+        Y_hat = einops.rearrange(Y_hat, "z b ... -> (z b) ...")
+        targets = einops.repeat(targets, "b ... -> (z b) ...", z=n_z)
+        if not is_img_out:
+            if self.is_classification:
+                neg_log_q_ylz = F.cross_entropy(Y_hat, targets, reduction="none")
+            else:
+                neg_log_q_ylz = F.mse_loss(Y_hat, targets, reduction="none")
+        else:
+            if targets.shape[-3] == 1:
+                # black white image => uses categorical distribution, with logits for stability
+                neg_log_q_ylz = F.binary_cross_entropy_with_logits(
+                    Y_hat, targets, reduction="none"
+                )
+            elif targets.shape[-3] == 3:
+                # this is just to ensure that images are in [0,1] and compared in unormalized space
+                # black white doesn't need because uses logits
+                Y_hat, targets = undo_normalization(Y_hat, targets, self.dataset)
+                # color image => uses gaussian distribution
+                neg_log_q_ylz = F.mse_loss(Y_hat, targets, reduction="none")
+            else:
+                raise ValueError(
+                    f"shape={targets.shape} does not seem to come from an image"
+                )
+
+        # -log p(y|z). shape: [n_z_samples, batch_size]
+        #! mathematically should take a sum (log prod proba -> sum log proba), but usually people take mean
+        neg_log_q_ylz = einops.reduce(
+            neg_log_q_ylz, "(z b) ... -> z b", reduction="sum", z=n_z
+        )
+
+        logs = dict(H_q_YlZ=neg_log_q_ylz.mean() / math.log(BASE_LOG))
+
+        return neg_log_q_ylz, logs

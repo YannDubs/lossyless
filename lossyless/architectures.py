@@ -32,8 +32,6 @@ def get_Architecture(mode, complexity=2, **kwargs):
     """
     if mode == "mlp":
         # width 8,32,128,512,2048
-        return partial(MLP, hid_dim=8 * (4 ** (complexity)), **kwargs)
-    elif mode == "flattenmlp":
         return partial(FlattenMLP, hid_dim=8 * (4 ** (complexity)), **kwargs)
     elif mode == "resnet":
         base = ["resnet18", "resnet34", "resnet50", "resnet101", "resnet150"]

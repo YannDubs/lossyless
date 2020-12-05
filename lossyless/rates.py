@@ -4,33 +4,35 @@ import compressai
 from compressai.entropy_models import GaussianConditional, EntropyModel
 from compressai.models.utils import update_registered_buffers
 import einops
-from .helpers import atleast_ndim, BASE_LOG, kl_divergence, weights_init
+from .helpers import atleast_ndim, BASE_LOG, kl_divergence, weights_init, mean
 from .distributions import get_marginalDist
 from .architectures import MLP
 
 
+__all__ = ["get_rate_estimator"]
+
 ### HELPERS ###
-def get_coder(name, z_dim, p_ZlX, n_z_samples, **kwargs):
+def get_rate_estimator(name, z_dim, p_ZlX, n_z_samples, **kwargs):
     """Return the correct entropy coder."""
     if "H_" in name:
         if "fact" in name:
-            return HCoderFactorizedPrior(z_dim, n_z_samples=n_z_samples, **kwargs)
+            return HRateFactorizedPrior(z_dim, n_z_samples=n_z_samples, **kwargs)
         elif "hyper" in name:
-            return HCoderHyperprior(z_dim, n_z_samples=n_z_samples, **kwargs)
+            return HRateHyperprior(z_dim, n_z_samples=n_z_samples, **kwargs)
 
     elif "CMI_" in name:
         q_Z = get_marginalDist(
             kwargs.pop("prior_fam"), p_ZlX, **(kwargs.pop("prior_kwargs"))
         )
-        return CMICoder(q_Z, p_ZlX, **kwargs)
+        return CMIRate(q_Z, p_ZlX, **kwargs)
 
     elif "MI_" in name:
         q_Z = get_marginalDist(
             kwargs.pop("prior_fam"), p_ZlX, **(kwargs.pop("prior_kwargs"))
         )
-        return MICoder(q_Z, **kwargs)
+        return MIRate(q_Z, **kwargs)
 
-    raise ValueError(f"Unkown coder={name}.")
+    raise ValueError(f"Unkown rate estimator={name}.")
 
 
 # only difference is that works with flatten z (it needs 4D tensor not 2d)
@@ -53,22 +55,13 @@ class EntropyBottleneck(compressai.entropy_models.EntropyBottleneck):
         return super().compress(z)
 
     def decompress(self, z_strings):
-        # the following comes directly from compressai.EntropyBottleneck.decompress but ensures
-        # that can also work with multiple images (i.e. batch size > 1)
-        #! waiting for compressai #13 then replace by `z_hat = super().decompress(z_strings, [1,1])`
-        batch_size = len(z_strings)
-        output_size = (batch_size, self._quantized_cdf.size(0), 1, 1)
-        indexes = self._build_indexes(output_size)
-        medians = self._medians().detach()
-        medians = einops.repeat(medians, "c e1 e2 -> b c e1 e2", b=batch_size)
-        z_hat = EntropyModel.decompress(self, z_strings, indexes, medians)
-
+        z_hat = super().decompress(z_strings, [1, 1])
         z_hat = einops.rearrange(z_hat, "b c e1 e2 -> b (c e1 e2)", e1=1, e2=1)
         return z_hat
 
 
 ### BASE ###
-class Coder(compressai.models.CompressionModel):
+class RateEstimator(compressai.models.CompressionModel):
     """Base class for a coder, i.e. a model that perform entropy/MI coding."""
 
     is_can_compress = False  # wether can compress
@@ -103,8 +96,11 @@ class Coder(compressai.models.CompressionModel):
         rates : torch.Tensor shape=[n_z_dim, batch_shape]
             Theoretical number of bits (rate) needed for compression.
 
-        coding_logs : dict
+        logs : dict
             Additional values to log.
+
+        other : dict
+            Additional values to return.
         """
         raise NotImplementedError()
 
@@ -140,11 +136,25 @@ class Coder(compressai.models.CompressionModel):
         """
         raise NotImplementedError()
 
+    def real_rate(self, z):
+        """Compute actual number of bits (rate), necessary for encoding z.
+        
+        Parameters
+        ----------
+        z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
+            Representation to compress. Note that there's n_z_dim!
+        """
+        z = einops.rearrange(z, "n_z b d -> (n_z b) d", n_z=z.size(0))
+        all_strings = self.compress(z)
+        # sum over all latents (for hierachical). mean over batch and n_z.
+        n_bytes = sum(mean([len(s) for s in strings]) for strings in all_strings)
+        return n_bytes * 8  # bits
+
 
 ### MUTUAL INFORMATION CODERS. Min I[X,Z] ###
 
 
-class MICoder(Coder):
+class MIRate(RateEstimator):
     """
     Model that codes using the (approximate) mutual information I[Z,X]. 
 
@@ -182,14 +192,15 @@ class MICoder(Coder):
         )
         # upper bound on H[Z] (cross entropy)
         logs["H_q_Z"] = logs["I_q_ZX"] + logs["H_ZlX"]
+        other = dict()
 
-        return z_hat, kl, logs
+        return z_hat, kl, logs, other
 
 
 ### CONDITIONAL MUTUAL INFORMATION CODERS. Min I[X,Z|M] where M is some variable (e.g. M(X) or Y) ###
 
 #! probably will not be used
-class CMICoder(Coder):
+class CMIRate(RateEstimator):
     """
     Model that codes using the (approximate) mutual information I[Z,X] (like MICoder) but during training
     will optimize the Conditional mutual information Min I[X,Z|T].
@@ -245,8 +256,9 @@ class CMICoder(Coder):
         )
         # upper bound on H[Z] (cross entropy)
         logs["H_q_Z"] = logs["I_q_ZX"] + logs["H_ZlX"]
+        other = dict()
 
-        return z_hat, I_q_ZX, logs
+        return z_hat, I_q_ZX, logs, other
 
 
 ### ENTROPY CODERS. Min I[X,Z] ###
@@ -255,7 +267,7 @@ class CMICoder(Coder):
 # a little messy for reshaping as compressai assumes 4D image as inputs (but we compress 2D vectors)
 
 
-class HCoderFactorizedPrior(Coder):
+class HRateFactorizedPrior(RateEstimator):
     """
     Model that codes using the (approximate) entropy H[Z]. Factorized prior in [1].
 
@@ -289,7 +301,12 @@ class HCoderFactorizedPrior(Coder):
 
         logs = dict(H_q_Z=neg_log_q_z.mean() / math.log(BASE_LOG), H_ZlX=0)
 
-        return z_hat, neg_log_q_z, logs
+        if not self.training:
+            logs["n_bits"] = self.real_rate(z)
+
+        other = dict()
+
+        return z_hat, neg_log_q_z, logs, other
 
     def compress(self, z):
         # list for generality when hyperprior
@@ -322,7 +339,7 @@ def get_scale_table(min=0.11, max=256, levels=64):
     return torch.exp(torch.linspace(math.log(min), math.log(max), levels))
 
 
-class HCoderHyperprior(Coder):
+class HRateHyperprior(RateEstimator):
     """
     Model that codes using the (approximate) entropy H[Z]. Scale hyperprior in [1].
 
@@ -406,7 +423,12 @@ class HCoderHyperprior(Coder):
             H_ZlX=0,
         )
 
-        return z_hat, neg_log_q_zs, logs
+        if not self.training:
+            logs["n_bits"] = self.real_rate(z)
+
+        other = dict()
+
+        return z_hat, neg_log_q_zs, logs, other
 
     def get_indexes_means_hat(self, side_z_strings):
 

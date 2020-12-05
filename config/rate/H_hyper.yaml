@@ -1,5 +1,5 @@
 # @package _global_
-coder:
+rate:
   name: H_hyper
   kwargs:
     init_scale: 1 # input should be at initialization in [-init_scale, init_scale]. Larger might create overhead. You can use something like 10 for large images but smaller for smaller 

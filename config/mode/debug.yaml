@@ -8,6 +8,13 @@ trainer:
   overfit_batches: 0.05 # use 0.01 to make sure you can overfit 1% of training data => training works
   weights_summary: top # full to print show the entire model 
   profiler: simple # use `simple` or `"advanced"` to find bottleneck
+  max_epochs: 5 
+
+
+logger:
+  wandb:
+    tags: debug
+    anonymous: true
 
 callbacks:
   gpu_stats:

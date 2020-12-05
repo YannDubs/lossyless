@@ -4,9 +4,8 @@ defaults:
   
   - data: toyMiniFashionMnist
   - encoder: cnn
-  - decoder: mlp
-  - loss: vae
-  - coder: MI_unitgaussian
+  - distortion: vae
+  - rate: MI_unitgaussian
 
 ### GENERAL ###
 name: ???
@@ -14,7 +13,7 @@ seed: 123
 is_debug: False # enter debug mode
 time: ${now:%Y-%m-%d_%H-%M-%S}
 
-long_name: ${name}/d_${data.name}/l_${loss.name}/e_${encoder.name}/d_${decoder.name}/c_${coder.name}/o_${optimizer.name}/dim_${encoder.z_dim}/z_${loss.n_z_samples}/b_${loss.kwargs.beta}/s_${seed}/${time}
+long_name: ${name}/data_${data.name}/d_${distortion.name}/e_${encoder.name}/r_${rate.name}/o_${optimizer.name}/dim_${encoder.z_dim}/z_${loss.n_z_samples}/b_${loss.beta}/s_${seed}/${time}
 
 paths:
   base_dir: ???
@@ -28,8 +27,8 @@ optimizer: # might need to be a group at some point
   lr: 1e-3
   scheduling_factor: 100 # by how much to reduce lr during training
 
-# only used if coder needs an optimizer
-optimizer_coder:
+# only used if coder needs an optimizer (for coding)
+optimizer_coder :
   name: adam # not used yet but can change if needed
   lr: 1e-3
   scheduling_factor: 1 # by how much to reduce lr during training
@@ -110,22 +109,21 @@ encoder:
   fam: diaggaussian
   fam_kwargs: {}
 
-decoder:
+distortion:
   name: ???
-  arch: ???
-  out_shape: ${data.target_aux_shape}
+  mode: ???
+  factor_beta : 1 # factor that multiplies beta 
   arch_kwargs:
     complexity: ???
 
-coder:
+rate:
   name: ???
   range_coder: null
+  factor_beta : 1 # factor that multiplies beta 
   kwargs: {}
 
 loss:
-  name: ???
   n_z_samples: 1 # number of samples tu use inside log (like IWAE)
-  kwargs: 
-    beta: 1
+  beta: 1
 
 ### HYDRA ###

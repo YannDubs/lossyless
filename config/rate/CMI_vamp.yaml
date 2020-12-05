@@ -1,5 +1,5 @@
 # @package _global_
-coder:
+rate:
   name: CMI_vamp
   kwargs:
     prior_fam: vamp
