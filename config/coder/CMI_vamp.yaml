@@ -1,0 +1,12 @@
+# @package _global_
+coder:
+  name: CMI_vamp
+  kwargs:
+    prior_fam: vamp
+    prior_kwargs: 
+      n_pseudo: 64
+
+data:
+  kwargs:
+    dataset_kwargs:
+      additional_target2: "representative"

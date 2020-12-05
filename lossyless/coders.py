@@ -18,6 +18,12 @@ def get_coder(name, z_dim, p_ZlX, n_z_samples, **kwargs):
         elif "hyper" in name:
             return HCoderHyperprior(z_dim, n_z_samples=n_z_samples, **kwargs)
 
+    elif "CMI_" in name:
+        q_Z = get_marginalDist(
+            kwargs.pop("prior_fam"), p_ZlX, **(kwargs.pop("prior_kwargs"))
+        )
+        return CMICoder(q_Z, p_ZlX, **kwargs)
+
     elif "MI_" in name:
         q_Z = get_marginalDist(
             kwargs.pop("prior_fam"), p_ZlX, **(kwargs.pop("prior_kwargs"))
@@ -70,13 +76,12 @@ class Coder(compressai.models.CompressionModel):
     def __init__(self):
         # directly call nn.Module because you don't want to call the constructor of `CompressionModel`
         torch.nn.Module.__init__(self)
-        self.reset_parameters()
 
     def reset_parameters(self):
         weights_init(self)
 
     # returning the loss is necessary to work with `EntropyBottleneck`
-    def forward(self, z, p_Zlx, x):
+    def forward(self, z, p_Zlx, tocoder):
         """Performs the approx compression and returns loss.
 
         Parameters
@@ -84,11 +89,11 @@ class Coder(compressai.models.CompressionModel):
         z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
             Representation to compress.
 
-        p_Zlx : torch.Distribution
+        p_Zlx : torch.Distribution batch_shape=[batch_size] event_shape=[z_dim]
             Encoder which should be used to perform compression.
 
-        x : torch.Tensor shape=[batch_shape, *x_shape]
-            Inputs. Not usually needed.
+        tocoder : torch.Tensor shape=[batch_shape, *tocoder_shape]
+            Additional input to the coder.
         
         Returns
         -------
@@ -136,7 +141,7 @@ class Coder(compressai.models.CompressionModel):
         raise NotImplementedError()
 
 
-### MUTUAL INFORMATION CODERS ###
+### MUTUAL INFORMATION CODERS. Min I[X,Z] ###
 
 
 class MICoder(Coder):
@@ -157,16 +162,16 @@ class MICoder(Coder):
     def __init__(self, q_Z):
         super().__init__()
         self.q_Z = q_Z
+        self.reset_parameters()
 
     def update(self, force):
         pass
 
-    def forward(self, z, p_Zlx, x):
+    def forward(self, z, p_Zlx, _):
         # batch shape: [] ; event shape: [z_dim]
-        # some priors can depend on x (if performing marginalization)
         q_Z = self.q_Z()
 
-        # E_x[KL[p(Z|x) || q(z)]]. shape: [n_z_samples, batch_size]
+        # E_x[KL[p(Z|x) || q(Z)]]. shape: [n_z_samples, batch_size]
         kl = kl_divergence(p_Zlx, q_Z, z_samples=z, is_reduce=False)
 
         z_hat = z
@@ -181,7 +186,70 @@ class MICoder(Coder):
         return z_hat, kl, logs
 
 
-### ENTROPY CODERS ###
+### CONDITIONAL MUTUAL INFORMATION CODERS. Min I[X,Z|M] where M is some variable (e.g. M(X) or Y) ###
+
+#! probably will not be used
+class CMICoder(Coder):
+    """
+    Model that codes using the (approximate) mutual information I[Z,X] (like MICoder) but during training
+    will optimize the Conditional mutual information Min I[X,Z|T].
+
+    Parameters
+    ----------
+    q_Z : nn.Module
+        Prior to use for compression. Has to be a prior that can be trained (not 01 gaussian).
+
+    q_ZlX : CondDist
+        Instantiated conditional distribution. This could theoretically be any conditional distribution, 
+        but we share it with p_ZlX. Note that this is not considered as param for this module as it's updated 
+        upstream.
+    """
+
+    def __init__(self, q_Z, q_ZlX):
+        super().__init__()
+        self.q_Z = q_Z
+        self.q_ZlX = q_ZlX
+        self.reset_parameters()
+
+    def update(self, force):
+        pass
+
+    def reset_parameters(self):
+        self.q_Z.reset_parameters()
+        # make sure you don't reinitialize self.p_ZlX
+
+    def forward(self, z, p_Zlx, M):
+
+        # batch shape: [] ; event shape: [z_dim]
+        q_Z = self.q_Z()
+
+        # batch shape: [batch_size] ; event shape: [z_dim]
+        q_Zlm = self.q_ZlX(M)
+
+        # E_x[KL[p(Z|x) || q(Z|m)]]. shape: [n_z_samples, batch_size]
+        I_q_ZXlm = kl_divergence(p_Zlx, q_Zlm, z_samples=z, is_reduce=False)
+
+        # E_x[KL_{Z|x}[p(Z|m) || q(Z)]]. shape: [n_z_samples, batch_size]
+        # make sure that you don't backprop through p(Z|m) now (i.e. only training the prior to fit conditional)
+        kl = kl_divergence(q_Zlm.detach(), q_Z, z_samples=z, is_reduce=False)
+
+        # E_x[KL[p(Z|x) || q(Z)]]. But we computed in 2 KL terms, so that only training the prior in one term.
+        I_q_ZX = I_q_ZXlm + kl
+
+        z_hat = z
+
+        logs = dict(
+            I_q_ZXlm=I_q_ZXlm.mean() / math.log(BASE_LOG),
+            I_q_ZX=I_q_ZXlm.mean() / math.log(BASE_LOG),
+            H_ZlX=p_Zlx.entropy().mean(0) / math.log(BASE_LOG),
+        )
+        # upper bound on H[Z] (cross entropy)
+        logs["H_q_Z"] = logs["I_q_ZX"] + logs["H_ZlX"]
+
+        return z_hat, I_q_ZX, logs
+
+
+### ENTROPY CODERS. Min I[X,Z] ###
 # all of the following assume that `p_Zlx` should be deterministic here (i.e. Delta distribution).
 # minor differences from and credits to them https://github.com/InterDigitalInc/CompressAI/blob/edd62b822186d81903c4a53c3f9b0806e9d7f388/compressai/models/priors.py
 # a little messy for reshaping as compressai assumes 4D image as inputs (but we compress 2D vectors)
