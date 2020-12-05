@@ -81,7 +81,9 @@ def get_trainer(cfg, is_compressor, module=None):
             else:
                 callbacks += [RgrsOnlineEvaluator(**cfg.callbacks.online_eval)]
 
-        if cfg.loss.kwargs.is_img_out:
+        out_shape = cfg.decoder.out_shape
+        is_img_out = (not isinstance(out_shape, int)) and (len(out_shape) == 3)
+        if is_img_out:
             if "wandb" in cfg.logger.loggers:
                 callbacks += [
                     WandbLatentDimInterpolator(cfg.encoder.z_dim),
@@ -121,15 +123,12 @@ def instantiate_datamodule(cfgd):
     datamodule = get_datamodule(cfgd.dataset)(**cfgd.kwargs)
     datamodule.prepare_data()
     datamodule.setup()
-    cfgd.noaug_length = datamodule.noaug_length
+    cfgd.is_classification_aux = datamodule.is_classification_aux
     cfgd.length = len(datamodule.dataset_train)
     cfgd.shape = datamodule.shape
-    if hasattr(datamodule, "num_classes"):
-        cfgd.y_dim_pred = datamodule.num_classes
-        cfgd.is_classification = True
-    else:
-        cfgd.y_dim_pred = datamodule.y_dim
-        cfgd.is_classification = False
+    cfgd.is_classification = datamodule.is_classification
+    cfgd.target_shape = datamodule.target_shape
+    cfgd.target_aux_shape = datamodule.target_aux_shape
     return datamodule
 
 

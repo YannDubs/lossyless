@@ -30,7 +30,7 @@ class ClfOnlineEvaluator(ssl_online.SSLOnlineEvaluator):
         super().__init__(*args, num_classes=y_dim_pred, **kwargs)
 
     def to_device(self, batch, device):
-        x, (y, _) = batch  # only return the real label
+        x, (y, _, _) = batch  # only return the real label
         batch = [x], y  # x assumes to be a list
         return super().to_device(batch, device)
 

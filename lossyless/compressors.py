@@ -85,9 +85,8 @@ class CompressionModule(pl.LightningModule):
         return z
 
     def step(self, batch):
-
         cfgl = self.hparams.loss
-        x, (_, aux_target) = batch
+        x, (_, aux_target, tocoder) = batch
         n_z = cfgl.n_z_samples
 
         # batch shape: [batch_size] ; event shape: [z_dim]
@@ -97,7 +96,7 @@ class CompressionModule(pl.LightningModule):
         z = p_Zlx.rsample([n_z])
 
         # z_hat shape: [n_z, batch_size, z_dim]
-        z_hat, rates, coding_logs = self.coder(z, p_Zlx, x)
+        z_hat, rates, coding_logs = self.coder(z, p_Zlx, tocoder)
         flat_z_hat = einops.rearrange(z_hat, "n_z b d -> (n_z b) d")
 
         # Y_hat. shape: [n_z_samples, batch_size, *y_shape]
@@ -149,7 +148,7 @@ class CompressionModule(pl.LightningModule):
         """Make sure that you can actually use the coder during eval."""
         self.coder.update(force=True)
 
-    def parameters(self):
+    def yield_parameters(self):
         """Returns an iterator over the model parameters."""
         for m in self.children():
             # slightly different than default because calling .parameters() on each
@@ -157,8 +156,14 @@ class CompressionModule(pl.LightningModule):
             for p in m.parameters():
                 yield p
 
+    def parameters(self):
+        """Returns an iterator over the model parameters."""
+        # return a set to make sure  not counting parameters twice (e.g. P_ZlX can be in multiple child)
+        return set(self.yield_parameters())
+
     def configure_optimizers(self):
-        aux_parameters = list(self.coder.aux_parameters())
+
+        aux_parameters = set(self.coder.aux_parameters())
         is_optimize_coder = len(aux_parameters) > 0
 
         # model

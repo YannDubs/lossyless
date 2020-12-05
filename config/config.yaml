@@ -59,7 +59,7 @@ callbacks:
     drop_p: 0
     hidden_dim: 1024
     z_dim: ${encoder.z_dim}
-    y_dim_pred: ${data.y_dim_pred}
+    y_dim_pred: ${data.target_shape}
 
 
 predictor:
@@ -91,11 +91,12 @@ trainer:
 data:
   name: ???
   dataset: ???
-  noaug_length: ???
   length: ???
   shape: ???
-  y_dim_pred: ???
-  is_classification: ??? 
+  target_shape: ???
+  target_aux_shape: ???
+  is_classification_aux: ??? 
+  is_classification: ???
 
   kwargs:
     data_dir: ${paths.data}
@@ -112,6 +113,7 @@ encoder:
 decoder:
   name: ???
   arch: ???
+  out_shape: ${data.target_aux_shape}
   arch_kwargs:
     complexity: ???
 
@@ -125,6 +127,5 @@ loss:
   n_z_samples: 1 # number of samples tu use inside log (like IWAE)
   kwargs: 
     beta: 1
-    is_img_out: False # whether predicting an image
 
 ### HYDRA ###

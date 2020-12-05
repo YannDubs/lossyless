@@ -1,18 +1,12 @@
 # @package _global_
-# uses global so that can change dataset
-
 loss:
   name: vae
   mode: direct
-
-  kwargs:
-    is_img_out: True 
+  kwargs: 
+      is_classification: ${data.is_classification_aux}
 
 data:
   kwargs:
     dataset_kwargs:
-      additional_target: "aug_img"
+      additional_target: "input"
       n_inputs: 1
-
-decoder:
-  out_shape: ${data.shape}

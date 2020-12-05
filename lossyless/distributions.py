@@ -39,8 +39,6 @@ class CondDist(nn.Module):
 
         if family == "diaggaussian":
             self.Family = DiagGaussian
-        elif family == "uniform":
-            self.Family = Uniform
         elif family == "deterministic":
             self.Family = Deterministic
         else:
@@ -94,7 +92,17 @@ class Distributions:
         suff_params = einops.rearrange(
             concat_suff_params, "b (z p) -> b z p", p=cls.n_param
         ).unbind(-1)
+        suff_params = cls.preprocess_suff_params(*suff_params)
         return cls(*suff_params, **kwargs)
+
+    @classmethod
+    def preprocess_suff_params(cls, *suff_params):
+        """Preprocesses parameters outputed from network (usually to satisfy some constraints)."""
+        return suff_params
+
+    def detach(self):
+        """Detaches all the parameters."""
+        raise NotImplementedError()
 
 
 class DiagGaussian(Distributions, Independent):
@@ -102,10 +110,18 @@ class DiagGaussian(Distributions, Independent):
 
     n_param = 2
 
-    def __init__(self, diag_loc, diag_log_var):
-
-        diag_scale = torch.exp(0.5 * diag_log_var)
+    def __init__(self, diag_loc, diag_scale):
         super().__init__(Normal(diag_loc, diag_scale), 1)
+
+    @classmethod
+    def preprocess_suff_params(cls, diag_loc, diag_log_var):
+        diag_scale = torch.exp(0.5 * diag_log_var)
+        return diag_loc, diag_scale
+
+    def detach(self):
+        loc = self.base_dist.loc.detach()
+        scale = self.base_dist.scale.detach()
+        return DiagGaussian(loc, scale)
 
 
 class Deterministic(Distributions, Independent):
@@ -115,6 +131,10 @@ class Deterministic(Distributions, Independent):
 
     def __init__(self, param):
         super().__init__(Delta(param), 1)
+
+    def detach(self):
+        loc = self.base_dist.loc.detach()
+        return Deterministic(loc)
 
 
 ### MARGINAL DISTRIBUTIONS ###
@@ -130,8 +150,6 @@ def get_marginalDist(family, cond_dist, **kwargs):
     """
     if family == "unitgaussian":
         marginal = MarginalUnitGaussian(cond_dist.out_dim, **kwargs)
-    elif family == "uniform":
-        marginal = MarginalUniform(cond_dist.out_dim, **kwargs)
     elif family == "vamp":
         marginal = MarginalVamp(cond_dist.out_dim, cond_dist, **kwargs)
     else:
@@ -225,11 +243,3 @@ class MarginalVamp(nn.Module):
         p_Z = MixtureSameFamily(mixtures, p_Zlu)
 
         return p_Z
-
-
-# TODO
-# class MarginalFlow(nn.Module):
-
-# TODO
-# MarginalUniform
-

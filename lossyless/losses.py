@@ -67,8 +67,6 @@ class DirectLoss(Loss):
     
     Parameters
     ----------
-    is_img_out : bool, optional
-        Whether the model is predicting an image.
 
     dataset : str, optional
         Name of the dataset, used to undo normalization.
@@ -81,16 +79,14 @@ class DirectLoss(Loss):
         Additional arguments 
     """
 
-    def __init__(
-        self, is_img_out=False, dataset=None, is_classification=True, **kwargs
-    ):
+    def __init__(self, dataset=None, is_classification=True, **kwargs):
         super().__init__(**kwargs)
-        self.is_img_out = is_img_out
         self.dataset = dataset
         self.is_classification = is_classification
 
     def get_distortion(self, Y_hat, targets):
         n_z = Y_hat.size(0)
+        is_img_out = targets.ndim == 4
 
         # -log p(yi|zi). shape: [n_z_samples, batch_size, *y_shape]
         #! all of the following should really be written in a single line using log_prob where P_{Y|Z}
@@ -98,7 +94,7 @@ class DirectLoss(Loss):
         # but this might be less understandable for usual deep learning + less numberically stable
         Y_hat = einops.rearrange(Y_hat, "z b ... -> (z b) ...")
         targets = einops.repeat(targets, "b ... -> (z b) ...", z=n_z)
-        if not self.is_img_out:
+        if not is_img_out:
             if self.is_classification:
                 neg_log_q_ylz = F.cross_entropy(Y_hat, targets, reduction="none")
             else:

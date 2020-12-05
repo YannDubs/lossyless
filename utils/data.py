@@ -92,11 +92,15 @@ class LossylessDatasetToyImg:
 
     Parameters
     -----------
-    additional_target : {"aug_img", "img", "new_img", "aug_idx", "idx", "target", None}, optional
-        Additional target to append to the target. `"aug_img"` is the input image (i.e. augmented),
-        `"img"` is the base image (orbit representative). `"new_img"` is another random image on the same
-        orbit. `"aug_idx"` is the actual index. `"idx"` is the base index (maximal invariant). "target"
-        uses agin the target (i.e. duplicate).
+    additional_target : {"input", "representative", "other_representative", "idx", "max_inv", "target", None}, optional
+        Additional target to append to the target. `"input"` is the input image (i.e. augmented),
+        `"representative"` is the base image (orbit representative). `"other_representative"` is 
+        another random image on the same orbit. `"idx"` is the actual index. `"max_inv"` is the 
+        base index (maximal invariant). "target" uses agin the target (i.e. duplicate).
+
+    additional_target : {"input", "representative", "other_representative", "idx", "max_inv", "target", None}, optional
+        Like additional_target. I.e. total number of targets will be 3. This will be used as in 
+        input to the coder. 
 
     n_inputs : int, optional
         Number of images (from same orbit) for each example in a batch.
@@ -120,10 +124,16 @@ class LossylessDatasetToyImg:
         Pseudo random seed.
     """
 
+    # should assign in children
+    is_classification = None
+    shape = None
+    target_shape = None
+
     def __init__(
         self,
         *args,
         additional_target=None,
+        additional_target2=None,
         n_inputs=1,
         n_per_target=None,
         targets_drop=[],
@@ -135,6 +145,7 @@ class LossylessDatasetToyImg:
         super().__init__(*args, **kwargs)
 
         self.additional_target = additional_target
+        self.additional_target2 = additional_target2
         self.n_inputs = n_inputs
         self.n_per_target = n_per_target
         self.targets_drop = targets_drop
@@ -153,33 +164,40 @@ class LossylessDatasetToyImg:
             self.augment_luminosity_()  # dataset is increased to contain luminosity
         self.aug_factor = len(self) // self.noaug_length
 
+    def toadd_target(self, additional_target, index, img, target):
+        notaugmented_idx = index % self.noaug_length
+
+        if additional_target is None:
+            to_add = [[]]  # just so that all the code is the same
+        elif additional_target == "input":
+            to_add = [img]
+        elif additional_target == "representative":
+            notaug_img, _ = super().__getitem__(notaugmented_idx)
+            to_add = [notaug_img]
+        elif additional_target == "other_representative":
+            k_jump_orbit = random.randint(1, self.aug_factor - 1)
+            sampled_idx = index + self.noaug_length * k_jump_orbit
+            new_img, _ = super().__getitem__(sampled_idx)
+            to_add = [new_img]
+        elif additional_target == "idx":
+            to_add = [index]
+        elif additional_target == "max_inv":
+            to_add = [notaugmented_idx]
+        elif additional_target == "target":
+            # duplicate but makes code simpler
+            to_add = [target]
+        else:
+            raise ValueError(f"Unkown additional_target={additional_target}")
+
+        return to_add
+
     def __getitem__(self, index):
         img, target = super().__getitem__(index)
 
         targets = [target]
 
-        notaugmented_idx = index % self.noaug_length
-        if self.additional_target is None:
-            targets += [None]  # just so that all the code is the same
-        elif self.additional_target == "aug_img":
-            targets += [img]
-        elif self.additional_target == "img":
-            notaug_img, _ = super().__getitem__(notaugmented_idx)
-            targets += [notaug_img]
-        elif self.additional_target == "new_img":
-            k_jump_orbit = random.randint(1, self.aug_factor - 1)
-            sampled_idx = index + self.noaug_length * k_jump_orbit
-            new_img, _ = super().__getitem__(sampled_idx)
-            targets += [new_img]
-        elif self.additional_target == "aug_idx":
-            targets += [index]
-        elif self.additional_target == "idx":
-            targets += [notaugmented_idx]
-        elif self.additional_target == "target":
-            # duplicate but makes code simpler
-            targets += [target]
-        else:
-            raise ValueError(f"Unkown self.additional_target={self.additional_target}")
+        targets += self.toadd_target(self.additional_target, index, img, target)
+        targets += self.toadd_target(self.additional_target2, index, img, target)
 
         # if self.n_inputs > 1:
         #     add_imgs = []
@@ -199,6 +217,13 @@ class LossylessDatasetToyImg:
             "G_rot": math.log(self.n_rotations, base=BASE_LOG),
             "G_lum": math.log(self.n_luminosity, base=BASE_LOG),
             "M": math.log(len(self.noaug_length), base=BASE_LOG),
+        }
+
+    @property
+    def aux_infos(self):
+        return {
+            "idx": (True, len(self)),
+            "max_inv": (True, self.noaug_length),
         }
 
     def augment_rotations_(self):
@@ -328,7 +353,7 @@ class LossylessDataModule(LightningDataModule):
         is_val_on_test=False,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, dims=self._DATASET.shape, **kwargs)
         self.data_dir = data_dir
         self.val_split = val_split
         self.num_workers = num_workers
@@ -338,15 +363,30 @@ class LossylessDataModule(LightningDataModule):
 
         self.dataset_kwargs = dataset_kwargs
         self.Dataset = self._DATASET
-        self.dim = self.Dataset.shape
 
     @property
     def shape(self):
-        return self.dim
+        return self.dims
 
-    @property
-    def num_classes(self):
-        return self.Dataset.num_classes
+    def set_info_(self, dataset):
+        """Sets some information from the dataset."""
+        self.is_classification = dataset.is_classification
+        self.target_shape = dataset.target_shape
+
+        aux_infos = {
+            "input": (False, self.shape),
+            "representative": (False, self.shape),
+            "other_representative": (False, self.shape),
+            "target": (self.is_classification, self.target_shape),
+        }
+
+        if dataset.additional_target in aux_infos:
+            # these should be available in all datasets
+            info = aux_infos[dataset.additional_target]
+        else:
+            # dataset specific
+            info = dataset.aux_infos[dataset.additional_target]
+        self.is_classification_aux, self.target_aux_shape = info
 
     def prepare_data(self):
         """Dowload and save onfile."""
@@ -369,7 +409,7 @@ class LossylessDataModule(LightningDataModule):
                 download=False,
                 **self.dataset_kwargs,
             )
-            self.noaug_length = dataset.noaug_length  # train and valid
+            self.set_info_(dataset)
 
             self.dataset_train, _ = random_split(
                 dataset,
@@ -467,7 +507,8 @@ class ToyMNISTDATASET(LossylessDatasetToyImg, MNIST):
 
     FOLDER = "MNIST"
     shape = (1, 32, 32)
-    num_classes = 10
+    target_shape = 10
+    is_classification = True
 
     def __init__(self, *args, n_per_target=5000, n_luminosity=8, **kwargs):
         super().__init__(
@@ -513,7 +554,8 @@ class ToyFashionMNISTDATASET(LossylessDatasetToyImg, FashionMNIST):
 
     FOLDER = "FashionMNIST"
     shape = (1, 32, 32)
-    num_classes = 10
+    is_classification = True
+    target_shape = 10
 
     def __init__(
         self, *args, n_per_target=5000, n_luminosity=8, n_rotations=8, **kwargs
@@ -671,9 +713,13 @@ class LossylessDatasetToyDistribution:
 
     Parameters
     -----------
-    additional_target : {"max_inv", "input", "target"}, optional
+    additional_target : {"max_inv", "input", "target", None}, optional
         Additional target to append to the target. "max_inv" is the maximal invariant. "input"
         is the input (sample). "target" uses agin the target (i.e. duplicate).
+
+    additional_target2 : {"max_inv", "input", "target"}, optional
+        Like additional_target. I.e. total number of targets will be 3. This will be used as in 
+        input to the coder.
 
     n_inputs : int, optional
         Number of sample (from same orbit) for each example in a batch. Does not work currently.
@@ -696,12 +742,15 @@ class LossylessDatasetToyDistribution:
     """
 
     shape = (2,)
-    y_dim = 1
+    is_classification = False
+    target_shape = 1
+    max_inv_shape = 1
 
     def __init__(
         self,
         *args,
         additional_target=None,
+        additional_target2=None,
         n_inputs=1,
         length=10000,
         distribution=BananaDistribution(),
@@ -715,6 +764,7 @@ class LossylessDatasetToyDistribution:
         assert n_inputs == 1
 
         self.additional_target = additional_target
+        self.additional_target2 = additional_target2
         self.n_inputs = n_inputs
         self.length = length
         self.distribution = distribution
@@ -747,22 +797,26 @@ class LossylessDatasetToyDistribution:
         else:
             raise ValueError(f"Unkown group={self.group}.")
 
+    def toadd_target(self, additional_target, index, sample, target):
+        if additional_target is None:
+            to_add = [[]]  # just so that all the code is the same
+        elif additional_target == "input":
+            to_add = [sample]
+        elif additional_target == "max_inv":
+            to_add = [self.max_invariants[index]]
+        elif additional_target == "target":
+            to_add = [target]
+        else:
+            raise ValueError(f"Unkown additional_target={additional_target}")
+        return to_add
+
     def __getitem__(self, index):
         sample = self.data[index]
         target = self.targets[index]
 
         targets = [target]
-
-        if self.additional_target is None:
-            targets += [None]  # just so that all the code is the same
-        elif self.additional_target == "input":
-            targets += [sample]
-        elif self.additional_target == "max_inv":
-            targets += [self.max_invariants[index]]
-        elif self.additional_target == "target":
-            targets += [target]
-        else:
-            raise ValueError(f"Unkown additional_target={self.additional_target}")
+        targets += self.toadd_target(self.additional_target, index, sample, target)
+        targets += self.toadd_target(self.additional_target2, index, sample, target)
 
         return sample, targets
 
@@ -796,6 +850,12 @@ class LossylessDatasetToyDistribution:
         self._entropies = entropies
         return entropies
 
+    @property
+    def aux_infos(self):
+        return {
+            "max_inv": (False, 1),
+        }
+
 
 class DistributionDataModule(LossylessDataModule):
     _DATASET = LossylessDatasetToyDistribution
@@ -804,7 +864,7 @@ class DistributionDataModule(LossylessDataModule):
         if stage == "fit" or stage is None:
 
             dataset = self.Dataset(**self.dataset_kwargs)
-            self.noaug_length = dataset.length  # train and valid
+            self.set_info_(dataset)
 
             self.dataset_train, self.dataset_val = random_split(
                 dataset,

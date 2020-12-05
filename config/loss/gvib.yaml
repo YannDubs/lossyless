@@ -1,18 +1,12 @@
 # @package _global_
-# uses global so that can change dataset
-
 loss:
   name: gvib
   mode: direct
   kwargs: 
-      is_classification: True
-  
+      is_classification: ${data.is_classification_aux}
   
 data:
   kwargs:
     dataset_kwargs:
-      additional_target: "idx"
+      additional_target: "max_inv"
       n_inputs: 1
-
-decoder:
-  out_shape: ${data.noaug_length}
