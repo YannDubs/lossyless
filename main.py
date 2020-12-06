@@ -129,6 +129,8 @@ def instantiate_datamodule(cfgd):
     cfgd.is_classification = datamodule.is_classification
     cfgd.target_shape = datamodule.target_shape
     cfgd.target_aux_shape = datamodule.target_aux_shape
+
+    cfgd.neg_factor = cfgd.length / (2 * cfgd.kwargs.batch_size - 1)
     return datamodule
 
 

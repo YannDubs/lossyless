@@ -159,13 +159,24 @@ class ContrastiveDistortion(nn.Module):
 
     is_symmetric : bool, optional
         Whether to use symmetric logits in the case of probabilistic InfoNCE.
+
+    weight : float, optional
+        By how much to weight the denominator in InfoNCE. In [1] this corresponds to 1/alpha of 
+        reweighted CPC. We can show that this is still a valid lower bound if set to at max 
+        len(train_dataset) / (2*batch_size-1), and should thus be set to that. 
+
+    References
+    ----------
+    [1] Song, Jiaming, and Stefano Ermon. "Multi-label contrastive predictive coding." Advances in 
+    Neural Information Processing Systems 33 (2020).
     """
 
-    def __init__(self, p_ZlX, temperature=0.1, is_symmetric=True):
+    def __init__(self, p_ZlX, temperature=0.1, is_symmetric=True, weight=1):
         super().__init__()
         self.p_ZlX = p_ZlX
         self.temperature = temperature
         self.is_symmetric = is_symmetric
+        self.weight = weight
 
     def forward(self, z_hat, x_pos, p_Zlx):
         """Compute the distortion.
@@ -264,14 +275,26 @@ class ContrastiveDistortion(nn.Module):
         arange = torch.arange(batch_size, device=device)
         pos_idx = torch.cat([arange + batch_size - 1, arange], dim=0)
 
-        # -I[Z,f(M(X))] = - E[ log \frac{(N-1) exp(z^T z_p)}{\sum^{N-1} exp(z^T z')} ]
-        # = - E[ log \frac{ exp(z^T z_p)}{\sum^{N-1} exp(z^T z')} ]  - log(N-1)
-        # = - E[ log \frac{ exp(z^T z_p)}{\sum^{N-1} exp(z^T z')} ]  - log(N-1)
-        # = - E[ log softmax(z^Tz_p) ]  - log(N-1)
-        # = E[ crossentropy(z^Tz, p) ]  - log(N-1)
-        neg_I_zm = F.cross_entropy(logits, pos_idx, reduction="mean") - math.log(N - 1)
+        if self.weight != 1:
+            # you want to multiply \sum e(negative) in the denomiator by to_mult
+            to_mult = (N - 1 - 1 / self.weight) / (N - 2)
+            # equivalent: add log(to_mult) to every negative logits
+            # equivalent: add - log(to_mult) to positive logits
+            to_add = -math.log(to_mult)
+            to_add = to_add * torch.ones_like(logits[:, 0:1])  # correct shape
+            logits.scatter_add_(1, pos_idx.unsqueeze(1), to_add)
+            # when testing use `logits.gather(1, pos_idx.unsqueeze(1))` to see pos
 
-        logs = dict(I_zm=-neg_I_zm.mean() / math.log(BASE_LOG))
+        # I[Z,f(M(X))] = E[ log \frac{(N-1) exp(z^T z_p)}{\sum^{N-1} exp(z^T z')} ]
+        # = log(N-1) + E[ log \frac{ exp(z^T z_p)}{\sum^{N-1} exp(z^T z')} ]
+        # = log(N-1) + E[ log \frac{ exp(z^T z_p)}{\sum^{N-1} exp(z^T z')} ]
+        # = log(N-1) + E[ log softmax(z^Tz_p) ]
+        # = log(N-1) - E[ crossentropy(z^Tz, p) ]
+        # = \hat{H}[f(M(X))] - \hat{H}[f(M(X))|Z]
+        hat_H_m = math.log(self.weight * (N - 1))
+        hat_H_mlz = F.cross_entropy(logits, pos_idx, reduction="mean")
+
+        logs = dict(I_zm=(hat_H_m - hat_H_mlz) / math.log(BASE_LOG))
         other = dict()
 
-        return neg_I_zm, logs, other
+        return hat_H_mlz, logs, other

@@ -195,6 +195,9 @@ class CompressionModule(pl.LightningModule):
         aux_parameters = set(self.rate_estimator.aux_parameters())
         is_optimize_coder = len(aux_parameters) > 0
 
+        optimizers = []
+        schedulers = []
+
         # model
         cfgo = self.hparams.optimizer
 
@@ -203,25 +206,28 @@ class CompressionModule(pl.LightningModule):
         )
         if cfgo.is_lars:
             optimizer = LARSWrapper(optimizer)
-        gamma = get_exponential_decay_gamma(
-            cfgo.scheduling_factor, self.hparams.trainer.max_epochs,
-        )
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma)
+        optimizers += [optimizer]
 
-        optimizers = [optimizer]
-        schedulers = [scheduler]
+        if cfgo.scheduling_factor > 1:
+            gamma = get_exponential_decay_gamma(
+                cfgo.scheduling_factor, self.hparams.trainer.max_epochs,
+            )
+            scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma)
+            schedulers += [scheduler]
 
         # if coder needs parameters + optimizer
         if is_optimize_coder:
             cfgoc = self.hparams.optimizer_coder
             optimizer_coder = torch.optim.Adam(aux_parameters, lr=cfgoc.lr)
-            gamma_coder = get_exponential_decay_gamma(
-                cfgoc.scheduling_factor, self.hparams.trainer.max_epochs,
-            )
-            scheduler_coder = torch.optim.lr_scheduler.ExponentialLR(
-                optimizer, gamma_coder
-            )
             optimizers += [optimizer_coder]
-            schedulers += [scheduler_coder]
+
+            if cfgoc.scheduling_factor > 1:
+                gamma_coder = get_exponential_decay_gamma(
+                    cfgoc.scheduling_factor, self.hparams.trainer.max_epochs,
+                )
+                scheduler_coder = torch.optim.lr_scheduler.ExponentialLR(
+                    optimizer, gamma_coder
+                )
+                schedulers += [scheduler_coder]
 
         return optimizers, schedulers
