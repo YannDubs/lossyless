@@ -244,8 +244,8 @@ class ContrastiveDistortion(nn.Module):
             i_gaus = DiagGaussian(i_mus, i_sigmas)
 
             # all possible pairs of KLs. shape: [2*batch_size, 2*batch_size]
-            kls = kl_divergence(r_gaus, i_gaus)
-            logits = kls.view(N, N)
+            kls = kl_divergence(r_gaus, i_gaus).view(N, N)
+            logits = -kls  # logits needs to be larger when more similar
 
             if self.is_symmetric:
                 # equivalent to (kl(p||q) + kl(q||p))/2 for each pair

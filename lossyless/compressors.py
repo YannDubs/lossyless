@@ -201,7 +201,7 @@ class CompressionModule(pl.LightningModule):
         optimizer = torch.optim.Adam(
             self.parameters(), lr=cfgo.lr, weight_decay=cfgo.weight_decay
         )
-        if self.cfgo.is_lars:
+        if cfgo.is_lars:
             optimizer = LARSWrapper(optimizer)
         gamma = get_exponential_decay_gamma(
             cfgo.scheduling_factor, self.hparams.trainer.max_epochs,
