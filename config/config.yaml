@@ -26,6 +26,8 @@ optimizer: # might need to be a group at some point
   name: adam # not used yet but can change if needed
   lr: 1e-3
   scheduling_factor: 100 # by how much to reduce lr during training
+  weight_decay: 0
+  is_lars: false # whether to use LARS optimizer, useful for large batches.
 
 # only used if coder needs an optimizer (for coding)
 optimizer_coder :
@@ -60,10 +62,8 @@ callbacks:
     z_dim: ${encoder.z_dim}
     y_dim_pred: ${data.target_shape}
 
-
 predictor:
   is_online_eval: true
-
 
 trainer:
   #default_root_dir: ${paths.results}
@@ -99,6 +99,7 @@ data:
 
   kwargs:
     data_dir: ${paths.data}
+    batch_size: 128
 
 encoder:
   name: ???
@@ -113,8 +114,7 @@ distortion:
   name: ???
   mode: ???
   factor_beta : 1 # factor that multiplies beta 
-  arch_kwargs:
-    complexity: ???
+  kwargs: {}
 
 rate:
   name: ???

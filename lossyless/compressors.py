@@ -1,5 +1,6 @@
 import pytorch_lightning as pl
 from pytorch_lightning.core.decorators import auto_move_data
+from pl_bolts.optimizers.lars_scheduling import LARSWrapper
 import torch
 import logging
 import einops
@@ -97,7 +98,9 @@ class CompressionModule(pl.LightningModule):
         # z_hat. shape: [n_z, batch_size, z_dim]
         z_hat, rates, r_logs, r_other = self.rate_estimator(z, p_Zlx, tocoder)
 
-        distortions, d_logs, d_other = self.distortion_estimator(z_hat, aux_target)
+        distortions, d_logs, d_other = self.distortion_estimator(
+            z_hat, aux_target, p_Zlx
+        )
 
         loss, logs, other = self.loss(rates, distortions)
 
@@ -195,7 +198,11 @@ class CompressionModule(pl.LightningModule):
         # model
         cfgo = self.hparams.optimizer
 
-        optimizer = torch.optim.Adam(self.parameters(), lr=cfgo.lr)
+        optimizer = torch.optim.Adam(
+            self.parameters(), lr=cfgo.lr, weight_decay=cfgo.weight_decay
+        )
+        if self.cfgo.is_lars:
+            optimizer = LARSWrapper(optimizer)
         gamma = get_exponential_decay_gamma(
             cfgo.scheduling_factor, self.hparams.trainer.max_epochs,
         )

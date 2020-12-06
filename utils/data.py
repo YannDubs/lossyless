@@ -176,7 +176,7 @@ class LossylessDatasetToyImg:
             to_add = [notaug_img]
         elif additional_target == "other_representative":
             k_jump_orbit = random.randint(1, self.aug_factor - 1)
-            sampled_idx = index + self.noaug_length * k_jump_orbit
+            sampled_idx = notaugmented_idx + self.noaug_length * k_jump_orbit
             new_img, _ = super().__getitem__(sampled_idx)
             to_add = [new_img]
         elif additional_target == "idx":

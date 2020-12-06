@@ -290,3 +290,5 @@ class Delta(Distribution):
         log_prob = (x == self.loc).type(x.dtype).log()
         return log_prob + self.log_density
 
+
+

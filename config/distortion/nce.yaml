@@ -2,6 +2,8 @@
 distortion:
   name: nce
   mode: contrastive
+  kwargs:
+    temperature: 0.1
   
 data:
   kwargs:
