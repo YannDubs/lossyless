@@ -165,17 +165,25 @@ class ContrastiveDistortion(nn.Module):
         reweighted CPC. We can show that this is still a valid lower bound if set to at max 
         len(train_dataset) / (2*batch_size-1), and should thus be set to that. 
 
+    is_cosine : bool, optional
+        Whether to use cosine similarity instead of dot products fot the logits of deterministic functions.
+        This seems necessary for training, probably because if not norm of Z matters++ and then
+        large loss in entropy bottleneck.
+
     References
     ----------
     [1] Song, Jiaming, and Stefano Ermon. "Multi-label contrastive predictive coding." Advances in 
     Neural Information Processing Systems 33 (2020).
     """
 
-    def __init__(self, p_ZlX, temperature=0.1, is_symmetric=True, weight=1):
+    def __init__(
+        self, p_ZlX, temperature=0.1, is_symmetric=True, is_cosine=True, weight=1
+    ):
         super().__init__()
         self.p_ZlX = p_ZlX
         self.temperature = temperature
         self.is_symmetric = is_symmetric
+        self.is_cosine = is_cosine
         self.weight = weight
 
     def forward(self, z_hat, x_pos, p_Zlx):
@@ -221,6 +229,9 @@ class ContrastiveDistortion(nn.Module):
 
             # shape: [2*batch_size,z_dim]
             zs = torch.cat([z, z_pos], dim=0)
+
+            if self.is_cosine:
+                zs = F.normalize(zs, dim=1, p=2)
 
             # shape: [2*batch_size,2*batch_size]
             logits = zs @ zs.T
