@@ -12,7 +12,7 @@ from .architectures import MLP
 __all__ = ["get_rate_estimator"]
 
 ### HELPERS ###
-def get_rate_estimator(name, z_dim, p_ZlX, n_z_samples, **kwargs):
+def get_rate_estimator(name, z_dim=None, p_ZlX=None, n_z_samples=None, **kwargs):
     """Return the correct entropy coder."""
     if "H_" in name:
         if "fact" in name:

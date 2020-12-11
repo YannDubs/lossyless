@@ -144,10 +144,11 @@ class ContrastiveDistortion(nn.Module):
 
     Notes
     -----
-    - Only works for `Deterministic` or `DiagGaussian` distribution. In latter case uses a 
+    - Only works for `Deterministic` (or tensors) or `DiagGaussian` distribution. In latter case uses a 
     distributional infoNCE (i.e. with KL divergence).
     - Distributional InfoNCE is memory heavy because copy tensors. TODO: Use torch.as_strided
     - Never uses samples z_hat.
+    - parts of code taken from https://github.com/lucidrains/contrastive-learner
     
     Parameters
     ----------
@@ -218,60 +219,8 @@ class ContrastiveDistortion(nn.Module):
         # Distribution for positives. batch shape: [batch_size] ; event shape: [z_dim]
         p_Zlp = self.p_ZlX(x_pos)
 
-        if isinstance(p_Zlx, Deterministic):
-            # if you are using a deterministic representation then use standard InfoNCE
-            # because if not KL is none differentiable
-            # code modified from https://github.com/lucidrains/contrastive-learner
-
-            # shape: [batch_size,z_dim]
-            z = p_Zlx.base_dist.loc
-            z_pos = p_Zlp.base_dist.loc
-
-            # shape: [2*batch_size,z_dim]
-            zs = torch.cat([z, z_pos], dim=0)
-
-            if self.is_cosine:
-                zs = F.normalize(zs, dim=1, p=2)
-
-            # shape: [2*batch_size,2*batch_size]
-            logits = zs @ zs.T
-
-        else:
-
-            # use probabilistic InfoNCE
-            if not isinstance(p_Zlx, DiagGaussian):
-                raise ValueError(
-                    "Probabilistic NCE only currently works for diagonal gaussians."
-                )
-
-            # not pytorch's kl divergence because want fast computation (kl between every and every element in batch)
-            mu_x, sigma_x = p_Zlx.base_dist.loc, p_Zlx.base_dist.scale
-            mu_p, sigma_p = p_Zlp.base_dist.loc, p_Zlp.base_dist.scale
-
-            # shape: [2*batch_size, z_dim]
-            mus = torch.cat([mu_x, mu_p], dim=0)
-            sigmas = torch.cat([sigma_x, sigma_p], dim=0)
-
-            # TODO: Should use torch.as_strided
-            # shape: [4*batch_size**2, z_dim]
-            # repeat: [1,2,3] -> [1,2,3,1,2,3,1,2,3]
-            r_mus = mus.repeat(N, 1)
-            r_sigmas = sigmas.repeat(N, 1)
-            # repeat interleave: [1,2,3] -> [1,1,1,2,2,2,3,3,3]
-            i_mus = mus.repeat_interleave(N, dim=0)
-            i_sigmas = sigmas.repeat_interleave(N, dim=0)
-
-            # batch shape: [4*batch_size**2] event shape: [z_dim]
-            r_gaus = DiagGaussian(r_mus, r_sigmas)
-            i_gaus = DiagGaussian(i_mus, i_sigmas)
-
-            # all possible pairs of KLs. shape: [2*batch_size, 2*batch_size]
-            kls = kl_divergence(r_gaus, i_gaus).view(N, N)
-            logits = -kls  # logits needs to be larger when more similar
-
-            if self.is_symmetric:
-                # equivalent to (kl(p||q) + kl(q||p))/2 for each pair
-                logits = (logits + logits.T) / 2
+        # shape: [2*batch_size,2*batch_size]
+        logits = self.compute_logits(p_Zlx, p_Zlp)
 
         mask = ~torch.eye(N, device=device).bool()
         logits /= self.temperature
@@ -309,3 +258,60 @@ class ContrastiveDistortion(nn.Module):
         other = dict()
 
         return hat_H_mlz, logs, other
+
+    def compute_logits(self, p_Zlx, p_Zlp):
+        if isinstance(p_Zlx, DiagGaussian):
+            # use probabilistic InfoNCE
+            # not pytorch's kl divergence because want fast computation (kl between every and every element in batch)
+            mu_x, sigma_x = p_Zlx.base_dist.loc, p_Zlx.base_dist.scale
+            mu_p, sigma_p = p_Zlp.base_dist.loc, p_Zlp.base_dist.scale
+
+            # shape: [2*batch_size, z_dim]
+            mus = torch.cat([mu_x, mu_p], dim=0)
+            sigmas = torch.cat([sigma_x, sigma_p], dim=0)
+
+            N = mus.size(0)
+
+            # TODO: Should use torch.as_strided
+            # shape: [4*batch_size**2, z_dim]
+            # repeat: [1,2,3] -> [1,2,3,1,2,3,1,2,3]
+            r_mus = mus.repeat(N, 1)
+            r_sigmas = sigmas.repeat(N, 1)
+            # repeat interleave: [1,2,3] -> [1,1,1,2,2,2,3,3,3]
+            i_mus = mus.repeat_interleave(N, dim=0)
+            i_sigmas = sigmas.repeat_interleave(N, dim=0)
+
+            # batch shape: [4*batch_size**2] event shape: [z_dim]
+            r_gaus = DiagGaussian(r_mus, r_sigmas)
+            i_gaus = DiagGaussian(i_mus, i_sigmas)
+
+            # all possible pairs of KLs. shape: [2*batch_size, 2*batch_size]
+            kls = kl_divergence(r_gaus, i_gaus).view(N, N)
+            logits = -kls  # logits needs to be larger when more similar
+
+            if self.is_symmetric:
+                # equivalent to (kl(p||q) + kl(q||p))/2 for each pair
+                logits = (logits + logits.T) / 2
+
+        else:
+            # if you are using a deterministic representation then use standard InfoNCE
+            # because if not KL is none differentiable
+            if isinstance(p_Zlx, Deterministic):
+                # shape: [batch_size,z_dim]
+                z = p_Zlx.base_dist.loc
+                z_pos = p_Zlp.base_dist.loc
+            else:
+                # suppose outputs are tensors of shape: [n_z,batch_size,z_dim]
+                z = p_Zlx.squeeze(0)
+                z_pos = p_Zlp.squeeze(0)
+
+            # shape: [2*batch_size,z_dim]
+            zs = torch.cat([z, z_pos], dim=0)
+
+            if self.is_cosine:
+                zs = F.normalize(zs, dim=1, p=2)
+
+            # shape: [2*batch_size,2*batch_size]
+            logits = zs @ zs.T
+
+        return logits
