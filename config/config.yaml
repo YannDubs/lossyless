@@ -2,7 +2,7 @@ defaults:
   - hydra/job_logging: colorlog
   - hydra/hydra_logging: colorlog
   
-  - data: toyMiniFashionMnist
+  - data: miniFashionMnist
   - encoder: cnn
   - distortion: vae
   - rate: MI_unitgaussian

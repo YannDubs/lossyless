@@ -20,7 +20,7 @@ kwargs_multi="
 encoder=cnn,mlp,resnet
 distortion=ivib,ivae,ince,taskvib,vae,vib,nce
 rate=H_factorized,H_hyper,MI_unitgaussian,MI_vamp
-data=toyMiniMnist
+data=miniMnist
 " 
 
 if [ "$is_plot_only" = false ] ; then

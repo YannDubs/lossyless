@@ -21,7 +21,7 @@ kwargs_multi="
 encoder=cnn,mlp,resnet
 distortion=ivib,ivae,ince,taskvib,vae,vib,nce
 rate=vamp,H_fatorized,H_hyper,MI_unitgaussian,MI_vamp
-data=toyMiniMnist,distBananaRot
+data=miniMnist,bananaRot
 " 
 
 if [ "$is_plot_only" = false ] ; then
