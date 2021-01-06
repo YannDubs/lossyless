@@ -5,6 +5,9 @@ import torch
 
 from torchvision.datasets import CIFAR10, MNIST, FashionMNIST
 import os
+import subprocess
+import zipfile
+import glob
 import torch
 import math
 import scipy
@@ -30,6 +33,8 @@ from .helpers import (
     ScalingAction,
     int_or_ratio,
 )
+
+
 
 
 logger = logging.getLogger(__name__)
@@ -339,7 +344,9 @@ class Cifar10DataModule(TorchvisionDataModule):
 # TODO @karen: modify as desired all those methods
 class GalaxyDataset(LossylessImgAnalyticDataset):
     def __init__(
-        self, *args, **kwargs,
+        self,
+        data_root,
+        *args, **kwargs,
     ):
         super().__init__(*args, **kwargs)
         # do as needed. For best compatibility with the framework
@@ -347,16 +354,48 @@ class GalaxyDataset(LossylessImgAnalyticDataset):
         # self.targets should contain the targets
 
         # example:
-        self.download()
+        self.data_root = data_root
+        self.download(self.data_root)
         self.data, self.targets = torch.load("path")
 
-    def download(self):
-        # if there's link such that we can run something like
-        #     subprocess.check_call(["curl", "-L", self.urls["train"], "--output", save_path])
-        #     with zipfile.ZipFile(save_path) as zf: zf.extractall(self.dir)
-        # would be nice. But people will have to download Imagenet in any case to replicate results
-        # so we can also tell them to download that one.
-        ...
+    def download(self, data_root):
+
+        data_dir = os.path.join(data_root, "galaxyzoo")
+
+        def unpack_all_zips():
+            for f, file in enumerate(
+                glob.glob(os.path.join(data_dir, "*.zip"))):
+                with zipfile.ZipFile(file, 'r') as zip_ref:
+                    zip_ref.extractall(data_dir)
+                    os.remove(file)
+                    print("{} completed. Progress: {}/6".format(file, f))
+
+        filename = "galaxy-zoo-the-galaxy-challenge.zip"
+
+        # check if data was already downloaded
+        if os.path.exists(os.path.join(data_root,filename)):
+            # continue unpacking files just in case this got interrupted
+            unpack_all_zips()
+            return
+        # check if user has access to the kaggle API otherwise link instructions
+        try:
+            import kaggle
+        except Exception as e:
+            print(e)
+            print("The download of the Galaxy dataset failed. Make sure you "
+                  "followed the steps in https://github.com/Kaggle/kaggle-api.")
+
+        # download the dataset
+        bashCommand = "kaggle competitions download -c " \
+                      "galaxy-zoo-the-galaxy-challenge -p {}".format(data_root)
+        subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
+
+        # unpack the data
+        with zipfile.ZipFile(os.path.join(data_root,filename), 'r') as zip_ref:
+            zip_ref.extractall(data_dir)
+
+        unpack_all_zips()
+
 
     @property
     def augmentations(self):
