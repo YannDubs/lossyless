@@ -20,12 +20,6 @@ def get_rate_estimator(name, z_dim=None, p_ZlX=None, n_z_samples=None, **kwargs)
         elif "hyper" in name:
             return HRateHyperprior(z_dim, n_z_samples=n_z_samples, **kwargs)
 
-    elif "CMI_" in name:
-        q_Z = get_marginalDist(
-            kwargs.pop("prior_fam"), p_ZlX, **(kwargs.pop("prior_kwargs"))
-        )
-        return CMIRate(q_Z, p_ZlX, **kwargs)
-
     elif "MI_" in name:
         q_Z = get_marginalDist(
             kwargs.pop("prior_fam"), p_ZlX, **(kwargs.pop("prior_kwargs"))
@@ -74,7 +68,7 @@ class RateEstimator(compressai.models.CompressionModel):
         weights_init(self)
 
     # returning the loss is necessary to work with `EntropyBottleneck`
-    def forward(self, z, p_Zlx, tocoder):
+    def forward(self, z, p_Zlx):
         """Performs the approx compression and returns loss.
 
         Parameters
@@ -84,9 +78,6 @@ class RateEstimator(compressai.models.CompressionModel):
 
         p_Zlx : torch.Distribution batch_shape=[batch_size] event_shape=[z_dim]
             Encoder which should be used to perform compression.
-
-        tocoder : torch.Tensor shape=[batch_shape, *tocoder_shape]
-            Additional input to the coder.
         
         Returns
         -------
@@ -177,7 +168,7 @@ class MIRate(RateEstimator):
     def update(self, force):
         pass
 
-    def forward(self, z, p_Zlx, _):
+    def forward(self, z, p_Zlx):
         # batch shape: [] ; event shape: [z_dim]
         q_Z = self.q_Z()
 
@@ -195,70 +186,6 @@ class MIRate(RateEstimator):
         other = dict()
 
         return z_hat, kl, logs, other
-
-
-### CONDITIONAL MUTUAL INFORMATION CODERS. Min I[X,Z|M] where M is some variable (e.g. M(X) or Y) ###
-
-#! probably will not be used
-class CMIRate(RateEstimator):
-    """
-    Model that codes using the (approximate) mutual information I[Z,X] (like MICoder) but during training
-    will optimize the Conditional mutual information Min I[X,Z|T].
-
-    Parameters
-    ----------
-    q_Z : nn.Module
-        Prior to use for compression. Has to be a prior that can be trained (not 01 gaussian).
-
-    q_ZlX : CondDist
-        Instantiated conditional distribution. This could theoretically be any conditional distribution, 
-        but we share it with p_ZlX. Note that this is not considered as param for this module as it's updated 
-        upstream.
-    """
-
-    def __init__(self, q_Z, q_ZlX):
-        super().__init__()
-        self.q_Z = q_Z
-        self.q_ZlX = q_ZlX
-        self.reset_parameters()
-
-    def update(self, force):
-        pass
-
-    def reset_parameters(self):
-        self.q_Z.reset_parameters()
-        # make sure you don't reinitialize self.p_ZlX
-
-    def forward(self, z, p_Zlx, M):
-
-        # batch shape: [] ; event shape: [z_dim]
-        q_Z = self.q_Z()
-
-        # batch shape: [batch_size] ; event shape: [z_dim]
-        q_Zlm = self.q_ZlX(M)
-
-        # E_x[KL[p(Z|x) || q(Z|m)]]. shape: [n_z_samples, batch_size]
-        I_q_ZXlm = kl_divergence(p_Zlx, q_Zlm, z_samples=z, is_reduce=False)
-
-        # E_x[KL_{Z|x}[p(Z|m) || q(Z)]]. shape: [n_z_samples, batch_size]
-        # make sure that you don't backprop through p(Z|m) now (i.e. only training the prior to fit conditional)
-        kl = kl_divergence(q_Zlm.detach(), q_Z, z_samples=z, is_reduce=False)
-
-        # E_x[KL[p(Z|x) || q(Z)]]. But we computed in 2 KL terms, so that only training the prior in one term.
-        I_q_ZX = I_q_ZXlm + kl
-
-        z_hat = z
-
-        logs = dict(
-            I_q_ZXlm=I_q_ZXlm.mean() / math.log(BASE_LOG),
-            I_q_ZX=I_q_ZXlm.mean() / math.log(BASE_LOG),
-            H_ZlX=p_Zlx.entropy().mean(0) / math.log(BASE_LOG),
-        )
-        # upper bound on H[Z] (cross entropy)
-        logs["H_q_Z"] = logs["I_q_ZX"] + logs["H_ZlX"]
-        other = dict()
-
-        return z_hat, I_q_ZX, logs, other
 
 
 ### ENTROPY CODERS. Min I[X,Z] ###
@@ -293,7 +220,7 @@ class HRateFactorizedPrior(RateEstimator):
         self.entropy_bottleneck = EntropyBottleneck(z_dim, **kwargs)
         self.is_can_compress = n_z_samples == 1
 
-    def forward(self, z, _, __):
+    def forward(self, z, _):
         z_hat, q_z = self.entropy_bottleneck(z)
 
         # - log q(z). shape :  [n_z_dim, batch_shape]

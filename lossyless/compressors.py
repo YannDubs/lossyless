@@ -86,7 +86,7 @@ class CompressionModule(pl.LightningModule):
 
     def step(self, batch):
         cfgl = self.hparams.loss
-        x, (_, aux_target, tocoder) = batch
+        x, (_, aux_target) = batch
         n_z = cfgl.n_z_samples
 
         # batch shape: [batch_size] ; event shape: [z_dim]
@@ -96,7 +96,7 @@ class CompressionModule(pl.LightningModule):
         z = p_Zlx.rsample([n_z])
 
         # z_hat. shape: [n_z, batch_size, z_dim]
-        z_hat, rates, r_logs, r_other = self.rate_estimator(z, p_Zlx, tocoder)
+        z_hat, rates, r_logs, r_other = self.rate_estimator(z, p_Zlx)
 
         distortions, d_logs, d_other = self.distortion_estimator(
             z_hat, aux_target, p_Zlx
