@@ -9,6 +9,7 @@ test
 data
 logs
 notebooks
+!utils/data
 
 # MAC
 .DS_Store
