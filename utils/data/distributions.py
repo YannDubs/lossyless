@@ -79,6 +79,10 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
         else:
             raise ValueError(f"Unkown equivalence={self.equivalence}.")
 
+    def get_max_var(self, x, Mx):
+        # Mx is a regression task so one a possible max variant is simply predicting x
+        return x
+
     def sample_equivalence_action(self):
         def action_translation(rep, min_ax, max_ax, axis):
             # random translation on * scale

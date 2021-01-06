@@ -117,17 +117,17 @@ def rotate(x, angle):
 
 def sample_param_augment(rv, interval_trnsf):
     """
-    Sample a parameter for transformations using an action r.v. `rv` and difference in parameter
-    space between min and max transforms, i.e. `interval_trnsf`. The mean of `rv` will always correspond
-    to 0 parameter. Eg for rotations interval_trnsf=360 and mean rv is 0 degress
+    Sample a parameter (and it's index) for transformations using an action r.v. `rv` and difference 
+    in parameter space between min and max transforms, i.e. `interval_trnsf`. The mean of `rv` will 
+    always correspond to 0 parameter. Eg for rotations interval_trnsf=360 and mean rv is 0 degrees.
     """
     support = rv.support()
     k_trnsf = support[1] + 1 - support[0]  # number of transforms
     delta_trnsf = interval_trnsf / k_trnsf
-    sample = rv.rvs()
-    sample -= rv.mean()  # ensure mean is 0 degrees
-    sample *= delta_trnsf  # put in transforms
-    return sample
+    i_sample = rv.rvs()
+    theta_sample = i_sample - rv.mean()  # ensure mean is 0 degrees
+    theta_sample *= delta_trnsf  # put in transforms
+    return theta_sample, i_sample
 
 
 class RotationAction(torch.nn.Module):
@@ -153,7 +153,8 @@ class RotationAction(torch.nn.Module):
         self.kwargs = kwargs
 
     def forward(self, img):
-        angle = sample_param_augment(self.rv, self.max_angle * 2)
+        # also store last index you sampled
+        angle, self.i = sample_param_augment(self.rv, self.max_angle * 2)
         return F_trnsf.rotate(img, angle, **self.kwargs)
 
 
@@ -185,7 +186,7 @@ class TranslationAction(torch.nn.Module):
 
     def forward(self, img):
         trnslt = [0, 0]
-        trnslt_val = sample_param_augment(self.rv, self.max_trnslt * 2)
+        trnslt_val, self.i = sample_param_augment(self.rv, self.max_trnslt * 2)
         trnslt[self.dim] = trnslt_val
         return F_trnsf.affine(
             img, translate=trnslt, angle=0, scale=1, shear=(0, 0), **self.kwargs
@@ -215,7 +216,7 @@ class ScalingAction(torch.nn.Module):
         self.kwargs = kwargs
 
     def forward(self, img):
-        scale_val = sample_param_augment(self.rv, (self.max_scale - 1) * 2)
+        scale_val, self.i = sample_param_augment(self.rv, (self.max_scale - 1) * 2)
         return F_trnsf.affine(
             img,
             translate=(0, 0),

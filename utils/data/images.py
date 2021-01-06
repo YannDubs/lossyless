@@ -1,5 +1,6 @@
 import logging
 from PIL import Image
+import abc
 
 import torch
 
@@ -34,7 +35,12 @@ from .helpers import (
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["Cifar10DataModule", "MnistDataModule", "FashionMnistDataModule"]
+__all__ = [
+    "Cifar10DataModule",
+    "MnistDataModule",
+    "FashionMnistDataModule",
+    "GalaxyDataModule",
+]
 
 
 ### HELPERS ###
@@ -52,20 +58,37 @@ class LossylessImgDataset(LossylessCLFDataset):
     is_augment_val : bool, optional
         Whether to augment the validation + test set.
 
+    is_normalize : bool, optional
+        Whether to normalize the input images. Only for colored images. If True, you should ensure
+        that `MEAN` and `STD` and `get_normalization` and `undo_normalization` in `lossyless.helpers` 
+        can normalize your data.
+
     kwargs:
         Additional arguments to `LossylessCLFDataset` and `LossylessDataset`.
     """
 
     def __init__(
-        self, *args, equivalence={}, is_augment_val=False, **kwargs,
+        self, *args, equivalence={}, is_augment_val=False, is_normalize=True, **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.equivalence = equivalence
         self.is_augment_val = is_augment_val
+        self.is_normalize = is_normalize
 
-        self.val_tranform = self.get_val_transform()  # only val
-        self.transform = self.get_transform()  # current transforms
-        self._tranform = self.transform  # copy current transforms
+        self.base_tranform = self.get_base_transform()  # base transform
+        self.aug_transform = self.get_aug_transform()  # real augmentation
+
+    @abc.abstractmethod
+    def get_img_target(self, index):
+        """Return the unaugmented image (in PIL format) and target."""
+        ...
+
+    def get_x_target_Mx(self, index):
+        """Return the correct example, target, and maximal invariant."""
+        img, target = self.get_img_target(index)
+        img = self.base_tranform(img)
+        img = self.aug_transform(img)
+        return img, target, index
 
     @property
     def augmentations(self):
@@ -92,12 +115,15 @@ class LossylessImgDataset(LossylessCLFDataset):
 
         return transform_lib.Compose(trnsfs)
 
-    def get_representative(self, Mx):
-        # Mx is the index of the underlying image
-        self.transform = self.val_tranform  # deactivate transforms
-        notaug_img, _ = super().__getitem__(Mx)
-        self.transform = self._tranform  # reactivate transforms
+    def get_representative(self, index):
+        notaug_img, _ = self.get_img_target(index)
+        notaug_img = self.base_tranform(notaug_img)
         return notaug_img
+
+    def get_max_var(self, x, Mx):
+        raise NotImplementedError(
+            "`max_var` can only be used imsges that are from `LossylessImgAnalyticDataset`,"
+        )
 
     @property
     def entropies(self):
@@ -113,32 +139,44 @@ class LossylessImgDataset(LossylessCLFDataset):
         self._entropies = entropies
         return entropies
 
-    def get_val_transform(self):
-        """Return the transform for validation set."""
+    def get_base_transform(self):
+        """Return the base transform, ie train or test."""
         shape = self.shapes_x_t_Mx["input"]
         trnsfs = [
             transform_lib.Resize((shape[1], shape[2])),
             transform_lib.ToTensor(),
         ]
 
-        if shape[0] == 3:
+        if self.is_normalize and self.is_color:
             # only normalize colored images
-            trnsfs += [get_normalization(self.Dataset)]
+            trnsfs += [get_normalization(type(self))]
 
         return transform_lib.Compose(trnsfs)
 
-    def get_transform(self):
-        """Return the current transforms."""
-        trnsfs = []
-        trnsfs.append(self.get_val_transform())
+    def get_aug_transform(self):
+        """Return the augmentations transorms."""
 
         if self.is_augment_val or self.train:
-            trnsfs.append(self.sample_equivalence_action())
-
-        return transform_lib.Compose(trnsfs)
+            return self.sample_equivalence_action()
+        else:
+            return transform_lib.Compose([])  # identity
 
     def __len__(self):
         return len(self.data)
+
+    @property
+    def is_color(self):
+        shape = self.shapes_x_t_Mx["input"]
+        return shape[0] == 3
+
+    @property
+    def is_clf_x_t_Mx(self):
+        return dict(input=not self.is_color, target=True, max_inv=True)
+
+    @property
+    def shapes_x_t_Mx(self):
+        #! In each child should assign "input" and "target"
+        return dict(max_inv=(len(self),))
 
 
 class LossylessImgAnalyticDataset(LossylessImgDataset):
@@ -213,6 +251,27 @@ class LossylessImgAnalyticDataset(LossylessImgDataset):
         self._entropies = entropies
         return entropies
 
+    @property
+    def shapes_x_t_Mx(self):
+        shapes = super().shapes_x_t_Mx
+        # first dim of max_var will be the max_inv, then other dims will correspond
+        # to the index of the transformation that you sampled
+        max_var = list(shapes["max_inv"])
+        max_var += [self.n_action_per_equiv] * len(self.equivalence)
+        shapes["max_var"] = tuple(max_var)
+        return shapes
+
+    def get_max_var(self, x, Mx):
+        # the max_var for analytic transforms is the index of the transform you sampled
+        # if you rotate and translate it will be multilabel prediction of the rotation index
+        # and translation index IN ADDITION to the Mx => ensure that it is classification
+        # like for the maximal invariant but not invariant anymore => can use VIB loss
+        max_var = [Mx]
+        for trnsf in self.aug_transform.transforms:
+            # all analytic transforms store the last index they sampled
+            max_var.append(trnsf.i)
+        return max_var
+
 
 ### Torchvision Models ###
 
@@ -241,9 +300,10 @@ class TorchvisionDataModule(LossylessDataModule):
         return valid
 
     def get_test_dataset(self, **dataset_kwargs):
-        self.dataset_test = self.Dataset(
+        test = self.Dataset(
             self.data_dir, train=False, download=False, **self.dataset_kwargs,
         )
+        return test
 
     def prepare_data(self):
         self.Dataset(self.data_dir, train=True, download=True, **self.dataset_kwargs)
@@ -265,17 +325,15 @@ class MnistDataset(LossylessImgAnalyticDataset, MNIST):
         return os.path.join(self.root, self.FOLDER, "processed")
 
     @property
-    def is_clf_x_t_Mx(self):
-        return dict(input=True, target=True, max_inv=True)
-
-    @property
     def shapes_x_t_Mx(self):
-        return dict(input=(1, 32, 32), target=(10,), max_inv=(len(self),))
+        shapes = super(MnistDataset, self).shapes_x_t_Mx
+        shapes["input"] = (1, 32, 32)
+        shapes["target"] = (10,)
+        return shapes
 
-    def get_x_target_Mx(self, index):
+    def get_img_target(self, index):
         img, target = MNIST.__getitem__(self, index)
-        Mx = index
-        return img, target, Mx
+        return img, target
 
 
 class MnistDataModule(TorchvisionDataModule):
@@ -285,40 +343,42 @@ class MnistDataModule(TorchvisionDataModule):
 
 
 # Fasion MNIST #
-class ToyFashionMnistDataset(LossylessImgAnalyticDataset, FashionMNIST):
+class FashionMnistDataset(LossylessImgAnalyticDataset, FashionMNIST):
     FOLDER = "FashionMNIST"
 
-    def get_x_target_Mx(self, index):
-        img, target = MNIST.__getitem__(self, index)
-        Mx = index
-        return img, target, Mx
+    def get_img_target(self, index):
+        img, target = FashionMNIST.__getitem__(self, index)
+        return img, target
+
+    @property
+    def shapes_x_t_Mx(self):
+        shapes = super(FashionMnistDataset, self).shapes_x_t_Mx
+        shapes["input"] = (1, 32, 32)
+        shapes["target"] = (10,)
+        return shapes
 
     processed_folder = MnistDataset.processed_folder
     raw_folder = MnistDataset.raw_folder
-    is_clf_x_t_Mx = MnistDataset.is_clf_x_t_Mx
-    shapes_x_t_Mx = MnistDataset.shapes_x_t_Mx
 
 
 class FashionMnistDataModule(TorchvisionDataModule):
     @property
     def Dataset(self):
-        return ToyFashionMnistDataset
+        return FashionMnistDataset
 
 
 # Cifar10 #
 class Cifar10Dataset(LossylessImgAnalyticDataset, CIFAR10):
     @property
-    def is_clf_x_t_Mx(self):
-        return dict(input=False, target=True, max_inv=True)
-
-    @property
     def shapes_x_t_Mx(self):
-        return dict(input=(3, 32, 32), target=(10,), max_inv=(len(self),))
+        shapes = super(Cifar10Dataset, self).shapes_x_t_Mx
+        shapes["input"] = (3, 32, 32)
+        shapes["target"] = (10,)
+        return shapes
 
-    def get_x_target_Mx(self, index):
+    def get_img_target(self, index):
         img, target = CIFAR10.__getitem__(self, index)
-        Mx = index
-        return img, target, Mx
+        return img, target
 
 
 class Cifar10DataModule(TorchvisionDataModule):
@@ -337,6 +397,7 @@ class Cifar10DataModule(TorchvisionDataModule):
 # Galaxy Zoo #
 
 # TODO @karen: modify as desired all those methods
+# TODO we should also add the mean and std of "galaxy" in `lossyless.helpers` to normalize the data
 class GalaxyDataset(LossylessImgAnalyticDataset):
     def __init__(
         self, *args, **kwargs,
@@ -345,6 +406,7 @@ class GalaxyDataset(LossylessImgAnalyticDataset):
         # do as needed. For best compatibility with the framework
         # self.data should contain the downloaded data in tensor or numpy form
         # self.targets should contain the targets
+        # self.train should say whether training
 
         # example:
         self.download()
@@ -374,23 +436,28 @@ class GalaxyDataset(LossylessImgAnalyticDataset):
 
     @property
     def is_clf_x_t_Mx(self):
-        # target should be True if log loss (ie classification) and False if MSE (ie regression)
+        is_clf = super(GalaxyDataset, self).is_clf_x_t_Mx
         # input should be true is using log loss for reconstruction (typically MNIST) and False if MSE (typically colored images)
-        # leave max inv true (because ``max_inv` classifyies the indices)
-        return dict(input=True, target=False, max_inv=True)
+        is_clf["input"] = True
+        # target should be True if log loss (ie classification) and False if MSE (ie regression)
+        is_clf["target"] = False
+        return is_clf
 
     @property
     def shapes_x_t_Mx(self):
+        shapes = super(GalaxyDataset, self).shapes_x_t_Mx
         # input is shape image
+        shapes["input"] = (3, 64, 64)
         # target is shape of target. This will depend as to if we are using classfication or regression
         # in regression mode (as we said) `target=(3,)` means that there are 6 values to predict
         # (it's equivalent to `target=(1,1,1)` it depends how the targets are formatted)
         # for classification `target=(3,)` means 3-class classification and `target=(3,2)` means
         # multi label classification, one with 3-classes and one with 2-classes
         # (I still have to implement multilabel classification but will be soon)
-        return dict(input=(3, 32, 32), target=(6,), max_inv=(len(self),))
+        shapes["target"] = (6,)
+        return shapes
 
-    def get_x_target_Mx(self, index):
+    def get_img_target(self, index):
         # change as needed but something like that
         img = self.images[index]
         target = self.targets[index]
@@ -399,11 +466,9 @@ class GalaxyDataset(LossylessImgAnalyticDataset):
         # to return a PIL Image
         img = Image.fromarray(img)
 
-        if self.transform is not None:
-            img = self.transform(img)
+        # don't apply transformation yet, it's done for you
 
-        Mx = index
-        return img, target, Mx
+        return img, target
 
 
 class GalaxyDataModule(LossylessDataModule):
@@ -437,9 +502,10 @@ class GalaxyDataModule(LossylessDataModule):
         return valid
 
     def get_test_dataset(self, **dataset_kwargs):
-        self.dataset_test = self.Dataset(
+        test = self.Dataset(
             self.data_dir, train=False, download=False, **self.dataset_kwargs,
         )
+        return test
 
     def prepare_data(self):
         # this is where the downlading should happen if we can if not just put `pass`

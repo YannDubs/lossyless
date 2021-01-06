@@ -213,6 +213,7 @@ def kl_divergence(p, q, z_samples=None, is_lower_var=False, is_reduce=True):
     return kl_pq
 
 
+# TODO add galaxy
 MEANS = dict(imagenet=[0.485, 0.456, 0.406], cifar10=[0.4914009, 0.48215896, 0.4465308])
 STDS = dict(
     imagenet=[0.229, 0.224, 0.225], cifar10=[0.24703279, 0.24348423, 0.26158753]
@@ -221,8 +222,9 @@ STDS = dict(
 
 def get_normalization(Dataset):
     """Return corrrect normalization given dataset class."""
-    if issubclass(Dataset, CIFAR10):
+    if "cifar10" in Dataset.__name__.lower():
         return transform_lib.Normalize(mean=MEANS["cifar10"], std=STDS["cifar10"])
+    # TODO add galaxy
     else:
         raise ValueError(f"Uknown mean and std for {Dataset}.")
 

@@ -6,8 +6,7 @@ import logging
 import compressai
 
 import pytorch_lightning as pl
-from pytorch_lightning.loggers import TensorBoardLogger, CSVLogger, WandbLogger
-from pl_bolts.callbacks import PrintTableMetricsCallback
+from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils import data
 import lossyless
@@ -77,7 +76,7 @@ def get_trainer(cfg, module, is_compressor):
         chckpt_kwargs = cfg.callbacks.compressor_chckpt
 
         if cfg.predictor.is_online_eval:
-            if cfg.data.is_classification:
+            if cfg.data.target_is_clf:
                 callbacks += [ClfOnlineEvaluator(**cfg.callbacks.online_eval)]
             else:
                 callbacks += [RgrsOnlineEvaluator(**cfg.callbacks.online_eval)]
@@ -127,12 +126,12 @@ def instantiate_datamodule(cfgd):
     datamodule = get_datamodule(cfgd.dataset)(**cfgd.kwargs)
     datamodule.prepare_data()
     datamodule.setup()
-    cfgd.is_classification_aux = datamodule.is_classification_aux
+    cfgd.aux_is_clf = datamodule.aux_is_clf
     cfgd.length = len(datamodule.dataset_train)
     cfgd.shape = datamodule.shape
-    cfgd.is_classification = datamodule.is_classification
+    cfgd.target_is_clf = datamodule.target_is_clf
     cfgd.target_shape = datamodule.target_shape
-    cfgd.target_aux_shape = datamodule.target_aux_shape
+    cfgd.aux_shape = datamodule.aux_shape
 
     cfgd.neg_factor = cfgd.length / (2 * cfgd.kwargs.batch_size - 1)
     return datamodule

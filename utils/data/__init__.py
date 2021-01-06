@@ -11,6 +11,8 @@ def get_datamodule(datamodule):
         return MnistDataModule
     elif datamodule == "fashionmnist":
         return FashionMnistDataModule
+    elif datamodule == "galaxy":
+        return GalaxyDataModule
     elif datamodule == "banana":
         return BananaDataModule
     else:

@@ -1,11 +1,11 @@
 # @package _global_
 distortion:
-  name: vae
+  name: vae # vae that reconstructs the augmented images
   mode: direct
   kwargs: 
     z_dim: ${encoder.z_dim}
-    y_shape: ${data.target_aux_shape}
-    is_classification: ${data.is_classification_aux}
+    y_shape: ${data.aux_shape}
+    is_classification: ${data.aux_is_clf}
     arch: null
     arch_kwargs:
       complexity: 2
@@ -13,4 +13,4 @@ distortion:
 data:
   kwargs:
     dataset_kwargs:
-      additional_target: "input"
+      additional_target: input

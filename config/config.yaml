@@ -99,9 +99,9 @@ data:
   length: ???
   shape: ???
   target_shape: ???
-  target_aux_shape: ???
-  is_classification_aux: ??? 
-  is_classification: ???
+  aux_shape: ???
+  aux_is_clf: ??? 
+  target_is_clf: ???
   neg_factor: ??? # useful for contrastive loss. should be len(train_dataset) / (2*batch_size-1)
 
   kwargs:

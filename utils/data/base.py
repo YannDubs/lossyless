@@ -21,15 +21,14 @@ class LossylessDataset(abc.ABC):
 
     Parameters
     -----------
-    additional_target : {"input", "representative", "equiv_x", "max_inv", "target", None}, optional
+    additional_target : {"input", "representative", "equiv_x", "max_inv", "max_var", "target", None}, optional
         Additional target to append to the target. `"input"` is the input example (i.e. augmented),
         `"representative"` is a representative of the equivalence class (always the same). 
         `"equiv_x"` is some random equivalent x. `"max_inv"` is the 
-        maximal invariant. "target" uses agin the target (i.e. duplicate).
-
-    additional_target2 : {"input", "representative", "equiv_x",  "max_inv", "target", None}, optional
-        Like additional_target. I.e. total number of targets will be 3. This will be used as in 
-        input to the coder. 
+        maximal invariant. `"max_var"` should be similar to maximal invariant but it should not be
+        invariant, e.g. if the maximal invariant is the unaugmented index then the `max_var` is the
+        augmented index (his ensure that the same losses can be used as with `max_inv`.
+        "target" uses agin the target (i.e. duplicate).
 
     equivalence : str or set of str, optional
         Equivalence relationship with respect to which to be invariant. Depends on the dataset.
@@ -40,18 +39,11 @@ class LossylessDataset(abc.ABC):
     """
 
     def __init__(
-        self,
-        *args,
-        additional_target=None,
-        additional_target2=None,
-        equivalence=None,
-        seed=123,
-        **kwargs,
+        self, *args, additional_target=None, equivalence=None, seed=123, **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
         self.additional_target = additional_target
-        self.additional_target2 = additional_target2
         self.equivalence = equivalence
         self.seed = seed
 
@@ -70,6 +62,11 @@ class LossylessDataset(abc.ABC):
         """Return a representative element for current Mx."""
         ...
 
+    @abc.abstractmethod
+    def get_max_var(self, x, Mx):
+        """Return some element which is maximal but non invariant, and is similar form to `max_inv`."""
+        ...
+
     @property
     @abc.abstractmethod
     def entropies(self):
@@ -85,7 +82,7 @@ class LossylessDataset(abc.ABC):
     @property
     @abc.abstractmethod
     def shapes_x_t_Mx(self):
-        """Return dictionary giving the shape `input`, `target`, `max_inv`."""
+        """Return dictionary giving the shape `input`, `target`, `max_inv`, `max_var`."""
         ...
 
     def __getitem__(self, index):
@@ -93,7 +90,6 @@ class LossylessDataset(abc.ABC):
 
         targets = [target]
         targets += self.toadd_target(self.additional_target, x, target, Mx)
-        targets += self.toadd_target(self.additional_target2, x, target, Mx)
 
         return x, targets
 
@@ -104,11 +100,17 @@ class LossylessDataset(abc.ABC):
         elif additional_target == "input":
             to_add = [x]
         elif additional_target == "representative":
+            # representative element from same equivalence class
             to_add = [self.get_representative(Mx)]
         elif additional_target == "equiv_x":
+            # other element from same equivalence class
             to_add = [self.get_equiv_x(x, Mx)]
         elif additional_target == "max_inv":
+            # maximal invariant, e.g. unaugmented index.
             to_add = [Mx]
+        elif additional_target == "max_var":
+            # "maximal variant", e.g. augmented index.
+            to_add = [self.get_max_var(x, Mx)]
         elif additional_target == "target":
             # duplicate but makes code simpler
             to_add = [target]
@@ -129,6 +131,7 @@ class LossylessDataset(abc.ABC):
         is_clf = self.is_clf_x_t_Mx
         is_clf["representative"] = is_clf["input"]
         is_clf["equiv_x"] = is_clf["input"]
+        is_clf["max_var"] = is_clf["max_inv"]
         is_clf[None] = None
 
         return is_clf["target"], is_clf[self.additional_target]
@@ -139,6 +142,10 @@ class LossylessDataset(abc.ABC):
         shapes["representative"] = shapes["input"]
         shapes["equiv_x"] = shapes["input"]
         shapes[None] = None
+
+        if "max_var" not in shapes:
+            # max_var often will have same shape as max_inv
+            shapes["max_var"] = shapes["max_inv"]
 
         return shapes["target"], shapes[self.additional_target]
 
@@ -297,8 +304,8 @@ class LossylessDataModule(LightningDataModule):
             dataset = dataset.dataset
 
         self.target_is_clf, self.aux_is_clf = dataset.get_is_clf()
-        self.targe_shape, self.aux_shape = dataset.get_shapes()
-        self.shape = dataset.is_clf_x_t_Mx["input"]
+        self.target_shape, self.aux_shape = dataset.get_shapes()
+        self.shape = dataset.shapes_x_t_Mx["input"]
 
     def setup(self, stage=None):
         """Prepare the datasets for the current stage."""
@@ -308,7 +315,7 @@ class LossylessDataModule(LightningDataModule):
             self.valid_dataset = self.get_valid_dataset(**self.dataset_kwargs)
 
         if stage == "test" or stage is None:
-            self.dataset_test = self.get_test_dataset(**self.dataset_kwargs)
+            self.test_dataset = self.get_test_dataset(**self.dataset_kwargs)
 
     def train_dataloader(self):
         """Return the training dataloader."""
