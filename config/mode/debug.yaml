@@ -17,6 +17,5 @@ logger:
     anonymous: true
 
 callbacks:
-  gpu_stats:
-    memory_utilization: true
-    gpu_utilization: true
+  additional: ["GPUStatsMonitor"] # if add other callbacks through additional will be replaced
+  

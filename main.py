@@ -8,8 +8,9 @@ import compressai
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import TensorBoardLogger, CSVLogger, WandbLogger
 from pl_bolts.callbacks import PrintTableMetricsCallback
-from pytorch_lightning.callbacks import ModelCheckpoint, GPUStatsMonitor
+from pytorch_lightning.callbacks import ModelCheckpoint
 from torch.utils import data
+import lossyless
 
 from lossyless.callbacks import (
     ClfOnlineEvaluator,
@@ -92,8 +93,11 @@ def get_trainer(cfg, module, is_compressor):
     else:
         chckpt_kwargs = cfg.callbacks.predictor_chckpt
 
-    if "gpu_stats" in cfg.callbacks:
-        callbacks += [GPUStatsMonitor(**cfg.callbacks.gpu_stats)]
+    for name in cfg.callbacks.additional:
+        try:
+            callbacks.append(getattr(lossyless.callbacks, name))
+        except AttributeError:
+            callbacks.append(getattr(pl.callbacks, name))
 
     callbacks += [ModelCheckpoint(**chckpt_kwargs)]
 

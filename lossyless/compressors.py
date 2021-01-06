@@ -8,7 +8,7 @@ import math
 from .rates import get_rate_estimator
 from .architectures import get_Architecture
 from .distributions import CondDist, get_marginalDist
-from .helpers import get_exponential_decay_gamma, BASE_LOG
+from .helpers import get_lr_scheduler, BASE_LOG
 from .distortions import get_distortion_estimator
 
 
@@ -194,6 +194,7 @@ class CompressionModule(pl.LightningModule):
 
         aux_parameters = set(self.rate_estimator.aux_parameters())
         is_optimize_coder = len(aux_parameters) > 0
+        epochs = self.hparams.trainer.max_epochs
 
         optimizers = []
         schedulers = []
@@ -208,11 +209,8 @@ class CompressionModule(pl.LightningModule):
             optimizer = LARSWrapper(optimizer)
         optimizers += [optimizer]
 
-        if cfgo.scheduling_factor > 1:
-            gamma = get_exponential_decay_gamma(
-                cfgo.scheduling_factor, self.hparams.trainer.max_epochs,
-            )
-            scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma)
+        scheduler = get_lr_scheduler(optimizer, epochs=epochs, **cfgo.scheduler)
+        if scheduler is not None:
             schedulers += [scheduler]
 
         # if coder needs parameters + optimizer
@@ -221,13 +219,11 @@ class CompressionModule(pl.LightningModule):
             optimizer_coder = torch.optim.Adam(aux_parameters, lr=cfgoc.lr)
             optimizers += [optimizer_coder]
 
-            if cfgoc.scheduling_factor > 1:
-                gamma_coder = get_exponential_decay_gamma(
-                    cfgoc.scheduling_factor, self.hparams.trainer.max_epochs,
-                )
-                scheduler_coder = torch.optim.lr_scheduler.ExponentialLR(
-                    optimizer, gamma_coder
-                )
-                schedulers += [scheduler_coder]
+            scheduler = get_lr_scheduler(
+                optimizer_coder, epochs=epochs, **cfgoc.scheduler,
+            )
+            if scheduler is not None:
+                schedulers += [scheduler]
 
         return optimizers, schedulers
+

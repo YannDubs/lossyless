@@ -11,16 +11,16 @@ from .helpers import weights_init, batch_flatten, batch_unflatten, prod, is_pow2
 __all__ = ["get_Architecture"]
 
 
-def get_Architecture(mode, complexity=2, **kwargs):
+def get_Architecture(mode, complexity=None, **kwargs):
     """Return the (uninstantiated) correct architecture.
 
     Parameters
     ----------
     mode : {"mlp","flattenmlp","resnet","cnn"}
 
-    complexity : {0,...,4}, optional
+    complexity : {0,...,4,None}, optional
         Complexity of the architecture. For `mlp` and `cnn` this is the width, for resnet this is 
-        the depth.
+        the depth. None lets `kwargs` have the desired argument.
 
     kwargs : 
         Additional arguments to the Module.
@@ -31,15 +31,24 @@ def get_Architecture(mode, complexity=2, **kwargs):
         Architecture that can be instantiated by `Architecture(in_shape, out_shape)`
     """
     if mode == "mlp":
-        # width 8,32,128,512,2048
-        return partial(FlattenMLP, hid_dim=8 * (4 ** (complexity)), **kwargs)
+        if complexity is not None:
+            # width 8,32,128,512,2048
+            kwargs["hid_dim"] = 8 * (4 ** (complexity))
+        return partial(FlattenMLP, **kwargs)
+
     elif mode == "resnet":
-        base = ["resnet18", "resnet34", "resnet50", "resnet101", "resnet150"]
-        return partial(Resnet, base=base[complexity], **kwargs)
+        if complexity is not None:
+            base = ["resnet18", "resnet34", "resnet50", "resnet101", "resnet150"]
+            kwargs["base"] = base[complexity]
+        return partial(Resnet, **kwargs)
+
     elif mode == "cnn":
-        # width of first layer 2,8,32,128,512
-        # width of last layer 16,64,256,1024,4096
-        return partial(CNN, hid_dim=2 * (4 ** (complexity)), **kwargs)
+        if complexity is not None:
+            # width of first layer 2,8,32,128,512
+            # width of last layer 16,64,256,1024,4096
+            kwargs["hid_dim"] = 2 * (4 ** (complexity))
+
+        return partial(CNN, **kwargs)
     else:
         raise ValueError(f"Unkown mode={mode}.")
 
@@ -64,10 +73,19 @@ class MLP(nn.Module):
 
     norm_layer : nn.Module or {"identity","batch"}, optional
         Normalizing layer to use.
+
+    activation : {"gdn"}U{any torch.nn activation}, optional
+        Activation to use.
     """
 
     def __init__(
-        self, in_dim, out_dim, n_hid_layers=1, hid_dim=128, norm_layer="identity"
+        self,
+        in_dim,
+        out_dim,
+        n_hid_layers=1,
+        hid_dim=128,
+        norm_layer="identity",
+        activation="ReLU",
     ):
         super().__init__()
 
@@ -75,11 +93,13 @@ class MLP(nn.Module):
         self.out_dim = out_dim
         self.n_hid_layers = n_hid_layers
         self.hid_dim = hid_dim
+        Activation = get_Activation(activation)
+
         Norm = get_norm_layer(norm_layer, dim=1)
 
-        layers = [nn.Linear(in_dim, hid_dim), Norm(hid_dim), nn.ReLU()]
+        layers = [nn.Linear(in_dim, hid_dim), Norm(hid_dim), Activation()]
         for _ in range(1, n_hid_layers):
-            layers += [nn.Linear(hid_dim, hid_dim), Norm(hid_dim), nn.ReLU()]
+            layers += [nn.Linear(hid_dim, hid_dim), Norm(hid_dim), Activation()]
         layers += [nn.Linear(hid_dim, out_dim)]
         self.module = nn.Sequential(*layers)
 
@@ -222,7 +242,7 @@ class CNN(nn.Module):
     norm_layer : callable or {"batchnorm", "identity"}
         Layer to return.
 
-    activation : {"relu","gdn"}, optional
+    activation : {"gdn"}U{any torch.nn activation}, optional
         Activation to use.
 
     kwargs :
@@ -235,7 +255,7 @@ class CNN(nn.Module):
         out_dim,
         hid_dim=32,
         norm_layer="batchnorm",
-        activation="relu",
+        activation="ReLU",
         **kwargs,
     ):
 
@@ -349,15 +369,12 @@ def get_Activation(activation, inverse=False):
 
     Parameters
     ----------
-    activation : {"relu","gdn"}
+    activation : {"gdn"}U{any torch.nn activation}
         Activation to use.
 
     inverse : bool, optional
         Whether using the activation in a transposed model.
     """
-    if activation == "relu":
-        return lambda *args: nn.ReLU()
-    elif activation == "gdn":
+    if activation == "gdn":
         return partial(GDN, inverse=inverse)
-    else:
-        raise ValueError(f"Uknown activation={activation}")
+    return getattr(torch.nn, activation)

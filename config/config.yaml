@@ -25,15 +25,19 @@ paths:
 optimizer: # might need to be a group at some point
   name: adam # not used yet but can change if needed
   lr: 1e-3
-  scheduling_factor: 100 # by how much to reduce lr during training
   weight_decay: 0
   is_lars: false # whether to use LARS optimizer, useful for large batches.
+  scheduler:
+    name: "expdecay"
+    decay_factor: 100 # by how much to reduce lr during training
 
 # only used if coder needs an optimizer (for coding)
 optimizer_coder :
   name: adam # not used yet but can change if needed
   lr: 1e-3
-  scheduling_factor: 1 # by how much to reduce lr during training
+  scheduler:
+    name: null
+
 
 logger:
   loggers: ["csv","wandb"]
@@ -49,6 +53,8 @@ logger:
     offline: false # Run offline (data can be streamed later to wandb servers).
 
 callbacks:
+  additional: []
+
   compressor_chckpt:
     filepath: ${paths.pretrained} 
     monitor: train_loss
