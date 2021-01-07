@@ -402,6 +402,7 @@ class Cifar10DataModule(TorchvisionDataModule):
 
 # TODO @karen: modify as desired all those methods
 # TODO we should also add the mean and std of "galaxy" in `lossyless.helpers` to normalize the data
+# TODO add config for galaxy in config/data with good defaults
 class GalaxyDataset(LossylessImgAnalyticDataset):
     def __init__(
         self, data_root, *args, **kwargs,
