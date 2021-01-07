@@ -36,8 +36,6 @@ from .helpers import (
 )
 
 
-
-
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -261,8 +259,9 @@ class LossylessImgAnalyticDataset(LossylessImgDataset):
         shapes = super().shapes_x_t_Mx
         # first dim of max_var will be the max_inv, then other dims will correspond
         # to the index of the transformation that you sampled
+        # TODO not working yet because cannot deal with multi label and multi class with different class
         max_var = list(shapes["max_inv"])
-        max_var += [self.n_action_per_equiv] * len(self.equivalence)
+        max_var += [self.n_action_per_equiv, len(self.equivalence)]
         shapes["max_var"] = tuple(max_var)
         return shapes
 
@@ -405,9 +404,7 @@ class Cifar10DataModule(TorchvisionDataModule):
 # TODO we should also add the mean and std of "galaxy" in `lossyless.helpers` to normalize the data
 class GalaxyDataset(LossylessImgAnalyticDataset):
     def __init__(
-        self,
-        data_root,
-        *args, **kwargs,
+        self, data_root, *args, **kwargs,
     ):
         super().__init__(*args, **kwargs)
         # do as needed. For best compatibility with the framework
@@ -425,9 +422,8 @@ class GalaxyDataset(LossylessImgAnalyticDataset):
         data_dir = os.path.join(data_root, "galaxyzoo")
 
         def unpack_all_zips():
-            for f, file in enumerate(
-                glob.glob(os.path.join(data_dir, "*.zip"))):
-                with zipfile.ZipFile(file, 'r') as zip_ref:
+            for f, file in enumerate(glob.glob(os.path.join(data_dir, "*.zip"))):
+                with zipfile.ZipFile(file, "r") as zip_ref:
                     zip_ref.extractall(data_dir)
                     os.remove(file)
                     print("{} completed. Progress: {}/6".format(file, f))
@@ -435,7 +431,7 @@ class GalaxyDataset(LossylessImgAnalyticDataset):
         filename = "galaxy-zoo-the-galaxy-challenge.zip"
 
         # check if data was already downloaded
-        if os.path.exists(os.path.join(data_root,filename)):
+        if os.path.exists(os.path.join(data_root, filename)):
             # continue unpacking files just in case this got interrupted
             unpack_all_zips()
             return
@@ -444,20 +440,23 @@ class GalaxyDataset(LossylessImgAnalyticDataset):
             import kaggle
         except Exception as e:
             print(e)
-            print("The download of the Galaxy dataset failed. Make sure you "
-                  "followed the steps in https://github.com/Kaggle/kaggle-api.")
+            print(
+                "The download of the Galaxy dataset failed. Make sure you "
+                "followed the steps in https://github.com/Kaggle/kaggle-api."
+            )
 
         # download the dataset
-        bashCommand = "kaggle competitions download -c " \
-                      "galaxy-zoo-the-galaxy-challenge -p {}".format(data_root)
+        bashCommand = (
+            "kaggle competitions download -c "
+            "galaxy-zoo-the-galaxy-challenge -p {}".format(data_root)
+        )
         subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
 
         # unpack the data
-        with zipfile.ZipFile(os.path.join(data_root,filename), 'r') as zip_ref:
+        with zipfile.ZipFile(os.path.join(data_root, filename), "r") as zip_ref:
             zip_ref.extractall(data_dir)
 
         unpack_all_zips()
-
 
     @property
     def augmentations(self):

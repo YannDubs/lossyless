@@ -1,4 +1,5 @@
 # @package _global_
+# TODO not working yet because cannot deal with multi label and multi class with different class
 distortion:
   name: vib # vib predicting the index + which transformations were applied
   mode: direct

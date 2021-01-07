@@ -13,13 +13,14 @@ source `dirname $0`/utils.sh
 kwargs="
 name=$name 
 +mode=debug
+predictor.is_online_eval=False
 $add_kwargs
 "
 
 # every arguments that you are sweeping over
 kwargs_multi="
 encoder=cnn,mlp,resnet
-distortion=ivib,ivae,ince,taskvib,vae,vib,nce
+distortion=ivib,ivae,ince,taskvib,vae,nce
 rate=H_factorized,H_hyper,MI_unitgaussian,MI_vamp
 data=miniMnist,bananaRot
 " 
