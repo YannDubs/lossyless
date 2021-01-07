@@ -18,9 +18,9 @@ $add_kwargs
 # every arguments that you are sweeping over
 kwargs_multi="
 encoder=cnn,mlp,resnet
-distortion=gvib,gvae,taskvib,vae,vib
-rate=CMI_vamp,H_factorized,H_hyper,MI_unitgaussian,MI_vamp
-data=toyMiniMnist
+distortion=ivib,ivae,ince,taskvib,vae,vib,nce
+rate=H_factorized,H_hyper,MI_unitgaussian,MI_vamp
+data=miniMnist
 " 
 
 if [ "$is_plot_only" = false ] ; then

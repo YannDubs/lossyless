@@ -18,9 +18,9 @@ $add_kwargs
 # every arguments that you are sweeping over
 kwargs_multi="
 encoder=mlp
-distortion=gvib,vae
+distortion=ivib,ivae,ince,taskvib,vae,vib,nce
 rate=H_factorized,H_hyper,MI_unitgaussian,MI_vamp
-data=distBananaRot
+data=bananaRot
 " 
 
 if [ "$is_plot_only" = false ] ; then

@@ -153,18 +153,37 @@ def is_pow2(n):
     return (n != 0) and (n & (n - 1) == 0)
 
 
-def get_exponential_decay_gamma(scheduling_factor, max_epochs):
-    """Return the exponential learning rate factor gamma.
-
+def get_lr_scheduler(optimizer, name, epochs=None, decay_factor=None, **kwargs):
+    """Return the correct learning rate scheduler.
+    
     Parameters
     ----------
-    scheduling_factor :
-        By how much to reduce learning rate during training.
+    optimizer : Optimizer
+        Optimizer to wrap.
 
-    max_epochs : int
-        Maximum number of epochs.
+    name : {None, "expdecay"}U{any torch lr_scheduler}
+        Name of the optimizer to use. "expdecay" uses an exponential decay scheduler where the lr
+        is decayed by `decay_factor` during training. Needs to be given `epochs`. If another `str`
+        it must be a `torch.optim.lr_scheduler` in which case the arguments are given by `kwargs`.
+
+    epochs : int, optional
+        Number of epochs during training.
+
+    decay_factor : int, optional 
+        By how much to reduce learning rate during training. Only if `name = "expdecay"`.
+
+    kwargs : 
+        Additional arguments to any `torch.optim.lr_scheduler`.
+    
     """
-    return (1 / scheduling_factor) ** (1 / max_epochs)
+    if name is None:
+        return None
+    elif name == "expdecay":
+        gamma = (1 / decay_factor) ** (1 / epochs)
+        return torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma)
+    else:
+        Scheduler = getattr(torch.optim.lr_scheduler, name)
+        return Scheduler(optimizer, **kwargs)
 
 
 def kl_divergence(p, q, z_samples=None, is_lower_var=False, is_reduce=True):
@@ -194,6 +213,7 @@ def kl_divergence(p, q, z_samples=None, is_lower_var=False, is_reduce=True):
     return kl_pq
 
 
+# TODO add galaxy
 MEANS = dict(imagenet=[0.485, 0.456, 0.406], cifar10=[0.4914009, 0.48215896, 0.4465308])
 STDS = dict(
     imagenet=[0.229, 0.224, 0.225], cifar10=[0.24703279, 0.24348423, 0.26158753]
@@ -202,8 +222,9 @@ STDS = dict(
 
 def get_normalization(Dataset):
     """Return corrrect normalization given dataset class."""
-    if issubclass(Dataset, CIFAR10):
+    if "cifar10" in Dataset.__name__.lower():
         return transform_lib.Normalize(mean=MEANS["cifar10"], std=STDS["cifar10"])
+    # TODO add galaxy
     else:
         raise ValueError(f"Uknown mean and std for {Dataset}.")
 
@@ -289,6 +310,4 @@ class Delta(Distribution):
     def log_prob(self, x):
         log_prob = (x == self.loc).type(x.dtype).log()
         return log_prob + self.log_density
-
-
 

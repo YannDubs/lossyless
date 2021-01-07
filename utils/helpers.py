@@ -79,3 +79,4 @@ class MinMaxScaler:
 
     def inverse_transform(self, X):
         return (X * self.dist) + self.min_
+

@@ -2,7 +2,7 @@ defaults:
   - hydra/job_logging: colorlog
   - hydra/hydra_logging: colorlog
   
-  - data: toyMiniFashionMnist
+  - data: miniFashionMnist
   - encoder: cnn
   - distortion: vae
   - rate: MI_unitgaussian
@@ -25,15 +25,19 @@ paths:
 optimizer: # might need to be a group at some point
   name: adam # not used yet but can change if needed
   lr: 1e-3
-  scheduling_factor: 100 # by how much to reduce lr during training
   weight_decay: 0
   is_lars: false # whether to use LARS optimizer, useful for large batches.
+  scheduler:
+    name: "expdecay"
+    decay_factor: 100 # by how much to reduce lr during training
 
 # only used if coder needs an optimizer (for coding)
 optimizer_coder :
   name: adam # not used yet but can change if needed
   lr: 1e-3
-  scheduling_factor: 1 # by how much to reduce lr during training
+  scheduler:
+    name: null
+
 
 logger:
   loggers: ["csv","wandb"]
@@ -49,6 +53,8 @@ logger:
     offline: false # Run offline (data can be streamed later to wandb servers).
 
 callbacks:
+  additional: []
+
   compressor_chckpt:
     filepath: ${paths.pretrained} 
     monitor: train_loss
@@ -93,9 +99,9 @@ data:
   length: ???
   shape: ???
   target_shape: ???
-  target_aux_shape: ???
-  is_classification_aux: ??? 
-  is_classification: ???
+  aux_shape: ???
+  aux_is_clf: ??? 
+  target_is_clf: ???
   neg_factor: ??? # useful for contrastive loss. should be len(train_dataset) / (2*batch_size-1)
 
   kwargs:
