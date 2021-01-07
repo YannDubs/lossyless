@@ -22,7 +22,7 @@ kwargs_multi="
 encoder=cnn,mlp,resnet
 distortion=ivib,ivae,ince,taskvib,vae,nce
 rate=H_factorized,H_hyper,MI_unitgaussian,MI_vamp
-data=miniMnist,bananaRot
+data=mnist,bananaRot
 " 
 
 if [ "$is_plot_only" = false ] ; then
