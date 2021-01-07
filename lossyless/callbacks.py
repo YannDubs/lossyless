@@ -2,9 +2,9 @@ import torch
 import torchvision
 import math
 
-import pl_bolts
+
 from pytorch_lightning.callbacks import Callback
-from pl_bolts.callbacks import ssl_online, LatentDimInterpolator
+from pl_bolts.callbacks import ssl_online
 import einops
 
 from .helpers import undo_normalization
@@ -14,7 +14,7 @@ try:
 except ImportError:
     pass
 
-from pytorch_lightning.metrics.functional import accuracy
+
 from torch.nn import functional as F
 
 
@@ -225,4 +225,19 @@ class WandbLatentDimInterpolator(Callback):
         imgs = torch.cat(imgs, dim=0)
         grid = torchvision.utils.make_grid(imgs, nrow=self.n_per_lat)
         return grid
+
+
+class AlphaScheduler(Callback):
+    """
+    Set the parameter `alpha` from a model. To replicate 
+    `https://github.com/tensorflow/compression/blob/master/models/toy_sources/toy_sources.ipynb`. 
+    """
+
+    def on_epoch_start(self, trainer, logs=None):
+        model = trainer.get_model()
+        epoch = trainer.current_epoch
+        max_epochs = trainer.max_epochs
+
+        if epoch < max_epochs / 4:
+            model.force_alpha = 3 * (epoch + 1) / (max_epochs / 4 + 1)
 

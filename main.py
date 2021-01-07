@@ -77,6 +77,7 @@ def get_trainer(cfg, module, is_compressor):
 
         if cfg.predictor.is_online_eval:
             if cfg.data.target_is_clf:
+                # TODO have to make it work for multilabel setting
                 callbacks += [ClfOnlineEvaluator(**cfg.callbacks.online_eval)]
             else:
                 callbacks += [RgrsOnlineEvaluator(**cfg.callbacks.online_eval)]
@@ -94,9 +95,9 @@ def get_trainer(cfg, module, is_compressor):
 
     for name in cfg.callbacks.additional:
         try:
-            callbacks.append(getattr(lossyless.callbacks, name))
+            callbacks.append(getattr(lossyless.callbacks, name)())
         except AttributeError:
-            callbacks.append(getattr(pl.callbacks, name))
+            callbacks.append(getattr(pl.callbacks, name)())
 
     callbacks += [ModelCheckpoint(**chckpt_kwargs)]
 
@@ -127,7 +128,7 @@ def instantiate_datamodule(cfgd):
     datamodule.prepare_data()
     datamodule.setup()
     cfgd.aux_is_clf = datamodule.aux_is_clf
-    cfgd.length = len(datamodule.dataset_train)
+    cfgd.length = len(datamodule.train_dataset)
     cfgd.shape = datamodule.shape
     cfgd.target_is_clf = datamodule.target_is_clf
     cfgd.target_shape = datamodule.target_shape

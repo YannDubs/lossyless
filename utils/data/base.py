@@ -286,7 +286,7 @@ class LossylessDataModule(LightningDataModule):
         """Return the training dataset."""
         raise NotImplementedError()
 
-    def get_valid_dataset(self, **dataset_kwargs):
+    def get_val_dataset(self, **dataset_kwargs):
         """Return the validation dataset."""
         raise NotImplementedError()
 
@@ -312,7 +312,7 @@ class LossylessDataModule(LightningDataModule):
         if stage == "fit" or stage is None:
             self.train_dataset = self.get_train_dataset(**self.dataset_kwargs)
             self.set_info_(self.train_dataset)
-            self.valid_dataset = self.get_valid_dataset(**self.dataset_kwargs)
+            self.val_dataset = self.get_val_dataset(**self.dataset_kwargs)
 
         if stage == "test" or stage is None:
             self.test_dataset = self.get_test_dataset(**self.dataset_kwargs)
@@ -320,7 +320,7 @@ class LossylessDataModule(LightningDataModule):
     def train_dataloader(self):
         """Return the training dataloader."""
         return DataLoader(
-            self.dataset_train,
+            self.train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
@@ -331,7 +331,7 @@ class LossylessDataModule(LightningDataModule):
     def val_dataloader(self):
         """Return the validation dataloader."""
         return DataLoader(
-            self.dataset_val,
+            self.val_dataset,
             batch_size=self.val_batch_size,
             shuffle=False,
             num_workers=self.num_workers,
@@ -342,7 +342,7 @@ class LossylessDataModule(LightningDataModule):
     def test_dataloader(self):
         """Return the test dataloader."""
         return DataLoader(
-            self.dataset_test,
+            self.test_dataset,
             batch_size=self.val_batch_size,
             shuffle=False,
             num_workers=self.num_workers,

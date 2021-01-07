@@ -277,7 +277,7 @@ class LossylessImgAnalyticDataset(LossylessImgDataset):
 
 # Base class for data module for torchvision models.
 class TorchvisionDataModule(LossylessDataModule):
-    def get_train_valid_dataset(self, **dataset_kwargs):
+    def get_train_val_dataset(self, **dataset_kwargs):
         dataset = self.Dataset(
             self.data_dir, train=True, download=False, **self.dataset_kwargs,
         )
@@ -292,11 +292,11 @@ class TorchvisionDataModule(LossylessDataModule):
         return train, valid
 
     def get_train_dataset(self, **dataset_kwargs):
-        train, _ = self.get_train_valid_dataset(**dataset_kwargs)
+        train, _ = self.get_train_val_dataset(**dataset_kwargs)
         return train
 
-    def get_valid_dataset(self, **dataset_kwargs):
-        _, valid = self.get_train_valid_dataset(**dataset_kwargs)
+    def get_val_dataset(self, **dataset_kwargs):
+        _, valid = self.get_train_val_dataset(**dataset_kwargs)
         return valid
 
     def get_test_dataset(self, **dataset_kwargs):
@@ -449,12 +449,14 @@ class GalaxyDataset(LossylessImgAnalyticDataset):
         # input is shape image
         shapes["input"] = (3, 64, 64)
         # target is shape of target. This will depend as to if we are using classfication or regression
-        # in regression mode (as we said) `target=(3,)` means that there are 6 values to predict
-        # (it's equivalent to `target=(1,1,1)` it depends how the targets are formatted)
-        # for classification `target=(3,)` means 3-class classification and `target=(3,2)` means
-        # multi label classification, one with 3-classes and one with 2-classes
-        # (I still have to implement multilabel classification but will be soon)
-        shapes["target"] = (6,)
+        # in regression mode (as we said) then you should stack all labels.
+        # e.g. if the are 37 different regression tasks use `target=(1,37)` which says that there are 37
+        # one dimensional tasks (it's the same as `target=(37,)` but averages over 6 rather than sum)
+        #
+        # for classification something like `target=(2,37)` means 2-class classification for 37
+        # labels  (note that I use cross entropy rather than binary cross entropy. it shouldn't matter
+        # besides a little more parameters right ? )
+        shapes["target"] = (1, 2)
         return shapes
 
     def get_img_target(self, index):
@@ -477,7 +479,7 @@ class GalaxyDataModule(LossylessDataModule):
         return GalaxyDataset
 
     # helper function for splitting train and valid
-    def get_train_valid_dataset(self, **dataset_kwargs):
+    def get_train_val_dataset(self, **dataset_kwargs):
         dataset = self.Dataset(
             self.data_dir, train=True, download=False, **self.dataset_kwargs,
         )
@@ -493,12 +495,12 @@ class GalaxyDataModule(LossylessDataModule):
         return train, valid
 
     def get_train_dataset(self, **dataset_kwargs):
-        train, _ = self.get_train_valid_dataset(**dataset_kwargs)
+        train, _ = self.get_train_val_dataset(**dataset_kwargs)
         return train
 
-    def get_valid_dataset(self, **dataset_kwargs):
+    def get_val_dataset(self, **dataset_kwargs):
         # if there's a validation set then do what you need here
-        _, valid = self.get_train_valid_dataset(**dataset_kwargs)
+        _, valid = self.get_train_val_dataset(**dataset_kwargs)
         return valid
 
     def get_test_dataset(self, **dataset_kwargs):

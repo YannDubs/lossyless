@@ -3,7 +3,7 @@ import torch
 import math
 from torch.nn import functional as F
 import einops
-from .helpers import BASE_LOG, undo_normalization, kl_divergence
+from .helpers import BASE_LOG, undo_normalization, kl_divergence, prod
 from .architectures import get_Architecture
 from .distributions import Deterministic, DiagGaussian
 
@@ -105,6 +105,8 @@ class DirectDistortion(nn.Module):
                 neg_log_q_ylz = F.cross_entropy(Y_hat, aux_target, reduction="none")
             else:
                 neg_log_q_ylz = F.mse_loss(Y_hat, aux_target, reduction="none")
+            n_tasks = prod(Y_hat[0, 0, ...].shape)
+            neg_log_q_ylz = neg_log_q_ylz / n_tasks  # takes an average over tasks
         else:
             if aux_target.shape[-3] == 1:
                 # black white image => uses categorical distribution, with logits for stability
@@ -121,6 +123,7 @@ class DirectDistortion(nn.Module):
                 raise ValueError(
                     f"shape={aux_target.shape} does not seem to come from an image"
                 )
+            # image prediction is always a single task => don't take average
 
         # -log p(y|z). shape: [n_z_samples, batch_size]
         #! mathematically should take a sum (log prod proba -> sum log proba), but usually people take mean
