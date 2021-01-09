@@ -76,6 +76,9 @@ class MLP(nn.Module):
 
     activation : {"gdn"}U{any torch.nn activation}, optional
         Activation to use.
+
+    dropout_p : float, optional
+        Dropout rate.
     """
 
     def __init__(
@@ -86,6 +89,7 @@ class MLP(nn.Module):
         hid_dim=128,
         norm_layer="identity",
         activation="ReLU",
+        dropout_p=0,
     ):
         super().__init__()
 
@@ -94,12 +98,22 @@ class MLP(nn.Module):
         self.n_hid_layers = n_hid_layers
         self.hid_dim = hid_dim
         Activation = get_Activation(activation)
+        Dropout = nn.Dropout if dropout_p > 0 else nn.Identity
+        Norm = get_Normalization(norm_layer, dim=1)
 
-        Norm = get_norm_layer(norm_layer, dim=1)
-
-        layers = [nn.Linear(in_dim, hid_dim), Norm(hid_dim), Activation()]
+        layers = [
+            nn.Linear(in_dim, hid_dim),
+            Norm(hid_dim),
+            Activation(),
+            Dropout(p=dropout_p),
+        ]
         for _ in range(1, n_hid_layers):
-            layers += [nn.Linear(hid_dim, hid_dim), Norm(hid_dim), Activation()]
+            layers += [
+                nn.Linear(hid_dim, hid_dim),
+                Norm(hid_dim),
+                Activation(),
+                Dropout(p=dropout_p),
+            ]
         layers += [nn.Linear(hid_dim, out_dim)]
         self.module = nn.Sequential(*layers)
 
@@ -191,7 +205,7 @@ class Resnet(nn.Module):
         self.resnet = torchvision.models.__dict__[base](
             pretrained=is_pretrained,
             num_classes=out_dim,
-            norm_layer=get_norm_layer(norm_layer, 2),
+            norm_layer=get_Normalization(norm_layer, 2),
         )
 
         if self.in_shape[1] < 100:
@@ -308,7 +322,7 @@ class CNN(nn.Module):
         self.reset_parameters()
 
     def make_block(self, in_chan, out_chan, **kwargs):
-        Normalization = get_norm_layer(self.norm_layer, 2)
+        Normalization = get_Normalization(self.norm_layer, 2)
         if self.is_transpose:
             Activation = get_Activation(self.activation, inverse=True)
             return [
@@ -341,12 +355,12 @@ class CNN(nn.Module):
         return self.model(X)
 
 
-def get_norm_layer(norm_layer, dim=2):
+def get_Normalization(norm_layer, dim=2):
     """Return the correct normalization layer.
 
     Parameters
     ----------
-    norm_layer : callable or {"batchnorm", "identity"}
+    norm_layer : callable or {"batchnorm", "identity"}U{any torch.nn layer}
         Layer to return.
 
     dim : int, optional
@@ -358,7 +372,7 @@ def get_norm_layer(norm_layer, dim=2):
     elif norm_layer == "identity":
         Norm = nn.Identity
     elif isinstance(norm_layer, str):
-        raise ValueError(f"Uknown normal_layer={norm_layer}")
+        Norm = getattr(torch.nn, norm_layer)
     else:
         Norm = norm_layer
     return Norm

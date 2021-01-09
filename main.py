@@ -12,8 +12,7 @@ from torch.utils import data
 import lossyless
 
 from lossyless.callbacks import (
-    ClfOnlineEvaluator,
-    RgrsOnlineEvaluator,
+    OnlineEvaluator,
     WandbReconstructImages,
     WandbLatentDimInterpolator,
 )
@@ -73,14 +72,10 @@ def get_trainer(cfg, module, is_compressor):
     callbacks = []
 
     if is_compressor:
-        chckpt_kwargs = cfg.callbacks.compressor_chckpt
+        chckpt_kwargs = cfg.callbacks.ModelCheckpoint_compressor
 
         if cfg.predictor.is_online_eval:
-            if cfg.data.target_is_clf:
-                # TODO have to make it work for multilabel setting
-                callbacks += [ClfOnlineEvaluator(**cfg.callbacks.online_eval)]
-            else:
-                callbacks += [RgrsOnlineEvaluator(**cfg.callbacks.online_eval)]
+            callbacks += [OnlineEvaluator(**cfg.callbacks.OnlineEvaluator)]
 
         de = module.distortion_estimator
         is_img_out = hasattr(de, "is_img_out") and de.is_img_out
@@ -93,13 +88,14 @@ def get_trainer(cfg, module, is_compressor):
     else:
         chckpt_kwargs = cfg.callbacks.predictor_chckpt
 
-    for name in cfg.callbacks.additional:
-        try:
-            callbacks.append(getattr(lossyless.callbacks, name)())
-        except AttributeError:
-            callbacks.append(getattr(pl.callbacks, name)())
-
     callbacks += [ModelCheckpoint(**chckpt_kwargs)]
+
+    for name in cfg.callbacks.additional:
+        cllbck_kwargs = cfg.callbacks.additional.get(name, {})
+        try:
+            callbacks.append(getattr(lossyless.callbacks, name)(**cllbck_kwargs))
+        except AttributeError:
+            callbacks.append(getattr(pl.callbacks, name)(**cllbck_kwargs))
 
     loggers = []
 

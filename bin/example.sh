@@ -13,7 +13,6 @@ source `dirname $0`/utils.sh
 kwargs="
 name=$name 
 +mode=debug
-predictor.is_online_eval=False
 $add_kwargs
 "
 

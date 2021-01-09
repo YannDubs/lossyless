@@ -21,6 +21,22 @@ def get_distortion_estimator(name, p_ZlX, **kwargs):
         raise ValueError(f"Unkown loss={name}.")
 
 
+def mse_or_crossentropy_loss(Y_hat, target, is_classification, reduction="sum"):
+    """Compute the cross entropy for multilabel clf tasks or MSE for regression"""
+    if is_classification:
+        loss = F.cross_entropy(Y_hat, target, reduction="none")
+    else:
+        loss = F.mse_loss(Y_hat, target, reduction="none")
+    n_tasks = prod(Y_hat[0, 0, ...].shape)
+    loss = loss / n_tasks  # takes an average over tasks
+
+    if reduction == "sum":
+        batch_size = loss.size(0)
+        loss = loss.view(batch_size, -1).sum(keepdim=True, dim=-1)
+
+    return loss
+
+
 class DirectDistortion(nn.Module):
     """Computes the loss using an direct variational bound (i.e. trying to predict an other variable).
     
@@ -139,12 +155,9 @@ class DirectDistortion(nn.Module):
             neg_log_q_ylz = neg_log_q_ylz / n_tasks
 
         else:  # normal pred
-            if self.is_classification:
-                neg_log_q_ylz = F.cross_entropy(Y_hat, aux_target, reduction="none")
-            else:
-                neg_log_q_ylz = F.mse_loss(Y_hat, aux_target, reduction="none")
-            n_tasks = prod(Y_hat[0, 0, ...].shape)
-            neg_log_q_ylz = neg_log_q_ylz / n_tasks  # takes an average over tasks
+            neg_log_q_ylz = mse_or_crossentropy_loss(
+                Y_hat, aux_target, self.is_classification, reduction=None
+            )
 
         # -log p(y|z). shape: [n_z_samples, batch_size]
         #! mathematically should take a sum (log prod proba -> sum log proba), but usually people take mean
