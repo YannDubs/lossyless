@@ -4,6 +4,7 @@ import os
 import hydra
 import logging
 import compressai
+import omegaconf
 
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
@@ -42,7 +43,7 @@ def main(cfg):
         compressai.set_entropy_coder(cfg.rate.range_coder)
 
     # DATA
-    datamodule = instantiate_datamodule(cfg.data)
+    datamodule = instantiate_datamodule(cfg)
 
     # make sure you are using primitive types from now on because omegaconf does not always work
     cfg = omegaconf2namespace(cfg)
@@ -119,7 +120,8 @@ def get_trainer(cfg, module, is_compressor):
     return trainer
 
 
-def instantiate_datamodule(cfgd):
+def instantiate_datamodule(cfg):
+    cfgd = cfg.data
     datamodule = get_datamodule(cfgd.dataset)(**cfgd.kwargs)
     datamodule.prepare_data()
     datamodule.setup()
@@ -131,6 +133,13 @@ def instantiate_datamodule(cfgd):
     cfgd.aux_shape = datamodule.aux_shape
 
     cfgd.neg_factor = cfgd.length / (2 * cfgd.kwargs.batch_size - 1)
+
+    # TODO clean max_var for multi label multi clf
+    # save real shape of `max_var` if you had to flatten it for batching.
+    with omegaconf.open_dict(cfg):
+        if hasattr(datamodule, "shape_max_var"):
+            cfg.distortion.kwargs.n_classes_multilabel = datamodule.shape_max_var
+
     return datamodule
 
 

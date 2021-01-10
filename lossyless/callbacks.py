@@ -88,9 +88,7 @@ class OnlineEvaluator(ssl_online.SSLOnlineEvaluator):
         Y_hat = pl_module.non_linear_evaluator(z)
         Y_hat = Y_hat.view(batch_size, *self.y_shape)
 
-        loss = mse_or_crossentropy_loss(
-            Y_hat, y.long(), self.is_classification, reduction="sum"
-        ).mean(0)
+        loss = mse_or_crossentropy_loss(Y_hat, y.long(), self.is_classification).mean(0)
 
         logs = dict(online_loss=loss)
         if self.is_classification:

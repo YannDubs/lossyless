@@ -306,6 +306,12 @@ class LossylessDataModule(LightningDataModule):
         self.target_is_clf, self.aux_is_clf = dataset.get_is_clf()
         self.target_shape, self.aux_shape = dataset.get_shapes()
         self.shape = dataset.shapes_x_t_Mx["input"]
+        self.additional_target = dataset.additional_target
+
+        # TODO clean max_var for multi label multi clf
+        # save real shape of `max_var` if you had to flatten it for batching.
+        if self.additional_target == "max_var" and hasattr(dataset, "shape_max_var"):
+            self.shape_max_var = dataset.shape_max_var
 
     def setup(self, stage=None):
         """Prepare the datasets for the current stage."""

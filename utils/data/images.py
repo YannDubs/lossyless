@@ -254,27 +254,46 @@ class LossylessImgAnalyticDataset(LossylessImgDataset):
         self._entropies = entropies
         return entropies
 
-    @property
-    def shapes_x_t_Mx(self):
-        shapes = super().shapes_x_t_Mx
-        # first dim of max_var will be the max_inv, then other dims will correspond
-        # to the index of the transformation that you sampled
-        # TODO not working yet because cannot deal with multi label and multi class with different class
-        max_var = list(shapes["max_inv"])
-        max_var += [self.n_action_per_equiv, len(self.equivalence)]
-        shapes["max_var"] = tuple(max_var)
-        return shapes
-
+    # TODO clean max_var for multi label multi clf
     def get_max_var(self, x, Mx):
-        # the max_var for analytic transforms is the index of the transform you sampled
-        # if you rotate and translate it will be multilabel prediction of the rotation index
+        # the max_var for analytic transforms Mx and the indices of the transform you sampled
+        # e.g. if you rotate and translate it will be multilabel prediction of the rotation index
         # and translation index IN ADDITION to the Mx => ensure that it is classification
         # like for the maximal invariant but not invariant anymore => can use VIB loss
         max_var = [Mx]
         for trnsf in self.aug_transform.transforms:
             # all analytic transforms store the last index they sampled
             max_var.append(trnsf.i)
-        return max_var
+
+        # we would want a list of targets, where the first element is max_inv, then other elements
+        # are the indices of the transformation that you sampled. But that cannot be put in a batch
+        # as Mx does not usually have same size as `self.n_action_per_equiv`. So we flatten everything
+        # and will be unflattened when computing the loss
+        return torch.tensor(max_var)
+
+    @property
+    def shapes_x_t_Mx(self):
+        shapes = super().shapes_x_t_Mx
+
+        if self.additional_target == "max_var":
+            # flattened max var (see `get_max_var`)
+            shapes["max_var"] = (sum(self.shape_max_var),)
+
+        return shapes
+
+    @property
+    def shape_max_var(self):
+        """Actual number of elements for each prediction task when `additional_target=max_var`."""
+        shapes = super().shapes_x_t_Mx
+        mx_shape = shapes["max_inv"]
+
+        if len(mx_shape) > 1:
+            raise NotImplementedError(
+                f"Can only work with vector max_inv when using max_var, but shape={mx_shape}."
+            )
+
+        mv_shape = list(mx_shape) + [self.n_action_per_equiv] * len(self.equivalence)
+        return tuple(mv_shape)
 
 
 ### Torchvision Models ###
