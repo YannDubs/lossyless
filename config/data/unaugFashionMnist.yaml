@@ -1,0 +1,10 @@
+# @package _global_
+data:
+  name: unaugFashionMnist
+  dataset: fashionMnist
+  kwargs:
+    # make sure you use entire training set
+    val_size: 0.05
+    dataset_kwargs:
+      n_per_target: 1000
+      equivalence: []

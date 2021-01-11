@@ -2,12 +2,13 @@ import torch
 import torchvision
 import math
 
-
 from pytorch_lightning.callbacks import Callback
+from pytorch_lightning.metrics.functional import accuracy
 from pl_bolts.callbacks import ssl_online
 import einops
 
 from .helpers import undo_normalization
+from .distortions import mse_or_crossentropy_loss
 
 try:
     import wandb
@@ -15,7 +16,7 @@ except ImportError:
     pass
 
 
-from torch.nn import functional as F
+from .helpers import prod
 
 
 def save_img_wandb(pl_module, trainer, img, name, caption):
@@ -25,14 +26,101 @@ def save_img_wandb(pl_module, trainer, img, name, caption):
     trainer.logger[wandb_idx].experiment.log({name: [wandb_img]})
 
 
-class ClfOnlineEvaluator(ssl_online.SSLOnlineEvaluator):
-    def __init__(self, *args, y_dim_pred=None, **kwargs):
-        super().__init__(*args, num_classes=y_dim_pred, **kwargs)
+class OnlineEvaluator(ssl_online.SSLOnlineEvaluator):
+    """
+    Attaches MLP/linear predictor for evaluating the quality of a representation as usual in self-supervised. 
 
-    def to_device(self, batch, device):
-        x, (y, _, _) = batch  # only return the real label
-        batch = [x], y  # x assumes to be a list
-        return super().to_device(batch, device)
+    Notes
+    -----
+    -  generalizes `pl_bolts.callbacks.ssl_online.SSLOnlineEvaluator` for multilabel clf and regression 
+
+    Parameters
+    ----------
+    in_dim : int
+        Input dimension.
+
+    y_shape : tuple of in
+        Shape of the output
+
+    is_classification : bool, optional
+        Whether or not the task is a classification one.
+
+    hidden_dim : int, optional
+        Number of hidden neurones to use for the MLP. If `None` uses linear predictor.
+
+    drop_p : float, optional
+        Dropout rate to apply.
+    """
+
+    def __init__(
+        self, in_dim, y_shape, is_classification=True, dropout_p=0.2, hidden_dim=512,
+    ):
+        super().__init__(
+            z_dim=in_dim,
+            num_classes=prod(y_shape),
+            hidden_dim=hidden_dim,
+            drop_p=dropout_p,
+            dataset=None,
+        )
+        self.is_classification = is_classification
+        self.y_shape = y_shape
+
+    def prepare_data(self, batch, pl_module):
+        x, targets = batch  # only return the real label
+        y = targets[0]  # first target is y
+
+        x = x.to(pl_module.device)
+        y = y.to(pl_module.device)
+
+        return x, y
+
+    def step(self, x, y, pl_module):
+        batch_size = x.size(0)
+
+        with torch.no_grad():
+            # Shape: (batch, z_dim)
+            z = pl_module(x)
+
+        z = z.detach()
+
+        # Shape: (z_dim, *y_shape)
+        Y_hat = pl_module.non_linear_evaluator(z)
+        Y_hat = Y_hat.view(batch_size, *self.y_shape)
+
+        loss = mse_or_crossentropy_loss(Y_hat, y.long(), self.is_classification).mean(0)
+
+        logs = dict(online_loss=loss)
+        if self.is_classification:
+            logs["online_acc"] = accuracy(Y_hat.argmax(dim=-1), y)
+
+        return loss, logs
+
+    def on_train_batch_end(
+        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+    ):
+        self.toggle_optimizer(trainer, pl_module)
+        x, y = self.prepare_data(batch, pl_module)
+        loss, logs = self.step(x, y, pl_module)
+
+        loss.backward()
+        self.optimizer.step()
+        self.optimizer.zero_grad()
+
+        pl_module.log_dict(
+            {f"train_{k}": v for k, v in logs.items()}, on_step=True, on_epoch=False
+        )
+
+    def on_validation_batch_end(
+        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+    ):
+        x, y = self.prepare_data(batch, pl_module)
+        _, logs = self.step(x, y, pl_module)
+        pl_module.log_dict(
+            {f"val_{k}": v for k, v in logs.items()},
+            on_step=False,
+            on_epoch=True,
+            sync_dist=True,
+        )
 
     #! waiting for #4955
     def toggle_optimizer(self, trainer, pl_module):
@@ -40,61 +128,6 @@ class ClfOnlineEvaluator(ssl_online.SSLOnlineEvaluator):
         if len(trainer.optimizers) > 1:
             for param in pl_module.non_linear_evaluator.parameters():
                 param.requires_grad = True
-
-    def on_train_batch_end(
-        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
-    ):
-        self.toggle_optimizer(trainer, pl_module)
-        super().on_train_batch_end(
-            trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
-        )
-
-
-class RgrsOnlineEvaluator(ClfOnlineEvaluator):
-    def on_train_batch_end(
-        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
-    ):
-        """Only change with ClfOnlineEvaluator is lmse_oss and not computing accuracy."""
-        self.toggle_optimizer(trainer, pl_module)
-
-        x, y = self.to_device(batch, pl_module.device)
-
-        with torch.no_grad():
-            representations = self.get_representations(pl_module, x)
-
-        representations = representations.detach()
-
-        # forward pass
-        mlp_preds = pl_module.non_linear_evaluator(representations)
-        mlp_loss = F.mse_loss(mlp_preds, y)
-
-        # update finetune weights
-        mlp_loss.backward()
-        self.optimizer.step()
-        self.optimizer.zero_grad()
-
-        # log metrics
-        pl_module.log("online_train_loss", mlp_loss, on_step=True, on_epoch=False)
-
-    def on_validation_batch_end(
-        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
-    ):
-        """Only change with ClfOnlineEvaluator is lmse_oss and not computing accuracy."""
-        x, y = self.to_device(batch, pl_module.device)
-
-        with torch.no_grad():
-            representations = self.get_representations(pl_module, x)
-
-        representations = representations.detach()
-
-        # forward pass
-        mlp_preds = pl_module.non_linear_evaluator(representations)
-        mlp_loss = F.mse_loss(mlp_preds, y)
-
-        # log metrics
-        pl_module.log(
-            "online_val_loss", mlp_loss, on_step=False, on_epoch=True, sync_dist=True
-        )
 
 
 class WandbReconstructImages(Callback):

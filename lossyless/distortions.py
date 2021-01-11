@@ -21,6 +21,21 @@ def get_distortion_estimator(name, p_ZlX, **kwargs):
         raise ValueError(f"Unkown loss={name}.")
 
 
+def mse_or_crossentropy_loss(Y_hat, target, is_classification):
+    """Compute the cross entropy for multilabel clf tasks or MSE for regression"""
+    if is_classification:
+        loss = F.cross_entropy(Y_hat, target, reduction="none")
+    else:
+        loss = F.mse_loss(Y_hat, target, reduction="none")
+    n_tasks = prod(Y_hat[0, 0, ...].shape)
+    loss = loss / n_tasks  # takes an average over tasks
+
+    batch_size = loss.size(0)
+    loss = loss.view(batch_size, -1).sum(keepdim=True, dim=-1)
+
+    return loss
+
+
 class DirectDistortion(nn.Module):
     """Computes the loss using an direct variational bound (i.e. trying to predict an other variable).
     
@@ -44,6 +59,13 @@ class DirectDistortion(nn.Module):
     is_classification : str, optional
         Wether you should perform classification instead of regression. It is not used if 
         `is_img_out=True`, in which cross entropy is used only if the image is black and white.
+
+    n_classes_multilabel : list of int, optional
+        In the multilabel multiclass case but with varying classes, the model cannot predict the 
+        correct shape as tensor (as each label have different associated target size) as a result it
+        predicts everything in a single flattened predictions. `n_labels` is a list of the number 
+        of classes for each labels. This should only be given if the targets and predictions are
+        flattened.
     """
 
     def __init__(
@@ -54,6 +76,7 @@ class DirectDistortion(nn.Module):
         arch_kwargs=dict(complexity=2),
         dataset=None,
         is_classification=True,
+        n_classes_multilabel=None,
     ):
         super().__init__()
         self.dataset = dataset
@@ -64,6 +87,7 @@ class DirectDistortion(nn.Module):
             arch = "cnn" if self.is_img_out else "mlp"
         Decoder = get_Architecture(arch, **arch_kwargs)
         self.q_YlZ = Decoder(z_dim, y_shape)
+        self.n_classes_multilabel = n_classes_multilabel
 
     def forward(self, z_hat, aux_target, _):
         """Compute the distortion.
@@ -100,14 +124,7 @@ class DirectDistortion(nn.Module):
         #! all of the following should really be written in a single line using log_prob where P_{Y|Z}
         # is an actual conditional distribution (categorical if cross entropy, and gaussian for mse),
         # but this might be less understandable for usual deep learning + less numberically stable
-        if not self.is_img_out:
-            if self.is_classification:
-                neg_log_q_ylz = F.cross_entropy(Y_hat, aux_target, reduction="none")
-            else:
-                neg_log_q_ylz = F.mse_loss(Y_hat, aux_target, reduction="none")
-            n_tasks = prod(Y_hat[0, 0, ...].shape)
-            neg_log_q_ylz = neg_log_q_ylz / n_tasks  # takes an average over tasks
-        else:
+        if self.is_img_out:
             if aux_target.shape[-3] == 1:
                 # black white image => uses categorical distribution, with logits for stability
                 neg_log_q_ylz = F.binary_cross_entropy_with_logits(
@@ -123,7 +140,24 @@ class DirectDistortion(nn.Module):
                 raise ValueError(
                     f"shape={aux_target.shape} does not seem to come from an image"
                 )
-            # image prediction is always a single task => don't take average
+        elif self.n_classes_multilabel:
+            assert self.is_classification
+            cum_cls = 0
+            neg_log_q_ylz = 0
+            for i, n_classes in enumerate(self.n_classes_multilabel):
+                cum_cls_new = cum_cls + n_classes
+                neg_log_q_ylz = neg_log_q_ylz + F.cross_entropy(
+                    Y_hat[:, cum_cls:cum_cls_new], aux_target[:, i], reduction="none"
+                )
+                cum_cls = cum_cls_new
+
+            n_tasks = len(self.n_classes_multilabel)
+            neg_log_q_ylz = neg_log_q_ylz / n_tasks
+
+        else:  # normal pred
+            neg_log_q_ylz = mse_or_crossentropy_loss(
+                Y_hat, aux_target, self.is_classification
+            )
 
         # -log p(y|z). shape: [n_z_samples, batch_size]
         #! mathematically should take a sum (log prod proba -> sum log proba), but usually people take mean

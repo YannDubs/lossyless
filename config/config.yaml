@@ -55,18 +55,18 @@ logger:
 callbacks:
   additional: []
 
-  compressor_chckpt:
-    filepath: ${paths.pretrained} 
+  ModelCheckpoint_compressor:
+    dirpath: ${paths.pretrained} 
     monitor: train_loss
     mode: "min"
     verbose: true
 
-  online_eval:
-    dataset: ${data.name}
-    drop_p: 0
+  OnlineEvaluator:
+    dropout_p: 0.2
     hidden_dim: 1024
-    z_dim: ${encoder.z_dim}
-    y_dim_pred: ${data.target_shape}
+    in_dim: ${encoder.z_dim}
+    y_shape: ${data.target_shape}
+    is_classification: ${data.target_is_clf}
 
 predictor:
   is_online_eval: true

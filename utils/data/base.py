@@ -23,8 +23,8 @@ class LossylessDataset(abc.ABC):
     -----------
     additional_target : {"input", "representative", "equiv_x", "max_inv", "max_var", "target", None}, optional
         Additional target to append to the target. `"input"` is the input example (i.e. augmented),
-        `"representative"` is a representative of the equivalence class (always the same). 
-        `"equiv_x"` is some random equivalent x. `"max_inv"` is the 
+        `"representative"` is a representative of the equivalence class (always the same).
+        `"equiv_x"` is some random equivalent x. `"max_inv"` is the
         maximal invariant. `"max_var"` should be similar to maximal invariant but it should not be
         invariant, e.g. if the maximal invariant is the unaugmented index then the `max_var` is the
         augmented index (his ensure that the same losses can be used as with `max_inv`.
@@ -33,13 +33,18 @@ class LossylessDataset(abc.ABC):
     equivalence : str or set of str, optional
         Equivalence relationship with respect to which to be invariant. Depends on the dataset.
         `None` means no equivalence.
-    
+
     seed : int, optional
         Pseudo random seed.
     """
 
     def __init__(
-        self, *args, additional_target=None, equivalence=None, seed=123, **kwargs,
+        self,
+        *args,
+        additional_target=None,
+        equivalence=None,
+        seed=123,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
@@ -155,7 +160,7 @@ class LossylessCLFDataset(LossylessDataset):
 
     Parameters
     -----------
-    n_per_target : int, optional 
+    n_per_target : int, optional
         Number of examples to keep per label.
 
     targets_drop : list, optional
@@ -166,7 +171,11 @@ class LossylessCLFDataset(LossylessDataset):
     """
 
     def __init__(
-        self, *args, n_per_target=None, targets_drop=[], **kwargs,
+        self,
+        *args,
+        n_per_target=None,
+        targets_drop=[],
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
@@ -232,21 +241,21 @@ class LossylessDataModule(LightningDataModule):
         Directory for saving/loading the dataset.
 
     val_size : int or float, optional
-        How many examples to use for validation. This will generate new examples if possible, or 
+        How many examples to use for validation. This will generate new examples if possible, or
         split from the training set. If float this is in ratio of training size, eg 0.1 is 10%.
 
     test_size : int, optional
         How many examples to use for test. `None` means all.
-    
-    num_workers : int, optional 
+
+    num_workers : int, optional
         How many workers to use for loading data
 
     batch_size : int, optional
-        Number of example per batch for training.  
+        Number of example per batch for training.
 
     val_batch_size : int or None, optional
         Number of example per batch during eval and test. If None uses `batch_size`.
-    
+
     seed : int, optional
         Pseudo random seed.
 
@@ -256,7 +265,6 @@ class LossylessDataModule(LightningDataModule):
 
     def __init__(
         self,
-        *args,
         data_dir=DIR,
         val_size=0.1,
         test_size=None,
@@ -265,9 +273,8 @@ class LossylessDataModule(LightningDataModule):
         val_batch_size=None,
         seed=123,
         dataset_kwargs={},
-        **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__()
         self.data_dir = data_dir
         self.val_size = val_size
         self.test_size = test_size
@@ -306,6 +313,12 @@ class LossylessDataModule(LightningDataModule):
         self.target_is_clf, self.aux_is_clf = dataset.get_is_clf()
         self.target_shape, self.aux_shape = dataset.get_shapes()
         self.shape = dataset.shapes_x_t_Mx["input"]
+        self.additional_target = dataset.additional_target
+
+        # TODO clean max_var for multi label multi clf
+        # save real shape of `max_var` if you had to flatten it for batching.
+        if self.additional_target == "max_var" and hasattr(dataset, "shape_max_var"):
+            self.shape_max_var = dataset.shape_max_var
 
     def setup(self, stage=None):
         """Prepare the datasets for the current stage."""
@@ -349,4 +362,3 @@ class LossylessDataModule(LightningDataModule):
             drop_last=True,
             pin_memory=True,
         )
-

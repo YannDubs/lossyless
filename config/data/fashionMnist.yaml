@@ -1,0 +1,10 @@
+# @package _global_
+data:
+  name: fashionMnist
+  dataset: fashionmnist
+  kwargs:
+    val_size: 0.05
+    dataset_kwargs:
+      n_per_target: 5000
+      equivalence: [x_translation, y_translation]
+      is_augment_val: True

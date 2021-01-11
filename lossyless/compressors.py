@@ -59,17 +59,19 @@ class CompressionModule(pl.LightningModule):
 
     @auto_move_data  # move data on correct device for inference
     def forward(
-        self, x, is_compress=False,
+        self,
+        x,
+        is_compress=False,
     ):
         """Represents the data `x`.
-        
+
         Parameters
         ----------
         X : torch.tensor of shape=(*, *data.shape)
             Data to represent.
 
         is_compress : bool, optional
-            Whether to return the compressed representation. 
+            Whether to return the compressed representation.
 
         Returns
         -------
@@ -151,7 +153,7 @@ class CompressionModule(pl.LightningModule):
 
         if optimizer_idx == 0:
             loss, logs, other = self.step(batch)
-            self.log_dict({f"train_{k}": v for k, v in logs.items()})
+            self.log_dict({f"train_{k}": v for k, v in logs.items()}, sync_dist=True)
 
             #! waiting for torch lightning #1243
             #! everyting in other should be detached
@@ -161,6 +163,7 @@ class CompressionModule(pl.LightningModule):
 
         else:  # only if is_optimize_coder
             coder_loss = self.rate_estimator.aux_loss()
+            self.log("train_coder_loss", coder_loss, sync_dist=True)
             return coder_loss
 
     def validation_step(self, batch, batch_idx):
@@ -220,10 +223,11 @@ class CompressionModule(pl.LightningModule):
             optimizers += [optimizer_coder]
 
             scheduler = get_lr_scheduler(
-                optimizer_coder, epochs=epochs, **cfgoc.scheduler,
+                optimizer_coder,
+                epochs=epochs,
+                **cfgoc.scheduler,
             )
             if scheduler is not None:
                 schedulers += [scheduler]
 
         return optimizers, schedulers
-

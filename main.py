@@ -4,16 +4,15 @@ import os
 import hydra
 import logging
 import compressai
+import omegaconf
 
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
-from torch.utils import data
 import lossyless
 
 from lossyless.callbacks import (
-    ClfOnlineEvaluator,
-    RgrsOnlineEvaluator,
+    OnlineEvaluator,
     WandbReconstructImages,
     WandbLatentDimInterpolator,
 )
@@ -24,8 +23,6 @@ from utils.data import get_datamodule
 
 
 logger = logging.getLogger(__name__)
-
-from omegaconf import OmegaConf
 
 
 @hydra.main(config_name="config", config_path="config")
@@ -42,8 +39,13 @@ def main(cfg):
     if cfg.rate.range_coder is not None:
         compressai.set_entropy_coder(cfg.rate.range_coder)
 
+    # waiting for pytorch lightning #5459
+    if (cfg.distortion.name == "vib") and ("H_" in cfg.rate.name):
+        logger.warning("Turning off `is_online_eval` until #5459 gets solved.")
+        cfg.predictor.is_online_eval = False
+
     # DATA
-    datamodule = instantiate_datamodule(cfg.data)
+    datamodule = instantiate_datamodule(cfg)
 
     # make sure you are using primitive types from now on because omegaconf does not always work
     cfg = omegaconf2namespace(cfg)
@@ -73,14 +75,10 @@ def get_trainer(cfg, module, is_compressor):
     callbacks = []
 
     if is_compressor:
-        chckpt_kwargs = cfg.callbacks.compressor_chckpt
+        chckpt_kwargs = cfg.callbacks.ModelCheckpoint_compressor
 
         if cfg.predictor.is_online_eval:
-            if cfg.data.target_is_clf:
-                # TODO have to make it work for multilabel setting
-                callbacks += [ClfOnlineEvaluator(**cfg.callbacks.online_eval)]
-            else:
-                callbacks += [RgrsOnlineEvaluator(**cfg.callbacks.online_eval)]
+            callbacks += [OnlineEvaluator(**cfg.callbacks.OnlineEvaluator)]
 
         de = module.distortion_estimator
         is_img_out = hasattr(de, "is_img_out") and de.is_img_out
@@ -93,13 +91,14 @@ def get_trainer(cfg, module, is_compressor):
     else:
         chckpt_kwargs = cfg.callbacks.predictor_chckpt
 
-    for name in cfg.callbacks.additional:
-        try:
-            callbacks.append(getattr(lossyless.callbacks, name)())
-        except AttributeError:
-            callbacks.append(getattr(pl.callbacks, name)())
-
     callbacks += [ModelCheckpoint(**chckpt_kwargs)]
+
+    for name in cfg.callbacks.additional:
+        cllbck_kwargs = cfg.callbacks.get(name, {})
+        try:
+            callbacks.append(getattr(lossyless.callbacks, name)(**cllbck_kwargs))
+        except AttributeError:
+            callbacks.append(getattr(pl.callbacks, name)(**cllbck_kwargs))
 
     loggers = []
 
@@ -123,7 +122,8 @@ def get_trainer(cfg, module, is_compressor):
     return trainer
 
 
-def instantiate_datamodule(cfgd):
+def instantiate_datamodule(cfg):
+    cfgd = cfg.data
     datamodule = get_datamodule(cfgd.dataset)(**cfgd.kwargs)
     datamodule.prepare_data()
     datamodule.setup()
@@ -135,6 +135,13 @@ def instantiate_datamodule(cfgd):
     cfgd.aux_shape = datamodule.aux_shape
 
     cfgd.neg_factor = cfgd.length / (2 * cfgd.kwargs.batch_size - 1)
+
+    # TODO clean max_var for multi label multi clf
+    # save real shape of `max_var` if you had to flatten it for batching.
+    with omegaconf.open_dict(cfg):
+        if hasattr(datamodule, "shape_max_var"):
+            cfg.distortion.kwargs.n_classes_multilabel = datamodule.shape_max_var
+
     return datamodule
 
 
