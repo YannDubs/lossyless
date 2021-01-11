@@ -16,7 +16,6 @@ except ImportError:
     pass
 
 
-from torch.nn import functional as F
 from .helpers import prod
 
 
@@ -92,7 +91,7 @@ class OnlineEvaluator(ssl_online.SSLOnlineEvaluator):
 
         logs = dict(online_loss=loss)
         if self.is_classification:
-            logs["online_acc"] = accuracy(Y_hat, y)
+            logs["online_acc"] = accuracy(Y_hat.argmax(dim=-1), y)
 
         return loss, logs
 

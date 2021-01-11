@@ -9,7 +9,6 @@ import omegaconf
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
-from torch.utils import data
 import lossyless
 
 from lossyless.callbacks import (
@@ -25,8 +24,6 @@ from utils.data import get_datamodule
 
 logger = logging.getLogger(__name__)
 
-from omegaconf import OmegaConf
-
 
 @hydra.main(config_name="config", config_path="config")
 def main(cfg):
@@ -41,6 +38,11 @@ def main(cfg):
 
     if cfg.rate.range_coder is not None:
         compressai.set_entropy_coder(cfg.rate.range_coder)
+
+    # waiting for pytorch lightning #5459
+    if (cfg.distortion.name == "vib") and ("H_" in cfg.rate.name):
+        logger.warn("Turning off `is_online_eval` until #5459 gets solved.")
+        cfg.predictor.is_online_eval = False
 
     # DATA
     datamodule = instantiate_datamodule(cfg)
@@ -92,7 +94,7 @@ def get_trainer(cfg, module, is_compressor):
     callbacks += [ModelCheckpoint(**chckpt_kwargs)]
 
     for name in cfg.callbacks.additional:
-        cllbck_kwargs = cfg.callbacks.additional.get(name, {})
+        cllbck_kwargs = cfg.callbacks.get(name, {})
         try:
             callbacks.append(getattr(lossyless.callbacks, name)(**cllbck_kwargs))
         except AttributeError:

@@ -221,6 +221,7 @@ class HRateFactorizedPrior(RateEstimator):
         self.is_can_compress = n_z_samples == 1
 
     def forward(self, z, _):
+
         z_hat, q_z = self.entropy_bottleneck(z)
 
         # - log q(z). shape :  [n_z_dim, batch_shape]
@@ -320,7 +321,7 @@ class HRateHyperprior(RateEstimator):
             scales_hat, means_hat = gaussian_params, None
         return scales_hat, means_hat
 
-    def forward(self, z, _, __):
+    def forward(self, z, _):
 
         # shape: [n_z_dim, batch_shape, side_z_dim]
         side_z = self.h_a(z)

@@ -56,7 +56,7 @@ callbacks:
   additional: []
 
   ModelCheckpoint_compressor:
-    filepath: ${paths.pretrained} 
+    dirpath: ${paths.pretrained} 
     monitor: train_loss
     mode: "min"
     verbose: true
