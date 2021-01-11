@@ -1,0 +1,33 @@
+# @package _global_
+
+# debug the model 
+
+name: debug_${now:%Y-%m-%d_%H-%M-%S}
+is_debug: True # enter debug mode
+
+trainer:
+  # DEBUGGING
+  track_grad_norm: 2 # use 2 to track L2 norms of grad
+  #overfit_batches: 0.01 # use 0.01 to make sure you can overfit 1% of training data => training works
+  fast_dev_run: True
+  weights_summary: full # full to print show the entire model 
+  profiler: simple # use `simple` or `"advanced"` to find bottleneck
+  max_epochs: 2
+  gpus: 0
+  precision: 32 # 16 does not work for cpu
+
+logger:
+  wandb:
+    tags: debug
+    anonymous: true
+
+callbacks:
+  additional: [TrainingDataMonitor,ModuleDataMonitor] # if add other callbacks through additional will be replaced
+
+  TrainingDataMonitor:
+    log_every_n_steps: 100
+
+  ModuleDataMonitor:
+    log_every_n_steps: 100
+    submodules: [p_ZlX.mapper]
+  
