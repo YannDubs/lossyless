@@ -1,20 +1,16 @@
 # @package _global_
-# debug the model 
-name: debug_${now:%Y-%m-%d_%H-%M-%S}
-is_debug: True # enter debug mode
+# test whether can overfit training
+name: test_${now:%Y-%m-%d_%H-%M-%S}
 
 trainer:
-  # DEBUGGING
   track_grad_norm: 2 # use 2 to track L2 norms of grad
-  #overfit_batches: 0.01 # use 0.01 to make sure you can overfit 1% of training data => training works
-  fast_dev_run: True
-  weights_summary: full # full to print show the entire model 
-  profiler: simple # use `simple` or `"advanced"` to find bottleneck
-  max_epochs: 2
+  overfit_batches: 0.01 # use 0.01 to make sure you can overfit 1% of training data => training works
+  weights_summary: top # full to print show the entire model 
+  max_epochs: 5
 
 logger:
   wandb:
-    tags: debug
+    tags: test
     anonymous: true
 
 callbacks:

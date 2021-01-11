@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-name=$prfx"debug"
+name=$prfx"example"
 notes="
-**Goal**: Debugging all models at once (in parallel)
+**Goal**: Checkng that important moodels can overfit the data.
 **Hypothesis**: No errors
 "
 
@@ -12,15 +12,15 @@ source `dirname $0`/utils.sh
 # define all the arguments modified or added to `conf`. If they are added use `+`
 kwargs="
 name=$name 
-+mode=debug
++mode=test
 $add_kwargs
 "
 
 # every arguments that you are sweeping over
 kwargs_multi="
 encoder=mlp
-distortion=vib,ivib,ivae,ince,taskvib,vae,nce
-rate=H_factorized,H_hyper,MI_unitgaussian,MI_vamp
+distortion=ivib,ivae,ince
+rate=H_hyper,MI_vamp
 data=mnist,bananaRot
 " 
 

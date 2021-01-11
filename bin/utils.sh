@@ -8,14 +8,28 @@ is_plot_only=false
 
 
 # DEV MODE ?
-while getopts ':dnsi:p:l' flag; do
+while getopts ':dvtnsi:p:l' flag; do
   case "${flag}" in
     d ) 
       add_kwargs='+mode=debug' 
-      time="20"
-      prfx="debug_"
+      time="10"
+      prfx="dev_"
       run="0"
       echo "Debug mode ..."
+      ;;
+    v ) 
+      add_kwargs='+mode=dev' 
+      time="10"
+      prfx="dev_"
+      run="0"
+      echo "Dev mode ..."
+      ;;
+    t ) 
+      add_kwargs='+mode=test' 
+      time="60"
+      prfx="test_"
+      run="0"
+      echo "Test mode ..."
       ;;
     s ) 
       add_kwargs='datasize.max_epochs=100 +logger.wandb.tags=small' 
@@ -40,7 +54,7 @@ while getopts ':dnsi:p:l' flag; do
       echo "Priority mode : ${OPTARG}..."
       ;;
     \? ) 
-      echo "Usage: "$name".sh [-dnspli]" 
+      echo "Usage: "$name".sh [-dvtnsipl]" 
       exit 1
       ;;
     : )
