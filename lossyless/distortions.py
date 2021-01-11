@@ -286,7 +286,6 @@ class ContrastiveDistortion(nn.Module):
         logits = self.compute_logits(p_Zlx, p_Zlp)
         logits /= self.temperature
 
-        breakpoint()
         if self.is_invariant:
             mask = ~torch.eye(new_batch_size, device=device).bool()
             # select all but current.

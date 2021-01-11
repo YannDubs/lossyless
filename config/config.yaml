@@ -78,7 +78,7 @@ trainer:
   progress_bar_refresh_rate: 0 # increase to show progress bar
   resume_from_checkpoint: null # string to checkpoint if want to resume
   gradient_clip_val: 0 # increase to clip grad
-
+  reload_dataloaders_every_epoch: False
   
   # ENGINEERING / SPEED
   gpus: 1 
@@ -107,6 +107,7 @@ data:
   kwargs:
     data_dir: ${paths.data}
     batch_size: 128
+    reload_dataloaders_every_epoch: ${trainer.reload_dataloaders_every_epoch}
 
 encoder:
   name: ???

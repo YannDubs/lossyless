@@ -185,16 +185,15 @@ class DistributionDataModule(LossylessDataModule):
         return dataset
 
     def get_val_dataset(self, **dataset_kwargs):
-        # you want a fix validation set so set the seed
-        dataset_kwargs["seed"] = self.seed
+        dataset_kwargs["seed"] = None
         dataset_kwargs["length"] = int_or_ratio(self.val_size, len(self.train_dataset))
 
         dataset = self.Dataset(**dataset_kwargs)
         return dataset
 
     def get_test_dataset(self, **dataset_kwargs):
-        # you want a fix test set but different from validation
-        dataset_kwargs["seed"] = self.seed + 1
+        # fix seed for reproducability
+        dataset_kwargs["seed"] = self.seed
 
         test_size = self.val_size if self.test_size is None else self.test_size
         dataset_kwargs["length"] = int_or_ratio(test_size, len(self.train_dataset))
