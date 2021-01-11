@@ -1,12 +1,11 @@
-from functools import partial
-import os
-
 import hydra
 import logging
 import compressai
 import omegaconf
 
+
 import pytorch_lightning as pl
+import pl_bolts
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 import lossyless
@@ -18,7 +17,7 @@ from lossyless.callbacks import (
 )
 from lossyless import CompressionModule
 from lossyless.distributions import MarginalVamp
-from utils.helpers import create_folders, omegaconf2namespace
+from utils.helpers import create_folders, omegaconf2namespace, set_debug
 from utils.data import get_datamodule
 
 
@@ -28,9 +27,7 @@ logger = logging.getLogger(__name__)
 @hydra.main(config_name="config", config_path="config")
 def main(cfg):
     if cfg.is_debug:
-        from omegaconf import OmegaConf
-
-        print(OmegaConf.to_yaml(cfg))
+        set_debug(cfg)
 
     pl.seed_everything(cfg.seed)
     cfg.paths.base_dir = hydra.utils.get_original_cwd()
@@ -40,7 +37,7 @@ def main(cfg):
         compressai.set_entropy_coder(cfg.rate.range_coder)
 
     # waiting for pytorch lightning #5459
-    if (cfg.distortion.name == "vib") and ("H_" in cfg.rate.name):
+    if "H_" in cfg.rate.name:
         logger.warning("Turning off `is_online_eval` until #5459 gets solved.")
         cfg.predictor.is_online_eval = False
 
@@ -70,7 +67,47 @@ def main(cfg):
     # evaluate_prediction(trainer, datamodule, cfg)
 
 
+def instantiate_datamodule(cfg):
+    """Instantiate dataset."""
+    cfgd = cfg.data
+    datamodule = get_datamodule(cfgd.dataset)(**cfgd.kwargs)
+    datamodule.prepare_data()
+    datamodule.setup()
+    cfgd.aux_is_clf = datamodule.aux_is_clf
+    cfgd.length = len(datamodule.train_dataset)
+    cfgd.shape = datamodule.shape
+    cfgd.target_is_clf = datamodule.target_is_clf
+    cfgd.target_shape = datamodule.target_shape
+    cfgd.aux_shape = datamodule.aux_shape
+
+    cfgd.neg_factor = cfgd.length / (2 * cfgd.kwargs.batch_size - 1)
+
+    # TODO clean max_var for multi label multi clf
+    # save real shape of `max_var` if you had to flatten it for batching.
+    with omegaconf.open_dict(cfg):
+        if hasattr(datamodule, "shape_max_var"):
+            cfg.distortion.kwargs.n_classes_multilabel = datamodule.shape_max_var
+            # max_var is such that all tasks are independent are should sum over them
+            cfg.distortion.kwargs.is_sum_over_tasks = True
+
+    return datamodule
+
+
+def initialize_(compression_module, datamodule):
+    """Uses the data module to set some of the model's param."""
+    rate_est = compression_module.rate_estimator
+    if hasattr(rate_est, "q_Z") and isinstance(rate_est.q_Z, MarginalVamp):
+        # initialize vamprior such that pseudoinputs are some random images
+        real_batch_size = datamodule.batch_size
+        datamodule.batch_size = rate_est.q_Z.n_pseudo
+        dataloader = datamodule.train_dataloader()
+        X, _ = iter(dataloader).next()
+        rate_est.q_Z.set_pseudoinput_(X)
+        datamodule.batch_size = real_batch_size
+
+
 def get_trainer(cfg, module, is_compressor):
+    """Instantiate trainer."""
 
     callbacks = []
 
@@ -98,7 +135,10 @@ def get_trainer(cfg, module, is_compressor):
         try:
             callbacks.append(getattr(lossyless.callbacks, name)(**cllbck_kwargs))
         except AttributeError:
-            callbacks.append(getattr(pl.callbacks, name)(**cllbck_kwargs))
+            try:
+                callbacks.append(getattr(pl.callbacks, name)(**cllbck_kwargs))
+            except AttributeError:
+                callbacks.append(getattr(pl_bolts.callbacks, name)(**cllbck_kwargs))
 
     loggers = []
 
@@ -112,49 +152,19 @@ def get_trainer(cfg, module, is_compressor):
             cfg.logger.wandb.offline = True
             loggers.append(WandbLogger(**cfg.logger.wandb))
 
-        if cfg.is_debug:
+        if cfg.trainer.track_grad_norm == 2:
+            # use wandb rather than lightning gradients
+            cfg.trainer.track_grad_norm = -1
             loggers[-1].watch(module.p_ZlX, log="gradients", log_freq=500)
+            loggers[-1].watch(
+                module.distortion_estimator, log="gradients", log_freq=500
+            )
 
     trainer = pl.Trainer(
         logger=loggers, checkpoint_callback=True, callbacks=callbacks, **cfg.trainer
     )
 
     return trainer
-
-
-def instantiate_datamodule(cfg):
-    cfgd = cfg.data
-    datamodule = get_datamodule(cfgd.dataset)(**cfgd.kwargs)
-    datamodule.prepare_data()
-    datamodule.setup()
-    cfgd.aux_is_clf = datamodule.aux_is_clf
-    cfgd.length = len(datamodule.train_dataset)
-    cfgd.shape = datamodule.shape
-    cfgd.target_is_clf = datamodule.target_is_clf
-    cfgd.target_shape = datamodule.target_shape
-    cfgd.aux_shape = datamodule.aux_shape
-
-    cfgd.neg_factor = cfgd.length / (2 * cfgd.kwargs.batch_size - 1)
-
-    # TODO clean max_var for multi label multi clf
-    # save real shape of `max_var` if you had to flatten it for batching.
-    with omegaconf.open_dict(cfg):
-        if hasattr(datamodule, "shape_max_var"):
-            cfg.distortion.kwargs.n_classes_multilabel = datamodule.shape_max_var
-
-    return datamodule
-
-
-def initialize_(compression_module, datamodule):
-    rate_est = compression_module.rate_estimator
-    if hasattr(rate_est, "q_Z") and isinstance(rate_est.q_Z, MarginalVamp):
-        # initialize vamprior such that pseudoinputs are some random images
-        real_batch_size = datamodule.batch_size
-        datamodule.batch_size = rate_est.q_Z.n_pseudo
-        dataloader = datamodule.train_dataloader()
-        X, _ = iter(dataloader).next()
-        rate_est.q_Z.set_pseudoinput_(X)
-        datamodule.batch_size = real_batch_size
 
 
 if __name__ == "__main__":
