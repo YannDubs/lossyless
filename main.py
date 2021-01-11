@@ -59,6 +59,8 @@ def main(cfg):
     trainer.fit(compression_module, datamodule=datamodule)
     # evaluate_compression(trainer, datamodule, cfg)
 
+    logger.info("Finished.")
+
     # # PREDICTION
     # prediciton_module = PredictionModule(hparams=cfg, representer=compression_module)
 

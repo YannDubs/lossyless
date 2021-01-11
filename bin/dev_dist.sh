@@ -12,6 +12,7 @@ source `dirname $0`/utils.sh
 kwargs="
 name=$name 
 +mode=dev
+data.kwargs.dataset_kwargs.length=10240
 $add_kwargs
 "
 
