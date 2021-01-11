@@ -5,7 +5,7 @@ from torch.nn.modules.conv import Conv2d
 import torchvision
 import math
 
-import torch
+import torch.nn.functional as F
 from torch.distributions import Categorical, Independent, Normal, MixtureSameFamily
 import einops
 
@@ -20,17 +20,17 @@ class CondDist(nn.Module):
     Parameters
     ----------
     in_shape : tuple of int
-    
+
     out_dim : int
 
     Architecture : nn.Module
         Module to be instantiated by `Architecture(in_shape, out_dim)`.
 
     family : {"gaussian","uniform"}
-        Family of the distribution (after conditioning), this can be easily extandable to any 
+        Family of the distribution (after conditioning), this can be easily extandable to any
         distribution in `torch.distribution`.
 
-    kwargs : 
+    kwargs :
         Additional arguments to the `Family`.
     """
 
@@ -109,13 +109,16 @@ class DiagGaussian(Distributions, Independent):
     """Gaussian with diagonal covariance."""
 
     n_param = 2
+    min_std = 1e-5
 
     def __init__(self, diag_loc, diag_scale):
         super().__init__(Normal(diag_loc, diag_scale), 1)
+        self.min_std
 
     @classmethod
     def preprocess_suff_params(cls, diag_loc, diag_log_var):
-        diag_scale = torch.exp(0.5 * diag_log_var)
+        # usually exp()**0.5, but you don't want to explose
+        diag_scale = F.softplus(diag_log_var) + cls.min_std
         return diag_loc, diag_scale
 
     def detach(self):
@@ -142,7 +145,7 @@ class Deterministic(Distributions, Independent):
 
 def get_marginalDist(family, cond_dist, **kwargs):
     """Return an approximate marginal distribution.
-    
+
     Notes
     -----
     - Marginal ditsributions are Modules that TAKE NO ARGUMENTS and return the correct distribution
@@ -198,7 +201,7 @@ class MarginalVamp(nn.Module):
     ----------
     out_dim : int
         Size event.
-    
+
     p_ZlX : CondDist
         Instantiated conditional distribution.
 
@@ -207,7 +210,7 @@ class MarginalVamp(nn.Module):
 
     References
     ---------
-    [1] Tomczak, Jakub, and Max Welling. "VAE with a VampPrior." International Conference on 
+    [1] Tomczak, Jakub, and Max Welling. "VAE with a VampPrior." International Conference on
     Artificial Intelligence and Statistics. PMLR, 2018.
     """
 

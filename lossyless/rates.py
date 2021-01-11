@@ -78,7 +78,7 @@ class RateEstimator(compressai.models.CompressionModel):
 
         p_Zlx : torch.Distribution batch_shape=[batch_size] event_shape=[z_dim]
             Encoder which should be used to perform compression.
-        
+
         Returns
         -------
         z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
@@ -96,17 +96,17 @@ class RateEstimator(compressai.models.CompressionModel):
         raise NotImplementedError()
 
     def compress(self, z):
-        """Performs the actual compression. 
-        
+        """Performs the actual compression.
+
         Parameters
         ----------
         z : torch.Tensor shape=[batch_shape, z_dim]
             Representation to compress. Note that there's no n_z_dim!
-        
+
         Returns
         -------
-        all_strings : list (len n_hyper) of list (len batch_shape) of bytes 
-            Compressed representations in bytes. The first list (of len n_latents) contains the 
+        all_strings : list (len n_hyper) of list (len batch_shape) of bytes
+            Compressed representations in bytes. The first list (of len n_latents) contains the
             representations for each hyper latents
         """
         raise NotImplementedError()
@@ -116,10 +116,10 @@ class RateEstimator(compressai.models.CompressionModel):
 
         Parameters
         ----------
-        all_strings : list (len n_hyper) of list (len batch_shape) of bytes 
-            Compressed representations in bytes. The first list (of len n_latents) contains the 
+        all_strings : list (len n_hyper) of list (len batch_shape) of bytes
+            Compressed representations in bytes. The first list (of len n_latents) contains the
             representations for each hyper latents
-        
+
         Returns
         -------
         z_hat : torch.Tensor shape=[batch_shape, z_dim]
@@ -129,7 +129,7 @@ class RateEstimator(compressai.models.CompressionModel):
 
     def real_rate(self, z):
         """Compute actual number of bits (rate), necessary for encoding z.
-        
+
         Parameters
         ----------
         z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
@@ -147,7 +147,7 @@ class RateEstimator(compressai.models.CompressionModel):
 
 class MIRate(RateEstimator):
     """
-    Model that codes using the (approximate) mutual information I[Z,X]. 
+    Model that codes using the (approximate) mutual information I[Z,X].
 
     Notes
     -----
@@ -211,7 +211,7 @@ class HRateFactorizedPrior(RateEstimator):
 
     References
     ----------
-    [1] Ballé, Johannes, et al. "Variational image compression with a scale hyperprior." arXiv 
+    [1] Ballé, Johannes, et al. "Variational image compression with a scale hyperprior." arXiv
     preprint arXiv:1802.01436 (2018).
     """
 
@@ -291,9 +291,9 @@ class HRateHyperprior(RateEstimator):
 
     References
     ----------
-    [1] Ballé, Johannes, et al. "Variational image compression with a scale hyperprior." arXiv 
+    [1] Ballé, Johannes, et al. "Variational image compression with a scale hyperprior." arXiv
     preprint arXiv:1802.01436 (2018).
-    [2] Minnen, David, Johannes Ballé, and George D. Toderici. "Joint autoregressive and hierarchical 
+    [2] Minnen, David, Johannes Ballé, and George D. Toderici. "Joint autoregressive and hierarchical
     priors for learned image compression." Advances in Neural Information Processing Systems. 2018.
     """
 
@@ -433,4 +433,3 @@ class HRateHyperprior(RateEstimator):
             scale_table = get_scale_table()
         self.gaussian_conditional.update_scale_table(scale_table, force=force)
         super().update(force=force)
-
