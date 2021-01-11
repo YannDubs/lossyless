@@ -19,12 +19,12 @@ def get_Architecture(mode, complexity=None, **kwargs):
     mode : {"mlp","flattenmlp","resnet","cnn"}
 
     complexity : {0,...,4,None}, optional
-        Complexity of the architecture. For `mlp` and `cnn` this is the width, for resnet this is 
+        Complexity of the architecture. For `mlp` and `cnn` this is the width, for resnet this is
         the depth. None lets `kwargs` have the desired argument.
 
-    kwargs : 
+    kwargs :
         Additional arguments to the Module.
-    
+
     Return
     ------
     Architecture : uninstantiated nn.Module
@@ -66,7 +66,7 @@ class MLP(nn.Module):
     out_dim : int
 
     hid_dim : int, optional
-        Number of hidden neurones. 
+        Number of hidden neurones.
 
     n_hid_layers : int, optional
         Number of hidden layers.
@@ -100,16 +100,18 @@ class MLP(nn.Module):
         Activation = get_Activation(activation)
         Dropout = nn.Dropout if dropout_p > 0 else nn.Identity
         Norm = get_Normalization(norm_layer, dim=1)
+        # don't use bias with batch_norm https://twitter.com/karpathy/status/1013245864570073090?l...
+        is_bias = Norm == nn.Identity
 
         layers = [
-            nn.Linear(in_dim, hid_dim),
+            nn.Linear(in_dim, hid_dim, bias=is_bias),
             Norm(hid_dim),
             Activation(),
             Dropout(p=dropout_p),
         ]
         for _ in range(1, n_hid_layers):
             layers += [
-                nn.Linear(hid_dim, hid_dim),
+                nn.Linear(hid_dim, hid_dim, bias=is_bias),
                 Norm(hid_dim),
                 Activation(),
                 Dropout(p=dropout_p),
@@ -135,7 +137,7 @@ class FlattenMLP(MLP):
     MLP that can take a multi dimensional array as input and output (i.e. can be used with same
     input and output shape as CNN but permutation invariant.). E.g. for predicting an image use
     `out_shape=(32,32,3)` and this will predict 32*32*3 and then reshape.
-    
+
     Parameters
     ----------
     in_shape : tuple or int
@@ -169,18 +171,18 @@ class Resnet(nn.Module):
     Parameters
     ----------
     in_shape : tuple of int
-        Size of the inputs (channels first). This is used to see whether to change the underlying 
-        resnet or not. If first dim < 100, then will decrease the kernel size  and stride of the 
-        first conv, and remove the max pooling layer as done (for cifar10) in 
-        https://gist.github.com/y0ast/d91d09565462125a1eb75acc65da1469. 
-        
+        Size of the inputs (channels first). This is used to see whether to change the underlying
+        resnet or not. If first dim < 100, then will decrease the kernel size  and stride of the
+        first conv, and remove the max pooling layer as done (for cifar10) in
+        https://gist.github.com/y0ast/d91d09565462125a1eb75acc65da1469.
+
     out_dim : int, optional
-        Size of the output. 
-        
+        Size of the output.
+
     base : {'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152', 'resnext50_32x4d', 'resnext101_32x8d',
            'wide_resnet50_2', 'wide_resnet101_2'}, optional
-        Base resnet to use, any model `torchvision.models.resnet` should work (the larger models were 
+        Base resnet to use, any model `torchvision.models.resnet` should work (the larger models were
         not tested).
 
     is_pretrained : bool, optional
@@ -233,21 +235,21 @@ class Resnet(nn.Module):
 
 
 class CNN(nn.Module):
-    """CNN in shape of pyramid, which doubles hidden after each layer but decreases image size by 2. 
-    
+    """CNN in shape of pyramid, which doubles hidden after each layer but decreases image size by 2.
+
     Notes
     -----
-    - Only works for images whose width and height are power of 2. 
+    - Only works for images whose width and height are power of 2.
     - If `in_shape` and `out_dim` are reversed (i.e. `in_shape` is int) then will transpose the CNN.
 
     Parameters
     ----------
-    in_shape : tuple of int 
-        Size of the inputs (channels first). If integer and `out_dim` is a tuple of int, then will 
+    in_shape : tuple of int
+        Size of the inputs (channels first). If integer and `out_dim` is a tuple of int, then will
         transpose ("reverse") the CNN.
 
-    out_dim : int 
-        Number of output channels. If tuple of int  and `in_shape` is an int, then will transpose 
+    out_dim : int
+        Number of output channels. If tuple of int  and `in_shape` is an int, then will transpose
         ("reverse") the CNN.
 
     hid_dim : int, optional
@@ -287,6 +289,10 @@ class CNN(nn.Module):
         self.norm_layer = norm_layer
         self.activation = activation
 
+        Norm = get_Normalization(self.norm_layer, 2)
+        # don't use bias with batch_norm https://twitter.com/karpathy/status/1013245864570073090?l...
+        is_bias = Norm == nn.Identity
+
         assert is_pow2(self.in_shape[1]) and is_pow2(self.in_shape[2])
 
         n_layers = 4
@@ -302,31 +308,35 @@ class CNN(nn.Module):
 
         layers = []
         in_chan = channels[0]
-        for out_chan in channels[1:]:
-            layers += self.make_block(in_chan, out_chan, **kwargs)
+        for i, out_chan in enumerate(channels[1:]):
+            is_last = i == len(channels[1:]) - 1
+            layers += self.make_block(
+                in_chan, out_chan, Norm, is_bias, is_last, **kwargs
+            )
             in_chan = out_chan
 
         if self.is_transpose:
             layers = [
-                nn.Linear(self.out_dim, channels[0] * factor),
+                nn.Linear(self.out_dim, channels[0] * factor, bias=is_bias),
                 nn.Unflatten(dim=-1, unflattened_size=(channels[0], 2, 2)),
             ] + layers
         else:
             layers += [
                 nn.Flatten(start_dim=1),
                 nn.Linear(channels[-1] * factor, self.out_dim),
+                # last layer should always have bias
             ]
 
         self.model = nn.Sequential(*layers)
 
         self.reset_parameters()
 
-    def make_block(self, in_chan, out_chan, **kwargs):
-        Normalization = get_Normalization(self.norm_layer, 2)
+    def make_block(self, in_chan, out_chan, Norm, is_bias, is_last, **kwargs):
+
         if self.is_transpose:
             Activation = get_Activation(self.activation, inverse=True)
             return [
-                Normalization(in_chan),
+                Norm(in_chan),
                 Activation(in_chan),
                 nn.ConvTranspose2d(
                     in_chan,
@@ -335,6 +345,7 @@ class CNN(nn.Module):
                     padding=1,
                     kernel_size=3,
                     output_padding=1,
+                    bias=is_bias or is_last,
                     **kwargs,
                 ),
             ]
@@ -342,9 +353,15 @@ class CNN(nn.Module):
             Activation = get_Activation(self.activation, inverse=True)
             return [
                 nn.Conv2d(
-                    in_chan, out_chan, stride=2, padding=1, kernel_size=3, **kwargs
+                    in_chan,
+                    out_chan,
+                    stride=2,
+                    padding=1,
+                    kernel_size=3,
+                    bias=is_bias,
+                    **kwargs,
                 ),
-                Normalization(out_chan),
+                Norm(out_chan),
                 Activation(out_chan),
             ]
 
@@ -364,7 +381,7 @@ def get_Normalization(norm_layer, dim=2):
         Layer to return.
 
     dim : int, optional
-        Number of dimension of the input (e.g. 2 for images).    
+        Number of dimension of the input (e.g. 2 for images).
     """
     Batchnorms = [None, nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d]
     if "batch" in norm_layer:
