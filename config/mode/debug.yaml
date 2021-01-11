@@ -2,7 +2,7 @@
 
 # debug the model 
 
-name: debug_${now:%Y-%m-%d_%H-%M-%S}
+name: debug_${time}
 is_debug: True # enter debug mode
 
 trainer:
