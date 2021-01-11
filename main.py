@@ -157,10 +157,7 @@ def get_trainer(cfg, module, is_compressor):
         if cfg.trainer.track_grad_norm == 2:
             # use wandb rather than lightning gradients
             cfg.trainer.track_grad_norm = -1
-            loggers[-1].watch(module.p_ZlX, log="gradients", log_freq=500)
-            loggers[-1].watch(
-                module.distortion_estimator, log="gradients", log_freq=500
-            )
+            loggers[-1].watch(module.p_ZlX.mapper, log="gradients", log_freq=500)
 
     trainer = pl.Trainer(
         logger=loggers, checkpoint_callback=True, callbacks=callbacks, **cfg.trainer
