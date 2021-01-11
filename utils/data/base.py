@@ -255,6 +255,9 @@ class LossylessDataModule(LightningDataModule):
     seed : int, optional
         Pseudo random seed.
 
+    reload_dataloaders_every_epoch : bool, optional
+        Whether to reload (all) dataloaders at each epoch.
+
     dataset_kwargs : dict, optional
         Additional arguments for the dataset.
     """
@@ -268,6 +271,7 @@ class LossylessDataModule(LightningDataModule):
         batch_size=128,
         val_batch_size=None,
         seed=123,
+        reload_dataloaders_every_epoch=False,
         dataset_kwargs={},
     ):
         super().__init__()
@@ -279,6 +283,7 @@ class LossylessDataModule(LightningDataModule):
         self.val_batch_size = batch_size if val_batch_size is None else val_batch_size
         self.seed = seed
         self.dataset_kwargs = dataset_kwargs
+        self.reload_dataloaders_every_epoch = reload_dataloaders_every_epoch
 
     @property
     def Dataset(self):
@@ -328,6 +333,9 @@ class LossylessDataModule(LightningDataModule):
 
     def train_dataloader(self):
         """Return the training dataloader."""
+        if self.reload_dataloaders_every_epoch:
+            self.train_dataset = self.get_train_dataset(**self.dataset_kwargs)
+
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
@@ -339,6 +347,9 @@ class LossylessDataModule(LightningDataModule):
 
     def val_dataloader(self):
         """Return the validation dataloader."""
+        if self.reload_dataloaders_every_epoch:
+            self.val_dataset = self.get_val_dataset(**self.dataset_kwargs)
+
         return DataLoader(
             self.val_dataset,
             batch_size=self.val_batch_size,
@@ -350,6 +361,9 @@ class LossylessDataModule(LightningDataModule):
 
     def test_dataloader(self):
         """Return the test dataloader."""
+        if self.reload_dataloaders_every_epoch:
+            self.test_dataset = self.get_test_dataset(**self.dataset_kwargs)
+
         return DataLoader(
             self.test_dataset,
             batch_size=self.val_batch_size,

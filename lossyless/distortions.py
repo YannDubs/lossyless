@@ -221,6 +221,12 @@ class ContrastiveDistortion(nn.Module):
         This seems necessary for training, probably because if not norm of Z matters++ and then
         large loss in entropy bottleneck.
 
+    is_invariant : bool, optional
+        Want to be invariant => same orbit / positive element. If not then the positive is the element itself
+        and the image on the same orbit is a negative (so batch is doubled size). Using augmented image
+        as negatives is necesary to ensure the representations are not invariant. THis is used
+        for nce (but not ince).
+
     References
     ----------
     [1] Song, Jiaming, and Stefano Ermon. "Multi-label contrastive predictive coding." Advances in
@@ -228,7 +234,13 @@ class ContrastiveDistortion(nn.Module):
     """
 
     def __init__(
-        self, p_ZlX, temperature=0.1, is_symmetric=True, is_cosine=True, weight=1
+        self,
+        p_ZlX,
+        temperature=0.1,
+        is_symmetric=True,
+        is_cosine=True,
+        weight=1,
+        is_invariant=True,
     ):
         super().__init__()
         self.p_ZlX = p_ZlX
@@ -236,6 +248,7 @@ class ContrastiveDistortion(nn.Module):
         self.is_symmetric = is_symmetric
         self.is_cosine = is_cosine
         self.weight = weight
+        self.is_invariant = is_invariant
 
     def forward(self, z_hat, x_pos, p_Zlx):
         """Compute the distortion.
@@ -263,31 +276,38 @@ class ContrastiveDistortion(nn.Module):
             Additional values to return.
         """
         batch_size = z_hat.size(1)
-        N = 2 * batch_size
+        new_batch_size = 2 * batch_size
         device = z_hat.device
 
         # Distribution for positives. batch shape: [batch_size] ; event shape: [z_dim]
         p_Zlp = self.p_ZlX(x_pos)
 
-        # shape: [2*batch_size,2*batch_size]
+        # shape: [new_batch_size,new_batch_size]
         logits = self.compute_logits(p_Zlx, p_Zlp)
-
-        mask = ~torch.eye(N, device=device).bool()
         logits /= self.temperature
 
-        # select all but current. shape: [2*batch_size,2*batch_size-1]
-        logits = logits[mask].view(N, N - 1)
+        if self.is_invariant:
+            mask = ~torch.eye(new_batch_size, device=device).bool()
+            # select all but current.
+            n_classes = new_batch_size - 1  # n classes in clf
+            logits = logits[mask].view(new_batch_size, n_classes)
 
-        # infoNCE is essentially the same as a softmax (where wights are other z => try to predict
-        # index of positive z). The label is the index of the positive z, which for each z is the
-        # index that comes batch_size - 1 after it (batch_size because you concatenated) -1 because
-        # you masked select all but the current z. arange takes care of idx of z which increases
-        arange = torch.arange(batch_size, device=device)
-        pos_idx = torch.cat([arange + batch_size - 1, arange], dim=0)
+            # infoNCE is essentially the same as a softmax (where wights are other z => try to predict
+            # index of positive z). The label is the index of the positive z, which for each z is the
+            # index that comes batch_size - 1 after it (batch_size because you concatenated) -1 because
+            # you masked select all but the current z. arange takes care of idx of z which increases
+            arange = torch.arange(batch_size, device=device)
+            pos_idx = torch.cat([arange + batch_size - 1, arange], dim=0)
+        else:
+            n_classes = new_batch_size  # all examples ( do not remove current)
+            # use NCE which is not invariant to transformations =>
+            # the positive example is the example  itself
+            pos_idx = torch.arange(new_batch_size, device=device)
 
         if self.weight != 1:
+            # TODO CHECK correct (And without self.is_invariant )
             # you want to multiply \sum e(negative) in the denomiator by to_mult
-            to_mult = (N - 1 - 1 / self.weight) / (N - 2)
+            to_mult = (n_classes - (1 / self.weight)) / (n_classes - 1)
             # equivalent: add log(to_mult) to every negative logits
             # equivalent: add - log(to_mult) to positive logits
             to_add = -math.log(to_mult)
@@ -301,7 +321,7 @@ class ContrastiveDistortion(nn.Module):
         # = log(N-1) + E[ log softmax(z^Tz_p) ]
         # = log(N-1) - E[ crossentropy(z^Tz, p) ]
         # = \hat{H}[f(M(X))] - \hat{H}[f(M(X))|Z]
-        hat_H_m = math.log(self.weight * (N - 1))
+        hat_H_m = math.log(self.weight * n_classes)
         hat_H_mlz = F.cross_entropy(logits, pos_idx, reduction="mean")
 
         logs = dict(I_zm=(hat_H_m - hat_H_mlz) / math.log(BASE_LOG))

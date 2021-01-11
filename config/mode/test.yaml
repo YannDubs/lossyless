@@ -2,7 +2,7 @@
 
 # test whether can overfit training
 
-name: test_${now:%Y-%m-%d_%H-%M-%S}
+name: test_${time}
 
 trainer:
   track_grad_norm: 2 # use 2 to track L2 norms of grad

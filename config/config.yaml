@@ -3,7 +3,7 @@ defaults:
   - hydra/hydra_logging: colorlog
   
   - data: miniFashionMnist
-  - encoder: cnn
+  - encoder: mlp
   - distortion: vae
   - rate: MI_unitgaussian
 
@@ -11,7 +11,7 @@ defaults:
 name: ???
 seed: 123
 is_debug: False # enter debug mode
-time: ${now:%Y-%m-%d_%H-%M-%S}
+time: ${now:%Y-%m-%d_%H-%M-%S}_j${hydra:job.num} # add job num because tiem is not when job runs
 
 long_name: ${name}/data_${data.name}/d_${distortion.name}/e_${encoder.name}/r_${rate.name}/o_${optimizer.name}/dim_${encoder.z_dim}/z_${loss.n_z_samples}/b_${loss.beta}/s_${seed}/${time}
 
@@ -78,7 +78,7 @@ trainer:
   progress_bar_refresh_rate: 0 # increase to show progress bar
   resume_from_checkpoint: null # string to checkpoint if want to resume
   gradient_clip_val: 0 # increase to clip grad
-
+  reload_dataloaders_every_epoch: False
   
   # ENGINEERING / SPEED
   gpus: 1 
@@ -107,6 +107,7 @@ data:
   kwargs:
     data_dir: ${paths.data}
     batch_size: 128
+    reload_dataloaders_every_epoch: ${trainer.reload_dataloaders_every_epoch}
 
 encoder:
   name: ???

@@ -2,7 +2,7 @@
 
 # check that everything is running correctly
 
-name: dev_${now:%Y-%m-%d_%H-%M-%S}
+name: dev_${time}
 
 trainer:
   fast_dev_run: True
