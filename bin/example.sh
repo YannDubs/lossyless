@@ -18,7 +18,7 @@ $add_kwargs
 
 # every arguments that you are sweeping over
 kwargs_multi="
-encoder=cnn,mlp,resnet
+encoder=mlp
 distortion=vib,ivib,ivae,ince,taskvib,vae,nce
 rate=H_factorized,H_hyper,MI_unitgaussian,MI_vamp
 data=mnist,bananaRot

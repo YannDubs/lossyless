@@ -41,7 +41,7 @@ def main(cfg):
 
     # waiting for pytorch lightning #5459
     if (cfg.distortion.name == "vib") and ("H_" in cfg.rate.name):
-        logger.warn("Turning off `is_online_eval` until #5459 gets solved.")
+        logger.warning("Turning off `is_online_eval` until #5459 gets solved.")
         cfg.predictor.is_online_eval = False
 
     # DATA

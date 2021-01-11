@@ -6,10 +6,9 @@ multirun
 pretrained
 wandb
 test
-data
+/data
 logs
 notebooks
-!utils/data
 
 # MAC
 .DS_Store
