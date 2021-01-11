@@ -25,18 +25,18 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
     distribution : torch.Distribution
         Main distribution to sample from.
 
-    length : int, optional 
+    length : int, optional
         Size of the dataset.
 
     equivalence : {"rotation","y_translation","x_translation",None}, optional
         Equivalence relationship with respect to which to be invariant.
 
     decimals : float or None, optional
-        Number of decimals to keep. If `None` keeps as much as python can. This is useful 
+        Number of decimals to keep. If `None` keeps as much as python can. This is useful
         to have better estimates of the entropies.
 
     seed : int or None, optional
-        Seed to force deterministic dataset (if int). This is especially useful when using 
+        Seed to force deterministic dataset (if int). This is especially useful when using
         `reload_dataloaders_every_epoch` but you only want to reload only the training set.
 
     kwargs:
@@ -147,7 +147,7 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
 
     @property
     def shapes_x_t_Mx(self):
-        return dict(input=(2,), target=(1,), max_inv=(1,))
+        return dict(input=(2,), target=(1,), max_inv=(1,), max_var=(2,))
 
     def get_n_data_Mxs(self, length):
         """Return an array for the examples and correcponding max inv ofa given length."""
@@ -250,18 +250,18 @@ class RotateTransform(dist.Transform):
 
 class BananaDistribution(dist.TransformedDistribution):
     """2D banana distribution.
-    
+
     Parameters
     ----------
     curvature : float, optional
         Controls the strength of the curvature of the banana-shape.
-        
+
     factor : float, optional
         Controls the elongation of the banana-shape.
-        
+
     location : torch.Tensor, optional
         Controls the location of the banana-shape.
-        
+
     angles : float, optional
         Controls the angle rotation of the banana-shape.
 
@@ -279,7 +279,7 @@ class BananaDistribution(dist.TransformedDistribution):
         factor=6,
         location=torch.tensor([-1.5, -2.0]),
         angle=-40,
-        scale=0.5,
+        scale=1 / 16,
     ):
         std = torch.tensor([factor * scale, scale])
         base_dist = dist.Independent(dist.Normal(loc=torch.zeros(2), scale=std), 1)
@@ -310,4 +310,3 @@ class BananaDataModule(DistributionDataModule):
     @property
     def Dataset(self):
         return BananaDataset
-

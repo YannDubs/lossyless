@@ -4,7 +4,7 @@ import math
 
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.metrics.functional import accuracy
-from pl_bolts.callbacks import ssl_online
+from pl_bolts.callbacks import SSLOnlineEvaluator
 import einops
 
 from .helpers import undo_normalization
@@ -26,13 +26,13 @@ def save_img_wandb(pl_module, trainer, img, name, caption):
     trainer.logger[wandb_idx].experiment.log({name: [wandb_img]})
 
 
-class OnlineEvaluator(ssl_online.SSLOnlineEvaluator):
+class OnlineEvaluator(SSLOnlineEvaluator):
     """
-    Attaches MLP/linear predictor for evaluating the quality of a representation as usual in self-supervised. 
+    Attaches MLP/linear predictor for evaluating the quality of a representation as usual in self-supervised.
 
     Notes
     -----
-    -  generalizes `pl_bolts.callbacks.ssl_online.SSLOnlineEvaluator` for multilabel clf and regression 
+    -  generalizes `pl_bolts.callbacks.ssl_online.SSLOnlineEvaluator` for multilabel clf and regression
 
     Parameters
     ----------
@@ -53,7 +53,12 @@ class OnlineEvaluator(ssl_online.SSLOnlineEvaluator):
     """
 
     def __init__(
-        self, in_dim, y_shape, is_classification=True, dropout_p=0.2, hidden_dim=512,
+        self,
+        in_dim,
+        y_shape,
+        is_classification=True,
+        dropout_p=0.2,
+        hidden_dim=512,
     ):
         super().__init__(
             z_dim=in_dim,
@@ -87,7 +92,7 @@ class OnlineEvaluator(ssl_online.SSLOnlineEvaluator):
         Y_hat = pl_module.non_linear_evaluator(z)
         Y_hat = Y_hat.view(batch_size, *self.y_shape)
 
-        loss = mse_or_crossentropy_loss(Y_hat, y.long(), self.is_classification).mean(0)
+        loss = mse_or_crossentropy_loss(Y_hat, y, self.is_classification).mean(0)
 
         logs = dict(online_loss=loss)
         if self.is_classification:
@@ -262,8 +267,8 @@ class WandbLatentDimInterpolator(Callback):
 
 class AlphaScheduler(Callback):
     """
-    Set the parameter `alpha` from a model. To replicate 
-    `https://github.com/tensorflow/compression/blob/master/models/toy_sources/toy_sources.ipynb`. 
+    Set the parameter `alpha` from a model. To replicate
+    `https://github.com/tensorflow/compression/blob/master/models/toy_sources/toy_sources.ipynb`.
     """
 
     def on_epoch_start(self, trainer, logs=None):
@@ -273,4 +278,3 @@ class AlphaScheduler(Callback):
 
         if epoch < max_epochs / 4:
             model.force_alpha = 3 * (epoch + 1) / (max_epochs / 4 + 1)
-

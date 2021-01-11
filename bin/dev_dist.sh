@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-name="test_imgs"
+name="dev_dist"
 notes="
-**Goal**: Debugging all models on images at once (in parallel)
+**Goal**: Checking that all models on distributions run without errors (in parallel)
 **Hypothesis**: No errors
 "
 
@@ -11,16 +11,17 @@ source `dirname $0`/utils.sh
 # define all the arguments modified or added to `conf`. If they are added use `+`
 kwargs="
 name=$name 
-+mode=debug
++mode=dev
+data.kwargs.dataset_kwargs.length=10240
 $add_kwargs
 "
 
 # every arguments that you are sweeping over
 kwargs_multi="
-encoder=cnn,mlp,resnet
-distortion=ivib,ivae,ince,taskvib,vae,vib,nce
+encoder=mlp
+distortion=ivib,ivae,ince,taskvib
 rate=H_factorized,H_hyper,MI_unitgaussian,MI_vamp
-data=miniMnist
+data=bananaRot,bananaXtrnslt,bananaYtrnslt
 " 
 
 if [ "$is_plot_only" = false ] ; then

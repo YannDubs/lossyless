@@ -1,0 +1,18 @@
+# @package _global_
+
+# check that everything is running correctly
+
+name: dev_${now:%Y-%m-%d_%H-%M-%S}
+
+trainer:
+  fast_dev_run: True
+  weights_summary: top # full to print show the entire model 
+  max_epochs: 2
+
+logger:
+  wandb:
+    tags: dev
+    anonymous: true
+
+callbacks:
+  additional: ["GPUStatsMonitor"] # if add other callbacks through additional will be replaced

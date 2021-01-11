@@ -1,0 +1,7 @@
+# @package _global_
+
+# run on cpu 
+
+trainer:
+  gpus: 0
+  precision: 32 # 16 does not work for cpu

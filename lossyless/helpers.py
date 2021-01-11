@@ -106,11 +106,17 @@ def weights_init(module, nonlinearity="relu"):
         if isinstance(m, torch.nn.modules.conv._ConvNd):
             # used in https://github.com/brain-research/realistic-ssl-evaluation/
             nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity=nonlinearity)
-            nn.init.zeros_(m.bias)
+            try:
+                nn.init.zeros_(m.bias)
+            except AttributeError:
+                pass
 
         elif isinstance(m, nn.Linear):
             nn.init.kaiming_uniform_(m.weight, nonlinearity=nonlinearity)
-            nn.init.zeros_(m.bias)
+            try:
+                nn.init.zeros_(m.bias)
+            except AttributeError:
+                pass
 
         elif isinstance(m, nn.BatchNorm2d):
             try:
@@ -155,7 +161,7 @@ def is_pow2(n):
 
 def get_lr_scheduler(optimizer, name, epochs=None, decay_factor=None, **kwargs):
     """Return the correct learning rate scheduler.
-    
+
     Parameters
     ----------
     optimizer : Optimizer
@@ -169,12 +175,12 @@ def get_lr_scheduler(optimizer, name, epochs=None, decay_factor=None, **kwargs):
     epochs : int, optional
         Number of epochs during training.
 
-    decay_factor : int, optional 
+    decay_factor : int, optional
         By how much to reduce learning rate during training. Only if `name = "expdecay"`.
 
-    kwargs : 
+    kwargs :
         Additional arguments to any `torch.optim.lr_scheduler`.
-    
+
     """
     if name is None:
         return None
@@ -230,7 +236,7 @@ def get_normalization(Dataset):
 
 
 def undo_normalization(Y_hat, targets, dataset):
-    """Undo transformation of predicted and target images given dataset name. 
+    """Undo transformation of predicted and target images given dataset name.
     Used to ensure nice that can be used for plotting generated images."""
 
     # images are in [0,1] due to `ToTensor` so can use sigmoid to ensure output is also in [0,1]
@@ -265,7 +271,7 @@ class Delta(Distribution):
         The single support element.
 
     log_density: torch.Tensor, optional
-        An optional density for this Delta. This is useful to keep the class of :class:`Delta` 
+        An optional density for this Delta. This is useful to keep the class of :class:`Delta`
         distributions closed under differentiable transformation.
 
     event_dim: int, optional
@@ -310,4 +316,3 @@ class Delta(Distribution):
     def log_prob(self, x):
         log_prob = (x == self.loc).type(x.dtype).log()
         return log_prob + self.log_density
-

@@ -21,14 +21,17 @@ def get_distortion_estimator(name, p_ZlX, **kwargs):
         raise ValueError(f"Unkown loss={name}.")
 
 
-def mse_or_crossentropy_loss(Y_hat, target, is_classification):
+def mse_or_crossentropy_loss(Y_hat, target, is_classification, is_sum_over_tasks=False):
     """Compute the cross entropy for multilabel clf tasks or MSE for regression"""
+
     if is_classification:
-        loss = F.cross_entropy(Y_hat, target, reduction="none")
+        loss = F.cross_entropy(Y_hat, target.long(), reduction="none")
     else:
         loss = F.mse_loss(Y_hat, target, reduction="none")
-    n_tasks = prod(Y_hat[0, 0, ...].shape)
-    loss = loss / n_tasks  # takes an average over tasks
+
+    if not is_sum_over_tasks:
+        n_tasks = prod(Y_hat[0, 0, ...].shape)
+        loss = loss / n_tasks  # takes an average over tasks
 
     batch_size = loss.size(0)
     loss = loss.view(batch_size, -1).sum(keepdim=True, dim=-1)
@@ -38,7 +41,7 @@ def mse_or_crossentropy_loss(Y_hat, target, is_classification):
 
 class DirectDistortion(nn.Module):
     """Computes the loss using an direct variational bound (i.e. trying to predict an other variable).
-    
+
     Parameters
     ----------
     z_dim : int
@@ -51,21 +54,24 @@ class DirectDistortion(nn.Module):
         Architecture of the decoder. See `get_Architecture`.
 
     arch_kwargs : dict, optional
-        Additional parameters to `get_Architecture`. 
+        Additional parameters to `get_Architecture`.
 
     dataset : str, optional
         Name of the dataset, used to undo normalization.
 
     is_classification : str, optional
-        Wether you should perform classification instead of regression. It is not used if 
+        Wether you should perform classification instead of regression. It is not used if
         `is_img_out=True`, in which cross entropy is used only if the image is black and white.
 
     n_classes_multilabel : list of int, optional
-        In the multilabel multiclass case but with varying classes, the model cannot predict the 
+        In the multilabel multiclass case but with varying classes, the model cannot predict the
         correct shape as tensor (as each label have different associated target size) as a result it
-        predicts everything in a single flattened predictions. `n_labels` is a list of the number 
+        predicts everything in a single flattened predictions. `n_labels` is a list of the number
         of classes for each labels. This should only be given if the targets and predictions are
         flattened.
+
+    is_sum_over_tasks : bool, optional
+        Whether to sum all task loss rather than average.
     """
 
     def __init__(
@@ -77,6 +83,7 @@ class DirectDistortion(nn.Module):
         dataset=None,
         is_classification=True,
         n_classes_multilabel=None,
+        is_sum_over_tasks=False,
     ):
         super().__init__()
         self.dataset = dataset
@@ -88,10 +95,11 @@ class DirectDistortion(nn.Module):
         Decoder = get_Architecture(arch, **arch_kwargs)
         self.q_YlZ = Decoder(z_dim, y_shape)
         self.n_classes_multilabel = n_classes_multilabel
+        self.is_sum_over_tasks = is_sum_over_tasks
 
     def forward(self, z_hat, aux_target, _):
         """Compute the distortion.
-        
+
         Parameters
         ----------
         z_hat : Tensor shape=[n_z, batch_size, z_dim]
@@ -111,6 +119,7 @@ class DirectDistortion(nn.Module):
         other : dict
             Additional values to return.
         """
+
         n_z = z_hat.size(0)
 
         flat_z_hat = einops.rearrange(z_hat, "n_z b d -> (n_z b) d")
@@ -151,12 +160,16 @@ class DirectDistortion(nn.Module):
                 )
                 cum_cls = cum_cls_new
 
-            n_tasks = len(self.n_classes_multilabel)
-            neg_log_q_ylz = neg_log_q_ylz / n_tasks
+            if not self.is_sum_over_tasks:
+                n_tasks = len(self.n_classes_multilabel)
+                neg_log_q_ylz = neg_log_q_ylz / n_tasks
 
         else:  # normal pred
             neg_log_q_ylz = mse_or_crossentropy_loss(
-                Y_hat, aux_target, self.is_classification
+                Y_hat,
+                aux_target,
+                self.is_classification,
+                is_sum_over_tasks=self.is_sum_over_tasks,
             )
 
         # -log p(y|z). shape: [n_z_samples, batch_size]
@@ -181,12 +194,12 @@ class ContrastiveDistortion(nn.Module):
 
     Notes
     -----
-    - Only works for `Deterministic` (or tensors) or `DiagGaussian` distribution. In latter case uses a 
+    - Only works for `Deterministic` (or tensors) or `DiagGaussian` distribution. In latter case uses a
     distributional infoNCE (i.e. with KL divergence).
     - Distributional InfoNCE is memory heavy because copy tensors. TODO: Use torch.as_strided
     - Never uses samples z_hat.
     - parts of code taken from https://github.com/lucidrains/contrastive-learner
-    
+
     Parameters
     ----------
     p_ZlX : CondDist
@@ -199,9 +212,9 @@ class ContrastiveDistortion(nn.Module):
         Whether to use symmetric logits in the case of probabilistic InfoNCE.
 
     weight : float, optional
-        By how much to weight the denominator in InfoNCE. In [1] this corresponds to 1/alpha of 
-        reweighted CPC. We can show that this is still a valid lower bound if set to at max 
-        len(train_dataset) / (2*batch_size-1), and should thus be set to that. 
+        By how much to weight the denominator in InfoNCE. In [1] this corresponds to 1/alpha of
+        reweighted CPC. We can show that this is still a valid lower bound if set to at max
+        len(train_dataset) / (2*batch_size-1), and should thus be set to that.
 
     is_cosine : bool, optional
         Whether to use cosine similarity instead of dot products fot the logits of deterministic functions.
@@ -210,7 +223,7 @@ class ContrastiveDistortion(nn.Module):
 
     References
     ----------
-    [1] Song, Jiaming, and Stefano Ermon. "Multi-label contrastive predictive coding." Advances in 
+    [1] Song, Jiaming, and Stefano Ermon. "Multi-label contrastive predictive coding." Advances in
     Neural Information Processing Systems 33 (2020).
     """
 

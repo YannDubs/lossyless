@@ -148,10 +148,6 @@ class LossylessDataset(abc.ABC):
         shapes["equiv_x"] = shapes["input"]
         shapes[None] = None
 
-        if "max_var" not in shapes:
-            # max_var often will have same shape as max_inv
-            shapes["max_var"] = shapes["max_inv"]
-
         return shapes["target"], shapes[self.additional_target]
 
 
