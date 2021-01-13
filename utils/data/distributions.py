@@ -204,6 +204,10 @@ class DistributionDataModule(LossylessDataModule):
     def prepare_data(self):
         pass  # no download
 
+    @property
+    def distribution(self):
+        return self.train_dataset.distribution
+
 
 ### Banana Distribution ###
 class BananaTransform(dist.Transform):
@@ -276,8 +280,8 @@ class BananaDistribution(dist.TransformedDistribution):
         self,
         curvature=0.05,
         factor=6,
-        location=torch.tensor([-1.5, -2.0]),
-        angle=-40,
+        location=torch.tensor([1.5, -2.0]),
+        angle=40,
         scale=1 / 16,
     ):
         std = torch.tensor([factor * scale, scale])

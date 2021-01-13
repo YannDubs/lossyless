@@ -1,5 +1,5 @@
 from torch import nn
-
+import matplotlib.pyplot as plt
 import numpy as np
 from torch.nn.utils.rnn import PackedSequence
 import torch
@@ -316,3 +316,42 @@ class Delta(Distribution):
     def log_prob(self, x):
         log_prob = (x == self.loc).type(x.dtype).log()
         return log_prob + self.log_density
+
+
+def setup_grid(range_lim=4, n_pts=1000, device=torch.device("cpu")):
+    """
+    Return a tensor `xy` of 2 dimensional points (x,y) that span an entire grid [-range_lim,range_lim]
+    with `n_pts` discretizations.
+    """
+    x = torch.linspace(-range_lim, range_lim, n_pts, device=device)
+    xx, yy = torch.meshgrid(x, x)
+    xy = torch.stack((xx, yy), dim=-1)
+    return xy
+
+
+def plot_density(p, n_pts=1000, range_lim=10, figsize=(7, 7), title=None, ax=None):
+    """Plot the density of a distribution `p`."""
+    if ax is None:
+        _, ax = plt.subplots(1, 1, figsize=figsize)
+
+    xy = setup_grid(range_lim=range_lim, n_pts=n_pts)
+    data_p = torch.exp(p.log_prob(xy)).cpu().data
+
+    vmax = data_p.max()
+    ax.imshow(
+        data_p,
+        cmap=plt.cm.viridis,
+        extent=(xy[0, 0, 1], xy[0, -1, 1], xy[0, 0, 0], xy[-1, 0, 0]),
+        vmin=0,
+        vmax=vmax,
+    )
+
+    ax.axis("image")
+    ax.grid(False)
+    ax.set_xlim(xy[0, 0, 1], xy[0, -1, 1])
+    ax.set_ylim(xy[0, 0, 0], xy[-1, 0, 0])
+    ax.set_xlabel("Source dim. 1")
+    ax.set_ylabel("Source dim. 2")
+
+    if title is not None:
+        ax.set_title(title)
