@@ -61,14 +61,15 @@ def main(cfg):
     trainer.fit(compression_module, datamodule=datamodule)
     # evaluate_compression(trainer, datamodule, cfg)
 
-    logger.info("Finished.")
-
     # # PREDICTION
     # prediciton_module = PredictionModule(hparams=cfg, representer=compression_module)
 
     # logger.info("TRAIN / EVALUATE downstream classification.")
     # trainer.fit(prediciton_module, datamodule=datamodule)
     # evaluate_prediction(trainer, datamodule, cfg)
+
+    logger.info("Finished.")
+    finalize(cfg, trainer, compression_module)
 
 
 def instantiate_datamodule(cfg):
@@ -180,6 +181,17 @@ def get_trainer(cfg, module, is_compressor):
     )
 
     return trainer
+
+
+def finalize(cfg, trainer, compression_module):
+    """Finalizes the script."""
+    # logging.shutdown()
+
+    if "wandb" in cfg.logger.loggers:
+        import wandb
+
+        if wandb.run is not None:
+            wandb.run.finish()  # finish the run if still on
 
 
 if __name__ == "__main__":

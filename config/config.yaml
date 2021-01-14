@@ -51,6 +51,7 @@ logger:
     project: lossyless
     group: ${name}
     offline: false # Run offline (data can be streamed later to wandb servers).
+    reinit: True
 
 callbacks:
   additional: []
