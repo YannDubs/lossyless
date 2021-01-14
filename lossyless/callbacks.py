@@ -275,9 +275,7 @@ class WandbCodebookPlot(Callback):
         [description]
     """
 
-    def __init__(
-        self, plot_interval=1, range_lim=0.6, n_pts=1000, figsize=(7, 7)  #! 20
-    ):
+    def __init__(self, plot_interval=10, range_lim=5, n_pts=500, figsize=(7, 7)):
         super().__init__()
         self.plot_interval = plot_interval
         self.range_lim = range_lim
@@ -287,13 +285,21 @@ class WandbCodebookPlot(Callback):
     def on_epoch_end(self, trainer, pl_module):
         if (trainer.current_epoch + 1) % self.plot_interval == 0:
             source = trainer.datamodule.distribution
+            device = pl_module.device
+
             with torch.no_grad():
                 pl_module.eval()
-                fig = self.plot_quantization(pl_module, source)
+
+                # ensure cpu because memory ++
+                pl_module_cpu = pl_module.to(torch.device("cpu"))
+                fig = self.plot_quantization(pl_module_cpu, source)
+
+            pl_module = pl_module.to(device)  # ensure back on correct
             pl_module.train()
 
             caption = f"ep: {trainer.current_epoch}"
             save_img_wandb(pl_module, trainer, fig, "quantization", caption)
+            plt.close(fig)
 
     def quantize(self, pl_module, x):
         """Maps (through `idcs`) all elements in batch to the codebook and corresponding rates."""
@@ -355,8 +361,8 @@ class WandbCodebookPlot(Callback):
 
         # contour lines
         ax.contour(
-            xy[:, :, 1],
             xy[:, :, 0],
+            xy[:, :, 1],
             idcs.reshape(self.n_pts, self.n_pts),
             np.arange(len(codebook)) + 0.5,
             colors=[google_pink],
@@ -365,8 +371,8 @@ class WandbCodebookPlot(Callback):
 
         # codebook
         ax.scatter(
-            codebook[counts > 0, 1],
             codebook[counts > 0, 0],
+            codebook[counts > 0, 1],
             color=google_pink,
             s=500 * p_codebook[counts > 0],  # size prop. to proba q(z)
         )

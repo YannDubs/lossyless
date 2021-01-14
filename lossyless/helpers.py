@@ -324,32 +324,37 @@ def setup_grid(range_lim=4, n_pts=1000, device=torch.device("cpu")):
     with `n_pts` discretizations.
     """
     x = torch.linspace(-range_lim, range_lim, n_pts, device=device)
-    xx, yy = torch.meshgrid(x, x)
+    y = torch.linspace(-range_lim, range_lim, n_pts, device=device)
+    xx, yy = torch.meshgrid(x, y)
     xy = torch.stack((xx, yy), dim=-1)
-    return xy
+    return xy.transpose(0, 1)  # indexing="xy"
 
 
-def plot_density(p, n_pts=1000, range_lim=10, figsize=(7, 7), title=None, ax=None):
+def plot_density(p, n_pts=1000, range_lim=0.7, figsize=(7, 7), title=None, ax=None):
     """Plot the density of a distribution `p`."""
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=figsize)
 
     xy = setup_grid(range_lim=range_lim, n_pts=n_pts)
+
+    ij = xy.transpose(0, 1)  # put as indexing="ij" more natural for indexing
+    left, right, down, up = ij[0, 0, 0], ij[-1, 0, 0], ij[0, 0, 1], ij[0, -1, 1]
     data_p = torch.exp(p.log_prob(xy)).cpu().data
 
     vmax = data_p.max()
     ax.imshow(
         data_p,
         cmap=plt.cm.viridis,
-        extent=(xy[0, 0, 1], xy[0, -1, 1], xy[0, 0, 0], xy[-1, 0, 0]),
         vmin=0,
         vmax=vmax,
+        extent=(left, right, down, up),
+        origin="lower",
     )
 
     ax.axis("image")
     ax.grid(False)
-    ax.set_xlim(xy[0, 0, 1], xy[0, -1, 1])
-    ax.set_ylim(xy[0, 0, 0], xy[-1, 0, 0])
+    ax.set_xlim(left, right)
+    ax.set_ylim(down, up)
     ax.set_xlabel("Source dim. 1")
     ax.set_ylabel("Source dim. 2")
 
