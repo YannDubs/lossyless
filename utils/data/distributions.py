@@ -69,9 +69,13 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
         return self.data[index], Mx, Mx
 
     def get_representative(self, Mx):
-        if self.equivalence in ["rotation", "y_translation"]:
-            # return the element with correct y axis and rotation=> max inv for both
+        if self.equivalence == "y_translation":
             return torch.cat([Mx, torch.zeros_like(Mx)], dim=-1)
+
+        if self.equivalence == "rotation":
+            # use the 7.5 o'clock  representative to make it more clear in the banana distribution
+            left_rep = torch.cat([-Mx, torch.zeros_like(Mx)], dim=-1)
+            return rotate(left_rep, 45)
 
         elif self.equivalence == "x_translation":
             return torch.cat([torch.zeros_like(Mx), Mx], dim=-1)
