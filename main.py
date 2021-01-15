@@ -14,11 +14,13 @@ from lossyless.callbacks import (
     OnlineEvaluator,
     WandbReconstructImages,
     WandbLatentDimInterpolator,
+    WandbCodebookPlot,
 )
 from lossyless import CompressionModule
 from lossyless.distributions import MarginalVamp
 from utils.helpers import create_folders, omegaconf2namespace, set_debug
 from utils.data import get_datamodule
+import utils
 
 
 logger = logging.getLogger(__name__)
@@ -36,7 +38,7 @@ def main(cfg):
     if cfg.rate.range_coder is not None:
         compressai.set_entropy_coder(cfg.rate.range_coder)
 
-    # waiting for pytorch lightning #5459
+    # ! waiting for pytorch lightning #5459
     if "H_" in cfg.rate.name:
         logger.warning("Turning off `is_online_eval` until #5459 gets solved.")
         cfg.predictor.is_online_eval = False
@@ -59,14 +61,15 @@ def main(cfg):
     trainer.fit(compression_module, datamodule=datamodule)
     # evaluate_compression(trainer, datamodule, cfg)
 
-    logger.info("Finished.")
-
     # # PREDICTION
     # prediciton_module = PredictionModule(hparams=cfg, representer=compression_module)
 
     # logger.info("TRAIN / EVALUATE downstream classification.")
     # trainer.fit(prediciton_module, datamodule=datamodule)
     # evaluate_prediction(trainer, datamodule, cfg)
+
+    logger.info("Finished.")
+    finalize(cfg, trainer, compression_module)
 
 
 def instantiate_datamodule(cfg):
@@ -81,6 +84,17 @@ def instantiate_datamodule(cfg):
     cfgd.target_is_clf = datamodule.target_is_clf
     cfgd.target_shape = datamodule.target_shape
     cfgd.aux_shape = datamodule.aux_shape
+
+    if hasattr(utils.data.distributions, type(datamodule).__name__):
+        cfgd.mode = "distribution"
+    elif hasattr(utils.data.images, type(datamodule).__name__):
+        cfgd.mode = "image"
+    elif hasattr(datamodule, "mode"):
+        cfgd.mode = datamodule.mode
+    else:
+        raise ValueError(
+            f"Cannot say whether datamodule={type(datamodule)} is distribution or image. Add a `mode` attribute."
+        )
 
     cfgd.neg_factor = cfgd.length / (2 * cfgd.kwargs.batch_size - 1)
 
@@ -119,14 +133,17 @@ def get_trainer(cfg, module, is_compressor):
         if cfg.predictor.is_online_eval:
             callbacks += [OnlineEvaluator(**cfg.callbacks.OnlineEvaluator)]
 
-        de = module.distortion_estimator
-        is_img_out = hasattr(de, "is_img_out") and de.is_img_out
-        if is_img_out:
-            if "wandb" in cfg.logger.loggers:
+        additional_target = cfg.data.kwargs.dataset_kwargs.additional_target
+        is_reconstruct = additional_target in ["representative", "input"]
+        if "wandb" in cfg.logger.loggers and is_reconstruct:
+            if cfg.data.mode == "image":
                 callbacks += [
                     WandbLatentDimInterpolator(cfg.encoder.z_dim),
                     WandbReconstructImages(),
                 ]
+            elif cfg.data.mode == "distribution":
+                callbacks += [WandbCodebookPlot()]
+
     else:
         chckpt_kwargs = cfg.callbacks.predictor_chckpt
 
@@ -164,6 +181,17 @@ def get_trainer(cfg, module, is_compressor):
     )
 
     return trainer
+
+
+def finalize(cfg, trainer, compression_module):
+    """Finalizes the script."""
+    # logging.shutdown()
+
+    if "wandb" in cfg.logger.loggers:
+        import wandb
+
+        if wandb.run is not None:
+            wandb.run.finish()  # finish the run if still on
 
 
 if __name__ == "__main__":

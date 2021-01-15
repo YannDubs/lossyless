@@ -1,9 +1,9 @@
-# @package _global_
-data:
-  name: unaugMnist
-  dataset: mnist
-  kwargs:
-    val_size: 0.05
-    dataset_kwargs:
-      n_per_target: 1000
-      equivalence: []
+# @package _group_
+name: unaugMnist
+dataset: mnist
+
+kwargs:
+  val_size: 0.05
+  dataset_kwargs:
+    n_per_target: 1000
+    equivalence: []

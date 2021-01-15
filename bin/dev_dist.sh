@@ -19,7 +19,7 @@ $add_kwargs
 # every arguments that you are sweeping over
 kwargs_multi="
 encoder=mlp
-distortion=ivib,ivae,ince,taskvib
+distortion=ivib,ivae,ince,vae
 rate=H_factorized,H_hyper,MI_unitgaussian,MI_vamp
 data=bananaRot,bananaXtrnslt,bananaYtrnslt
 " 

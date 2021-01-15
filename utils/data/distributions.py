@@ -69,12 +69,19 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
         return self.data[index], Mx, Mx
 
     def get_representative(self, Mx):
-        if self.equivalence in ["rotation", "y_translation"]:
-            # return the element with correct y axis and rotation=> max inv for both
+        if self.equivalence == "y_translation":
             return torch.cat([Mx, torch.zeros_like(Mx)], dim=-1)
+
+        if self.equivalence == "rotation":
+            # use the 7.5 o'clock  representative to make it more clear in the banana distribution
+            left_rep = torch.cat([-Mx, torch.zeros_like(Mx)], dim=-1)
+            return rotate(left_rep, 45)
 
         elif self.equivalence == "x_translation":
             return torch.cat([torch.zeros_like(Mx), Mx], dim=-1)
+
+        elif self.equivalence is None:
+            return Mx
 
         else:
             raise ValueError(f"Unkown equivalence={self.equivalence}.")
@@ -110,6 +117,9 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
             return partial(
                 action_translation, min_ax=self.min_x, max_ax=self.max_x, axis=0
             )
+
+        elif self.equivalence is None:
+            return lambda x: x
 
         else:
             raise ValueError(f"Unkown equivalence={self.equivalence}.")
@@ -170,6 +180,8 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
             return samples.chunk(2, dim=-1)[0]  # max inv is x coord
         elif self.equivalence == "x_translation":
             return samples.chunk(2, dim=-1)[1]  # max inv is y coord
+        elif self.equivalence is None:
+            return samples  # max inv is x itself
         else:
             raise ValueError(f"Unkown equivalence={self.equivalence}.")
 
@@ -203,6 +215,10 @@ class DistributionDataModule(LossylessDataModule):
 
     def prepare_data(self):
         pass  # no download
+
+    @property
+    def distribution(self):
+        return self.train_dataset.distribution
 
 
 ### Banana Distribution ###
@@ -278,7 +294,7 @@ class BananaDistribution(dist.TransformedDistribution):
         factor=6,
         location=torch.tensor([-1.5, -2.0]),
         angle=-40,
-        scale=1 / 16,
+        scale=1 / 2,
     ):
         std = torch.tensor([factor * scale, scale])
         base_dist = dist.Independent(dist.Normal(loc=torch.zeros(2), scale=std), 1)

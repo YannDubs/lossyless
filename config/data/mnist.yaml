@@ -1,12 +1,11 @@
-# @package _global_
-data:
-  name: mnist
-  dataset: mnist
-  kwargs:
-    # make sure you use entire training set
-    val_size: 0.05
-    dataset_kwargs:
-      n_per_target: 5000
-      equivalence: [x_translation, y_translation]
-      is_augment_val: True
+# @package _group_
+name: mnist
+dataset: mnist
+
+kwargs:
+  # make sure you use entire training set
+  val_size: 0.05
+  dataset_kwargs:
+    equivalence: [x_translation, y_translation]
+    is_augment_val: True
 

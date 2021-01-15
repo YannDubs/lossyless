@@ -134,6 +134,7 @@ class DirectDistortion(nn.Module):
         # is an actual conditional distribution (categorical if cross entropy, and gaussian for mse),
         # but this might be less understandable for usual deep learning + less numberically stable
         if self.is_img_out:
+            # Currently only looks at number of channels not is_classification. Might need to change
             if aux_target.shape[-3] == 1:
                 # black white image => uses categorical distribution, with logits for stability
                 neg_log_q_ylz = F.binary_cross_entropy_with_logits(
@@ -181,10 +182,9 @@ class DirectDistortion(nn.Module):
         logs = dict(H_q_YlZ=neg_log_q_ylz.mean() / math.log(BASE_LOG))
 
         other = dict()
-        if self.is_img_out:
-            # for image plotting
-            other["rec_img"] = Y_hat[0].detach().cpu()
-            other["real_img"] = aux_target[0].detach().cpu()
+        # for plotting
+        other["Y_hat"] = Y_hat[0].detach().cpu()
+        other["Y"] = aux_target[0].detach().cpu()
 
         return neg_log_q_ylz, logs, other
 

@@ -6,6 +6,7 @@ distortion:
     z_dim: ${encoder.z_dim}
     y_shape: ${data.aux_shape}
     is_classification: ${data.aux_is_clf}
+    dataset: ${data.dataset}
     arch: null
     arch_kwargs:
       complexity: 2

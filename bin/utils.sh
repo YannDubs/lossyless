@@ -32,14 +32,14 @@ while getopts ':dvtnsi:p:l' flag; do
       echo "Test mode ..."
       ;;
     s ) 
-      add_kwargs='datasize.max_epochs=100 +logger.wandb.tags=small' 
+      add_kwargs='datasize.max_epochs=100 +logger.wandb.tags="small"' 
       time="800"
       prfx="small_"
       run="0"
       echo "Small mode ..."
       ;;
     l ) 
-      add_kwargs='datasize.max_epochs=300 +logger.wandb.tags=large' 
+      add_kwargs='datasize.max_epochs=300 +logger.wandb.tags="large"' 
       prfx="large_"
       run="0,1,2,3,4,5,6,7,8,9"
       echo "Large mode ..."

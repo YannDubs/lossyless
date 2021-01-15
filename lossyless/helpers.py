@@ -1,5 +1,5 @@
 from torch import nn
-
+import matplotlib.pyplot as plt
 import numpy as np
 from torch.nn.utils.rnn import PackedSequence
 import torch
@@ -316,3 +316,47 @@ class Delta(Distribution):
     def log_prob(self, x):
         log_prob = (x == self.loc).type(x.dtype).log()
         return log_prob + self.log_density
+
+
+def setup_grid(range_lim=4, n_pts=1000, device=torch.device("cpu")):
+    """
+    Return a tensor `xy` of 2 dimensional points (x,y) that span an entire grid [-range_lim,range_lim]
+    with `n_pts` discretizations.
+    """
+    x = torch.linspace(-range_lim, range_lim, n_pts, device=device)
+    y = torch.linspace(-range_lim, range_lim, n_pts, device=device)
+    xx, yy = torch.meshgrid(x, y)
+    xy = torch.stack((xx, yy), dim=-1)
+    return xy.transpose(0, 1)  # indexing="xy"
+
+
+def plot_density(p, n_pts=1000, range_lim=0.7, figsize=(7, 7), title=None, ax=None):
+    """Plot the density of a distribution `p`."""
+    if ax is None:
+        _, ax = plt.subplots(1, 1, figsize=figsize)
+
+    xy = setup_grid(range_lim=range_lim, n_pts=n_pts)
+
+    ij = xy.transpose(0, 1)  # put as indexing="ij" more natural for indexing
+    left, right, down, up = ij[0, 0, 0], ij[-1, 0, 0], ij[0, 0, 1], ij[0, -1, 1]
+    data_p = torch.exp(p.log_prob(xy)).cpu().data
+
+    vmax = data_p.max()
+    ax.imshow(
+        data_p,
+        cmap=plt.cm.viridis,
+        vmin=0,
+        vmax=vmax,
+        extent=(left, right, down, up),
+        origin="lower",
+    )
+
+    ax.axis("image")
+    ax.grid(False)
+    ax.set_xlim(left, right)
+    ax.set_ylim(down, up)
+    ax.set_xlabel("Source dim. 1")
+    ax.set_ylabel("Source dim. 2")
+
+    if title is not None:
+        ax.set_title(title)
