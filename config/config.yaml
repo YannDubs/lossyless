@@ -2,7 +2,7 @@ defaults:
   - hydra/job_logging: colorlog
   - hydra/hydra_logging: colorlog
   
-  - data: miniFashionMnist
+  - data: mnist
   - encoder: mlp
   - distortion: vae
   - rate: MI_unitgaussian
@@ -49,6 +49,7 @@ logger:
   wandb:
     name: ${time}
     project: lossyless
+    entity: lossyless
     group: ${name}
     offline: false # Run offline (data can be streamed later to wandb servers).
     reinit: True
