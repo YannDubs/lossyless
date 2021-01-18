@@ -3,10 +3,11 @@ import logging
 import compressai
 import omegaconf
 
+import shutil
 from pathlib import Path
 import pytorch_lightning as pl
 import pl_bolts
-from pytorch_lightning.loggers import CSVLogger, WandbLogger
+from pytorch_lightning.loggers import CSVLogger, WandbLogger, TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 import lossyless
 
@@ -135,7 +136,7 @@ def get_trainer(cfg, module, is_compressor):
 
         additional_target = cfg.data.kwargs.dataset_kwargs.additional_target
         is_reconstruct = additional_target in ["representative", "input"]
-        if "wandb" in cfg.logger.loggers and is_reconstruct:
+        if cfg.logger.name == "wandb" and is_reconstruct:
             if cfg.data.mode == "image":
                 callbacks += [
                     WandbLatentDimInterpolator(cfg.encoder.z_dim),
@@ -160,22 +161,30 @@ def get_trainer(cfg, module, is_compressor):
                 callbacks.append(getattr(pl_bolts.callbacks, name)(**cllbck_kwargs))
 
     # LOGGERS
-    loggers = []
+    if cfg.logger.name == "csv":
+        logger = CSVLogger(**cfg.logger.csv)
 
-    if "csv" in cfg.logger.loggers:
-        loggers.append(CSVLogger(**cfg.logger.csv))
-
-    if "wandb" in cfg.logger.loggers:
+    elif cfg.logger.name == "wandb":
         try:
-            loggers.append(WandbLogger(**cfg.logger.wandb))
+            logger = WandbLogger(**cfg.logger.wandb)
         except Exception:
             cfg.logger.wandb.offline = True
-            loggers.append(WandbLogger(**cfg.logger.wandb))
+            logger = WandbLogger(**cfg.logger.wandb)
 
         if cfg.trainer.track_grad_norm == 2:
             # use wandb rather than lightning gradients
             cfg.trainer.track_grad_norm = -1
-            loggers[-1].watch(module.p_ZlX.mapper, log="gradients", log_freq=500)
+            logger.watch(
+                module.p_ZlX.mapper,
+                log="gradients",
+                log_freq=cfg.trainer.log_every_n_steps * 10,
+            )
+
+    elif cfg.logger.name == "tensorboard":
+        logger = TensorBoardLogger(**cfg.logger.tensorboard)
+
+    else:
+        raise ValueError(f"Unkown logger={cfg.logger.name}.")
 
     # TRAINER
     last_chckpnt = Path(chckpt_kwargs.dirpath) / "last.ckpt"
@@ -184,7 +193,7 @@ def get_trainer(cfg, module, is_compressor):
         cfg.trainer.resume_from_checkpoint = last_chckpnt
 
     trainer = pl.Trainer(
-        logger=loggers, checkpoint_callback=True, callbacks=callbacks, **cfg.trainer
+        logger=logger, checkpoint_callback=True, callbacks=callbacks, **cfg.trainer
     )
 
     return trainer
@@ -194,13 +203,18 @@ def finalize(cfg, trainer, compression_module):
     """Finalizes the script."""
     # logging.shutdown()
 
-    if "wandb" in cfg.logger.loggers:
+    if cfg.logger.name == "wandb":
         import wandb
 
         if wandb.run is not None:
             wandb.run.finish()  # finish the run if still on
 
-    # send latest checkpoint to main directory
+    # send best checkpoint(s) to main directory
+    dest_path = Path(cfg.paths.pretrained)
+    dest_path.mkdir(parents=True, exist_ok=True)
+    for c in trainer.callbacks:
+        if isinstance(c, pl.callbacks.ModelCheckpoint):
+            shutil.copy(c.best_model_path, dest_path)
 
 
 if __name__ == "__main__":

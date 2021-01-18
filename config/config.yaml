@@ -47,7 +47,7 @@ optimizer_coder :
 
 
 logger:
-  loggers: ["csv","wandb"]
+  name: wandb # select which one to use (false for nothing)
 
   csv:
     save_dir: ${paths.logs_csv}
@@ -61,6 +61,10 @@ logger:
     offline: false # Run offline (data can be streamed later to wandb servers).
     reinit: False # ensure that same wandb after preemption
     id: ${job_id}
+
+  tensorboard:
+    save_dir: ${paths.logs_csv}
+    name: ${job_id}
 
 callbacks:
   additional: []
