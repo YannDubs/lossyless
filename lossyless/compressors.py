@@ -65,6 +65,7 @@ class CompressionModule(pl.LightningModule):
         because training as a callbackwas not well support by lightning. E.g. continuing training
         from checkpoint.
         """
+        # TODO maybe use same parameters as the actual downstream predictor
         return OnlineEvaluator(
             self.hparams.encoder.z_dim,
             self.hparams.data.target_shape,
@@ -225,7 +226,8 @@ class CompressionModule(pl.LightningModule):
 
     def configure_optimizers(self):
 
-        aux_parameters = set(self.rate_estimator.aux_parameters())
+        aux_parameters = orderedset(self.rate_estimator.aux_parameters())
+        online_parameters = orderedset(self.online_evaluator.aux_parameters())
         is_optimize_coder = len(aux_parameters) > 0
         epochs = self.hparams.trainer.max_epochs
 
@@ -248,9 +250,7 @@ class CompressionModule(pl.LightningModule):
 
         # ONLINE EVALUATOR
         # do not use scheduler for online eval because input (representation) is changing
-        online_optimizer = torch.optim.Adam(
-            self.online_evaluator.aux_parameters(), lr=1e-4
-        )
+        online_optimizer = torch.optim.Adam(online_parameters, lr=1e-4)
         optimizers += [online_optimizer]
 
         # CODER OPTIMIZER
