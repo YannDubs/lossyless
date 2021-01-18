@@ -67,6 +67,7 @@ $general_kwargs
 $encoder_kwargs
 $decoder_kwargs
 $rate_kwargs
+timeout=$time
 $add_kwargs
 "
 

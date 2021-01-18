@@ -2,26 +2,33 @@ defaults:
   - hydra/job_logging: colorlog
   - hydra/hydra_logging: colorlog
   
+  - user
   - data: mnist
   - encoder: mlp
   - distortion: vae
   - rate: MI_unitgaussian
+  - server: none 
+  # cannot use server directly (besides none) need the correct hydra/launcher: (i.e. submitit_slurm or submitit_local)
+
 
 ### GENERAL ###
 name: ???
+job_id: ??? # unique identifier
 seed: 123
 is_debug: False # enter debug mode
-time: ${now:%Y-%m-%d_%H-%M-%S}_j${hydra:job.num} # add job num because tiem is not when job runs
-
-long_name: ${name}/data_${data.name}/d_${distortion.name}/e_${encoder.name}/r_${rate.name}/o_${optimizer.name}/dim_${encoder.z_dim}/z_${loss.n_z_samples}/b_${loss.beta}/s_${seed}/${time}
+timeout: 1440 # 24 hours
+time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is not when job runs
+long_name: ${name}/data_${data.name}/d_${distortion.name}/e_${encoder.name}/r_${rate.name}/o_${optimizer.name}/dim_${encoder.z_dim}/z_${loss.n_z_samples}/b_${loss.beta}/s_${seed}
 
 paths:
-  base_dir: ???
+  base_dir: ${hydra:runtime.cwd}
+  work: ???
+  pretrained: ${paths.base_dir}/pretrained/${long_name}/${job_id}
+  results: ${paths.base_dir}/results/${long_name}/${job_id}
+  chckpnt: ${paths.work}
   data: ${paths.base_dir}/data
-  pretrained: ${paths.base_dir}/pretrained/${long_name}
-  logs: ${paths.base_dir}/logs
-  eval: ${paths.base_dir}/results/${long_name}/eval.csv
-
+  logs_csv: ${paths.base_dir}/logs/csv/${long_name}
+  
 optimizer: # might need to be a group at some point
   name: adam # not used yet but can change if needed
   lr: 1e-3
@@ -43,13 +50,13 @@ logger:
   loggers: ["csv","wandb"]
 
   csv:
-    save_dir: ${paths.logs}/csv/${long_name}/
-    name: ${time}
+    save_dir: ${paths.logs_csv}
+    name: ${job_id}
 
   wandb:
-    name: ${time}
+    name: ${job_id}
     project: lossyless
-    entity: lossyless
+    entity: ${wandb_entitiy}
     group: ${name}
     offline: false # Run offline (data can be streamed later to wandb servers).
     reinit: True
@@ -58,20 +65,13 @@ callbacks:
   additional: []
 
   ModelCheckpoint_compressor:
-    dirpath: ${paths.pretrained} 
+    dirpath: ${paths.chckpnt} 
     monitor: train_loss
     mode: "min"
     verbose: true
-
-  OnlineEvaluator:
-    dropout_p: 0.2
-    hidden_dim: 1024
-    in_dim: ${encoder.z_dim}
-    y_shape: ${data.target_shape}
-    is_classification: ${data.target_is_clf}
-
-predictor:
-  is_online_eval: true
+    save_last: True
+    save_top_k: 1
+    save_weights_only: false
 
 trainer:
   #default_root_dir: ${paths.results}
@@ -138,3 +138,7 @@ loss:
   beta: 1
 
 ### HYDRA ###
+hydra:
+  job:
+    env_set:
+      NCCL_DEBUG: INFO 

@@ -6,10 +6,11 @@ import logging
 import einops
 import math
 from .rates import get_rate_estimator
-from .architectures import get_Architecture
+from .architectures import get_Architecture, MLP
 from .distributions import CondDist, get_marginalDist
-from .helpers import get_lr_scheduler, BASE_LOG
+from .helpers import get_lr_scheduler, BASE_LOG, orderedset
 from .distortions import get_distortion_estimator
+from .predictors import OnlineEvaluator
 
 
 __all__ = ["CompressionModule"]
@@ -27,6 +28,7 @@ class CompressionModule(pl.LightningModule):
         self.p_ZlX = self.get_encoder()  # p_{Z | X}
         self.rate_estimator = self.get_rate_estimator()
         self.distortion_estimator = self.get_distortion_estimator()
+        self.online_evaluator = self.get_online_evaluator()
 
     def get_encoder(self):
         """Return encoder: a mapping to a torch.Distribution (conditional distribution)."""
@@ -57,6 +59,18 @@ class CompressionModule(pl.LightningModule):
             cfg_dist.mode, p_ZlX=self.p_ZlX, **cfg_dist.kwargs
         )
 
+    def get_online_evaluator(self):
+        """
+        Online evaluation of the representation. replaces pl_bolts.callbacks.SSLOnlineEValuator
+        because training as a callbackwas not well support by lightning. E.g. continuing training
+        from checkpoint.
+        """
+        return OnlineEvaluator(
+            self.hparams.encoder.z_dim,
+            self.hparams.data.target_shape,
+            is_classification=self.hparams.data.target_is_clf,
+        )
+
     @auto_move_data  # move data on correct device for inference
     def forward(
         self,
@@ -67,7 +81,7 @@ class CompressionModule(pl.LightningModule):
 
         Parameters
         ----------
-        X : torch.tensor of shape=(*, *data.shape)
+        X : torch.Tensor of shape=[batch_size, *data.shape]
             Data to represent.
 
         is_compress : bool, optional
@@ -75,16 +89,21 @@ class CompressionModule(pl.LightningModule):
 
         Returns
         -------
-        z : torch.tensor of shape=(*, z_dim)
+        z : torch.Tensor of shape=[batch_size, z_dim]
             Represented data.
         """
         p_Zlx = self.p_ZlX(x)
-        z = p_Zlx.rsample([1]).squeeze(0)
+        z = p_Zlx.rsample([1])
 
+        # shape: [batch_size, z_dim]
         if is_compress:
-            z = self.rate_estimator.compress(z)
+            z = z.squeeze(0)
+            z_hat = self.rate_estimator.compress(z)
+        else:
+            z_hat, *_ = self.rate_estimator(z, p_Zlx)
+            z_hat = z_hat.squeeze(0)
 
-        return z
+        return z_hat
 
     def step(self, batch):
         cfgl = self.hparams.loss
@@ -151,28 +170,38 @@ class CompressionModule(pl.LightningModule):
 
     def training_step(self, batch, batch_idx, optimizer_idx=0):
 
+        # MODEL
         if optimizer_idx == 0:
             loss, logs, other = self.step(batch)
-            self.log_dict({f"train_{k}": v for k, v in logs.items()}, sync_dist=True)
 
             #! waiting for torch lightning #1243
             #! everyting in other should be detached
             self._save = other
 
-            return loss
+        # ONLINE EVALUATOR
+        elif optimizer_idx == 1:
+            loss, logs = self.online_evaluator(batch, self)
 
-        else:  # only if is_optimize_coder
-            coder_loss = self.rate_estimator.aux_loss()
-            self.log("train_coder_loss", coder_loss, sync_dist=True)
-            return coder_loss
+        # CODER
+        else:
+            # TODO make sure that ok if online evaluator is being run before getting coder_loss
+            loss = self.rate_estimator.aux_loss()
+            logs = dict(coder_loss=loss)
+
+        self.log_dict({f"train_{k}": v for k, v in logs.items()}, sync_dist=True)
+        return loss
 
     def validation_step(self, batch, batch_idx):
         loss, logs, _ = self.step(batch)
+        _, online_logs = self.online_evaluator(batch, self)
+        logs.update(online_logs)
         self.log_dict({f"val_{k}": v for k, v in logs.items()})
         return loss
 
     def test_step(self, batch, batch_idx):
         loss, logs, _ = self.step(batch)
+        _, online_logs = self.online_evaluator(batch, self)
+        logs.update(online_logs)
         self.log_dict({f"test_{k}": v for k, v in logs.items()})
         return loss
 
@@ -191,7 +220,8 @@ class CompressionModule(pl.LightningModule):
     def parameters(self):
         """Returns an iterator over the model parameters."""
         # return a set to make sure  not counting parameters twice (e.g. P_ZlX can be in multiple child)
-        return set(self.yield_parameters())
+        # but keep ordered which is needed for checkpointing
+        return orderedset(self.yield_parameters())
 
     def configure_optimizers(self):
 
@@ -202,7 +232,7 @@ class CompressionModule(pl.LightningModule):
         optimizers = []
         schedulers = []
 
-        # model
+        # MODEL OPTIMIZER
         cfgo = self.hparams.optimizer
 
         optimizer = torch.optim.Adam(
@@ -216,7 +246,14 @@ class CompressionModule(pl.LightningModule):
         if scheduler is not None:
             schedulers += [scheduler]
 
-        # if coder needs parameters + optimizer
+        # ONLINE EVALUATOR
+        # do not use scheduler for online eval because input (representation) is changing
+        online_optimizer = torch.optim.Adam(
+            self.online_evaluator.aux_parameters(), lr=1e-4
+        )
+        optimizers += [online_optimizer]
+
+        # CODER OPTIMIZER
         if is_optimize_coder:
             cfgoc = self.hparams.optimizer_coder
             optimizer_coder = torch.optim.Adam(aux_parameters, lr=cfgoc.lr)

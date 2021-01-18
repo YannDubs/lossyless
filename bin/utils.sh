@@ -2,59 +2,41 @@
 
 add_kwargs=""
 prfx=""
-run="0,1,2,3,4"
 time="2880" #2 days
 is_plot_only=false
 
 
-# DEV MODE ?
-while getopts ':dvtnsi:p:l' flag; do
+# MODE ?
+while getopts ':s:p:m:' flag; do
   case "${flag}" in
-    d ) 
-      add_kwargs='+mode=debug' 
-      time="10"
-      prfx="dev_"
-      run="0"
-      echo "Debug mode ..."
+    s )
+      add_kwargs="${add_kwargs} server=${OPTARG}"
+      echo "${OPTARG} server ..."
+      case "${OPTARG}" in
+        learnfair) 
+          add_kwargs="${add_kwargs} hydra/launcher=submitit_slurm"
+          ;;
+        vector) 
+          add_kwargs="${add_kwargs} hydra/launcher=submitit_slurm"
+          ;;
+        local) 
+          add_kwargs="${add_kwargs} hydra/launcher=submitit_local"
+          ;;
+        esac
       ;;
-    v ) 
-      add_kwargs='+mode=dev' 
-      time="10"
-      prfx="dev_"
-      run="0"
-      echo "Dev mode ..."
-      ;;
-    t ) 
-      add_kwargs='+mode=test' 
+    m ) 
+      add_kwargs="${add_kwargs} +mode=${OPTARG}"
+      prfx="${OPTARG}_"
       time="60"
-      prfx="test_"
-      run="0"
-      echo "Test mode ..."
-      ;;
-    s ) 
-      add_kwargs='datasize.max_epochs=100 +logger.wandb.tags="small"' 
-      time="800"
-      prfx="small_"
-      run="0"
-      echo "Small mode ..."
-      ;;
-    l ) 
-      add_kwargs='datasize.max_epochs=300 +logger.wandb.tags="large"' 
-      prfx="large_"
-      run="0,1,2,3,4,5,6,7,8,9"
-      echo "Large mode ..."
+      echo "${OPTARG} mode ..."
       ;;
     p ) 
       is_plot_only=true
       prfx=${OPTARG}
       echo "Plotting only ..."
       ;;
-    i ) 
-      arguments="hydra.launcher.partition=priority hydra.launcher.params.queue_parameters.slurm.comment=${OPTARG}"
-      echo "Priority mode : ${OPTARG}..."
-      ;;
     \? ) 
-      echo "Usage: "$name".sh [-dvtnsipl]" 
+      echo "Usage: "$name".sh [-spm]" 
       exit 1
       ;;
     : )
