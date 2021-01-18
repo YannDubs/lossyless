@@ -189,21 +189,26 @@ class CompressionModule(pl.LightningModule):
             loss = self.rate_estimator.aux_loss()
             logs = dict(coder_loss=loss)
 
-        self.log_dict({f"train_{k}": v for k, v in logs.items()}, sync_dist=True)
+        self.log_dict({f"train_{k}": v for k, v in logs.items()})
         return loss
 
     def validation_step(self, batch, batch_idx):
+        # TODO for some reason validation step for wandb logging after resetting is not correct
         loss, logs, _ = self.step(batch)
         _, online_logs = self.online_evaluator(batch, self)
         logs.update(online_logs)
-        self.log_dict({f"val_{k}": v for k, v in logs.items()})
+        self.log_dict(
+            {f"val_{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+        )
         return loss
 
     def test_step(self, batch, batch_idx):
         loss, logs, _ = self.step(batch)
         _, online_logs = self.online_evaluator(batch, self)
         logs.update(online_logs)
-        self.log_dict({f"test_{k}": v for k, v in logs.items()})
+        self.log_dict(
+            {f"test_{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+        )
         return loss
 
     def on_validation_epoch_start(self):

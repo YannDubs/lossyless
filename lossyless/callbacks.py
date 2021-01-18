@@ -15,14 +15,11 @@ except ImportError:
     pass
 
 
-from .helpers import prod
-
-
 def save_img_wandb(pl_module, trainer, img, name, caption):
     """Save an image on wandb logger."""
     wandb_idx = pl_module.hparams.logger.loggers.index("wandb")
     wandb_img = wandb.Image(img, caption=caption)
-    trainer.logger[wandb_idx].experiment.log({name: [wandb_img]})
+    trainer.logger[wandb_idx].experiment.log({name: [wandb_img]}, commit=False)
 
 
 class WandbReconstructImages(Callback):

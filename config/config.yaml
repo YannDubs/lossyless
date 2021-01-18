@@ -59,7 +59,8 @@ logger:
     entity: ${wandb_entitiy}
     group: ${name}
     offline: false # Run offline (data can be streamed later to wandb servers).
-    reinit: True
+    reinit: False # ensure that same wandb after preemption
+    id: ${job_id}
 
 callbacks:
   additional: []
