@@ -292,11 +292,11 @@ class BananaDistribution(dist.TransformedDistribution):
         self,
         curvature=0.05,
         factor=6,
-        location=torch.tensor([-1.5, -2.0]),
+        location=torch.as_tensor([-1.5, -2.0]),
         angle=-40,
         scale=1 / 2,
     ):
-        std = torch.tensor([factor * scale, scale])
+        std = torch.as_tensor([factor * scale, scale])
         base_dist = dist.Independent(dist.Normal(loc=torch.zeros(2), scale=std), 1)
 
         transforms = dist.ComposeTransform(
