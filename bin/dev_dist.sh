@@ -13,6 +13,7 @@ kwargs="
 name=$name 
 +mode=dev
 data.kwargs.dataset_kwargs.length=10240
+timeout=$time
 $add_kwargs
 "
 

@@ -1,6 +1,7 @@
 numpy
 hydra-core
 hydra_colorlog
+hydra-submitit-launcher
 pytorch-lightning
 pytorch-lightning-bolts
 sklearn

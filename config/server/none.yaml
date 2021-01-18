@@ -1,0 +1,12 @@
+# @package _global_
+job_id: ${time} # default sweeper does not have unnique identifier so use time
+
+hydra:
+  run:
+    # unfortunately cannot use hydra: is hydra so need to do everything by hand
+    # i.e. cannot use ${paths.work}/${job_id}
+    dir: ${hydra.runtime.cwd}/outputs/${now:%Y-%m-%d_%H-%M-%S}
+
+  sweep:
+    dir:  ${hydra.runtime.cwd}/outputs/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.num}

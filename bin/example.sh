@@ -13,6 +13,7 @@ source `dirname $0`/utils.sh
 kwargs="
 name=$name 
 +mode=test
+timeout=$time
 $add_kwargs
 "
 

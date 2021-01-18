@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from torch import nn
 import matplotlib.pyplot as plt
 import numpy as np
@@ -18,6 +19,12 @@ import einops
 
 
 BASE_LOG = 2
+
+
+def orderedset(l):
+    """Return a list of unique elements."""
+    # could use list(dict.fromkeys(l)) in python 3.6+
+    return [k for k, v in OrderedDict.fromkeys(l).items()]
 
 
 # modified from https://github.com/skorch-dev/skorch/blob/92ae54b/skorch/utils.py#L106

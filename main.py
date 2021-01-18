@@ -3,7 +3,7 @@ import logging
 import compressai
 import omegaconf
 
-
+from pathlib import Path
 import pytorch_lightning as pl
 import pl_bolts
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
@@ -11,7 +11,6 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 import lossyless
 
 from lossyless.callbacks import (
-    OnlineEvaluator,
     WandbReconstructImages,
     WandbLatentDimInterpolator,
     WandbCodebookPlot,
@@ -28,20 +27,7 @@ logger = logging.getLogger(__name__)
 
 @hydra.main(config_name="config", config_path="config")
 def main(cfg):
-    if cfg.is_debug:
-        set_debug(cfg)
-
-    pl.seed_everything(cfg.seed)
-    cfg.paths.base_dir = hydra.utils.get_original_cwd()
-    create_folders(cfg.paths.base_dir, ["results", "logs", "pretrained"])
-
-    if cfg.rate.range_coder is not None:
-        compressai.set_entropy_coder(cfg.rate.range_coder)
-
-    # ! waiting for pytorch lightning #5459
-    if "H_" in cfg.rate.name:
-        logger.warning("Turning off `is_online_eval` until #5459 gets solved.")
-        cfg.predictor.is_online_eval = False
+    begin(cfg)
 
     # DATA
     datamodule = instantiate_datamodule(cfg)
@@ -62,14 +48,30 @@ def main(cfg):
     # evaluate_compression(trainer, datamodule, cfg)
 
     # # PREDICTION
+    # TODO add load checkpoint if not training
     # prediciton_module = PredictionModule(hparams=cfg, representer=compression_module)
 
     # logger.info("TRAIN / EVALUATE downstream classification.")
     # trainer.fit(prediciton_module, datamodule=datamodule)
     # evaluate_prediction(trainer, datamodule, cfg)
 
-    logger.info("Finished.")
     finalize(cfg, trainer, compression_module)
+    logger.info("Finished.")
+
+
+def begin(cfg):
+    """Script initialization."""
+    if cfg.is_debug:
+        set_debug(cfg)
+
+    pl.seed_everything(cfg.seed)
+    cfg.paths.work = str(Path.cwd())
+    create_folders(cfg.paths.base_dir, ["results", "logs", "pretrained"])
+
+    if cfg.rate.range_coder is not None:
+        compressai.set_entropy_coder(cfg.rate.range_coder)
+
+    logger.info(f"Running {cfg.long_name} from {cfg.paths.work}.")
 
 
 def instantiate_datamodule(cfg):
@@ -125,13 +127,11 @@ def initialize_(compression_module, datamodule):
 def get_trainer(cfg, module, is_compressor):
     """Instantiate trainer."""
 
+    # CALLBACKS
     callbacks = []
 
     if is_compressor:
         chckpt_kwargs = cfg.callbacks.ModelCheckpoint_compressor
-
-        if cfg.predictor.is_online_eval:
-            callbacks += [OnlineEvaluator(**cfg.callbacks.OnlineEvaluator)]
 
         additional_target = cfg.data.kwargs.dataset_kwargs.additional_target
         is_reconstruct = additional_target in ["representative", "input"]
@@ -159,6 +159,7 @@ def get_trainer(cfg, module, is_compressor):
             except AttributeError:
                 callbacks.append(getattr(pl_bolts.callbacks, name)(**cllbck_kwargs))
 
+    # LOGGERS
     loggers = []
 
     if "csv" in cfg.logger.loggers:
@@ -176,6 +177,12 @@ def get_trainer(cfg, module, is_compressor):
             cfg.trainer.track_grad_norm = -1
             loggers[-1].watch(module.p_ZlX.mapper, log="gradients", log_freq=500)
 
+    # TRAINER
+    last_chckpnt = Path(chckpt_kwargs.dirpath) / "last.ckpt"
+    if last_chckpnt.exists():
+        # resume training
+        cfg.trainer.resume_from_checkpoint = last_chckpnt
+
     trainer = pl.Trainer(
         logger=loggers, checkpoint_callback=True, callbacks=callbacks, **cfg.trainer
     )
@@ -192,6 +199,8 @@ def finalize(cfg, trainer, compression_module):
 
         if wandb.run is not None:
             wandb.run.finish()  # finish the run if still on
+
+    # send latest checkpoint to main directory
 
 
 if __name__ == "__main__":

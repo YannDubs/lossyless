@@ -9,6 +9,7 @@ test
 /data
 logs
 notebooks
+.hydra
 
 # MAC
 .DS_Store

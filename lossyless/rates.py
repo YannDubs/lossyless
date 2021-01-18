@@ -1,10 +1,11 @@
 import torch
 import math
 import compressai
-from compressai.entropy_models import GaussianConditional, EntropyModel
+from compressai.entropy_models import GaussianConditional
 from compressai.models.utils import update_registered_buffers
 import einops
 from .helpers import atleast_ndim, BASE_LOG, kl_divergence, weights_init, mean
+
 from .distributions import get_marginalDist
 from .architectures import MLP
 
@@ -188,7 +189,7 @@ class MIRate(RateEstimator):
         return z_hat, kl, logs, other
 
 
-### ENTROPY CODERS. Min I[X,Z] ###
+### ENTROPY CODERS. Min H[Z] ###
 # all of the following assume that `p_Zlx` should be deterministic here (i.e. Delta distribution).
 # minor differences from and credits to them https://github.com/InterDigitalInc/CompressAI/blob/edd62b822186d81903c4a53c3f9b0806e9d7f388/compressai/models/priors.py
 # a little messy for reshaping as compressai assumes 4D image as inputs (but we compress 2D vectors)
@@ -244,15 +245,33 @@ class HRateFactorizedPrior(RateEstimator):
         assert isinstance(all_strings, list) and len(all_strings) == 1
         return self.entropy_bottleneck.decompress(all_strings[0])
 
-    def load_state_dict(self, state_dict):
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
         # Dynamically update the entropy bottleneck buffers related to the CDFs
         update_registered_buffers(
             self.entropy_bottleneck,
-            "entropy_bottleneck",
+            f"{prefix}entropy_bottleneck",
             ["_quantized_cdf", "_offset", "_cdf_length"],
             state_dict,
         )
-        super().load_state_dict(state_dict)
+
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
     @classmethod
     def from_state_dict(cls, state_dict):
@@ -401,21 +420,40 @@ class HRateHyperprior(RateEstimator):
         z_hat = einops.rearrange(z_hat, "b c e1 e2 -> b (c e1 e2)", e1=1, e2=1)
         return z_hat
 
-    def load_state_dict(self, state_dict):
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
         # Dynamically update the entropy bottleneck buffers related to the CDFs
         update_registered_buffers(
             self.entropy_bottleneck,
-            "entropy_bottleneck",
+            f"{prefix}entropy_bottleneck",
             ["_quantized_cdf", "_offset", "_cdf_length"],
             state_dict,
         )
+
         update_registered_buffers(
             self.gaussian_conditional,
-            "gaussian_conditional",
+            f"{prefix}gaussian_conditional",
             ["_quantized_cdf", "_offset", "_cdf_length", "scale_table"],
             state_dict,
         )
-        super().load_state_dict(state_dict)
+
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
 
     @classmethod
     def from_state_dict(cls, state_dict):
