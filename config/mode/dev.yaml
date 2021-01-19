@@ -1,13 +1,18 @@
 # @package _global_
 
-# check that everything is running correctly
+# check that everything is running correctly (single epoch normal)
 
 name: dev_${time}
+timeout: 60
 
 trainer:
-  fast_dev_run: True
   weights_summary: top # full to print show the entire model 
   max_epochs: 2
+  log_every_n_steps: 10
+  # uses 10 % of data
+  limit_val_batches: 0.1
+  limit_train_batches: 0.1
+  limit_test_batches: 0.1
 
 logger:
   wandb:

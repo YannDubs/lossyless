@@ -12,7 +12,7 @@ source `dirname $0`/utils.sh
 kwargs="
 name=$name 
 +mode=dev
-timeout=$time
+timeout=60
 $add_kwargs
 "
 

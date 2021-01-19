@@ -1,9 +1,10 @@
 # @package _global_
 
-# debug the model 
+# debug the model on cpu
 
 name: debugcpu_${time}
 is_debug: True # enter debug mode
+timeout: 60
 
 trainer:
   # DEBUGGING
@@ -12,7 +13,6 @@ trainer:
   fast_dev_run: True
   weights_summary: full # full to print show the entire model 
   profiler: simple # use `simple` or `"advanced"` to find bottleneck
-  max_epochs: 2
   gpus: 0
   precision: 32 # 16 does not work for cpu
 

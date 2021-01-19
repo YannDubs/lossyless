@@ -20,10 +20,11 @@ hydra:
     name: ${name}
 
     # slurm partition to use on the cluster
-    partition: null # scavenge, dev, priority, learnfair
+    partition: learnfair # scavenge, dev, priority, learnfair
     comment: null # you  have to add a comment when usintg the priority partition
     constraint: null # pascal | volta | volta32gb
     exclude: null
+    array_parallelism: 1000
     
     max_num_timeout: 3 # alow resume from checkpointing
     additional_parameters: {} # any other parameters, Eg: {"mail-user": "blublu@fb.com", "mail-type": "BEGIN"}

@@ -4,15 +4,18 @@ add_kwargs=""
 prfx=""
 time="2880" #2 days
 is_plot_only=false
+server=""
+mode=""
 
 
 # MODE ?
 while getopts ':s:p:m:' flag; do
   case "${flag}" in
     s )
-      add_kwargs="${add_kwargs} server=${OPTARG}"
-      echo "${OPTARG} server ..."
-      case "${OPTARG}" in
+      server="${OPTARG}"
+      add_kwargs="${add_kwargs} server=$server"
+      echo "$server server ..."
+      case "$server" in
         learnfair) 
           add_kwargs="${add_kwargs} hydra/launcher=submitit_slurm"
           ;;
@@ -25,10 +28,11 @@ while getopts ':s:p:m:' flag; do
         esac
       ;;
     m ) 
-      add_kwargs="${add_kwargs} +mode=${OPTARG}"
-      prfx="${OPTARG}_"
+      mode="${OPTARG}"
+      add_kwargs="${add_kwargs} +mode=$mode"
+      prfx="$mode_"
       time="60"
-      echo "${OPTARG} mode ..."
+      echo "$mode mode ..."
       ;;
     p ) 
       is_plot_only=true
@@ -44,6 +48,21 @@ while getopts ':s:p:m:' flag; do
       ;;
   esac
 done
+
+
+if  [[ "$mode" == "dev" || "$mode" == "test" || "$mode" == "debug" ]]; then
+  case "$server" in
+    learnfair) 
+      add_kwargs="${add_kwargs} hydra.launcher.partition=dev"
+      ;;
+    vector) 
+      add_kwargs="${add_kwargs} hydra.launcher.partition=interactive +hydra.launcher.additional_parameters.qos=nopreemption"
+      ;;
+    local) 
+      add_kwargs="${add_kwargs}"
+      ;;
+  esac
+fi
 
 name="$prfx""$name"
 

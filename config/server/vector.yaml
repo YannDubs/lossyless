@@ -20,13 +20,15 @@ hydra:
     name: ${name}
 
     # slurm partition to use on the cluster
-    partition: gpu # t4v1,t4v2,p100,tpv2,gpu,interactive
-    comment: null # you  have to add a comment when usintg the priority partition
-    constraint: null # pascal | volta | volta32gb
+    partition: rtx6000 # cpu,interactive,t4v1,t4v2,p100,rtx6000
+    comment: null 
+    constraint: null 
     exclude: null
+    array_parallelism: 30
     
     max_num_timeout: 30 # alow resume from checkpointing
-    additional_parameters: {"qos": normal} # normal, high, deadline (this is the stream of execution )
+    additional_parameters:
+      qos: normal # normal, high, deadline, nopreemption (this is the stream of execution )
 
   run:
     # unfortunately cannot use hydra: is hydra so need to do everything by hand
