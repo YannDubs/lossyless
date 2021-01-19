@@ -15,14 +15,10 @@ except ImportError:
     pass
 
 
-from .helpers import prod
-
-
 def save_img_wandb(pl_module, trainer, img, name, caption):
     """Save an image on wandb logger."""
-    wandb_idx = pl_module.hparams.logger.loggers.index("wandb")
     wandb_img = wandb.Image(img, caption=caption)
-    trainer.logger[wandb_idx].experiment.log({name: [wandb_img]})
+    trainer.logger.experiment.log({name: [wandb_img]}, commit=False)
 
 
 class WandbReconstructImages(Callback):
@@ -121,7 +117,7 @@ class WandbLatentDimInterpolator(Callback):
             z[:, i, idx] = traversals[i]
 
         z = einops.rearrange(z, "r c ... -> (r c) ...")
-        img = pl_module.q_YlZ(z)
+        img = pl_module.distortion_estimator.q_YlZ(z)
 
         # undo normalization for plotting
         img, _ = undo_normalization(img, img, pl_module.hparams.data.dataset)

@@ -3,10 +3,11 @@ import logging
 import compressai
 import omegaconf
 
+import pandas as pd
 from pathlib import Path
 import pytorch_lightning as pl
 import pl_bolts
-from pytorch_lightning.loggers import CSVLogger, WandbLogger
+from pytorch_lightning.loggers import CSVLogger, WandbLogger, TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 import lossyless
 
@@ -23,6 +24,7 @@ import utils
 
 
 logger = logging.getLogger(__name__)
+RES_COMPRESS_FILENAME = "results_compression.csv"
 
 
 @hydra.main(config_name="config", config_path="config")
@@ -45,10 +47,9 @@ def main(cfg):
 
     logger.info("TRAIN / EVALUATE compression rate.")
     trainer.fit(compression_module, datamodule=datamodule)
-    # evaluate_compression(trainer, datamodule, cfg)
+    evaluate_compression(trainer, datamodule, cfg)
 
     # # PREDICTION
-    # TODO add load checkpoint if not training
     # prediciton_module = PredictionModule(hparams=cfg, representer=compression_module)
 
     # logger.info("TRAIN / EVALUATE downstream classification.")
@@ -66,7 +67,15 @@ def begin(cfg):
 
     pl.seed_everything(cfg.seed)
     cfg.paths.work = str(Path.cwd())
-    create_folders(cfg.paths.base_dir, ["results", "logs", "pretrained"])
+    create_folders(
+        cfg.paths.base_dir,
+        [
+            f"{cfg.paths.results}",
+            f"{cfg.paths.pretrained}",
+            f"{cfg.paths.logs}",
+            f"{cfg.paths.chckpnt}",
+        ],
+    )
 
     if cfg.rate.range_coder is not None:
         compressai.set_entropy_coder(cfg.rate.range_coder)
@@ -135,7 +144,7 @@ def get_trainer(cfg, module, is_compressor):
 
         additional_target = cfg.data.kwargs.dataset_kwargs.additional_target
         is_reconstruct = additional_target in ["representative", "input"]
-        if "wandb" in cfg.logger.loggers and is_reconstruct:
+        if cfg.logger.name == "wandb" and is_reconstruct:
             if cfg.data.mode == "image":
                 callbacks += [
                     WandbLatentDimInterpolator(cfg.encoder.z_dim),
@@ -160,22 +169,30 @@ def get_trainer(cfg, module, is_compressor):
                 callbacks.append(getattr(pl_bolts.callbacks, name)(**cllbck_kwargs))
 
     # LOGGERS
-    loggers = []
+    if cfg.logger.name == "csv":
+        logger = CSVLogger(**cfg.logger.csv)
 
-    if "csv" in cfg.logger.loggers:
-        loggers.append(CSVLogger(**cfg.logger.csv))
-
-    if "wandb" in cfg.logger.loggers:
+    elif cfg.logger.name == "wandb":
         try:
-            loggers.append(WandbLogger(**cfg.logger.wandb))
+            logger = WandbLogger(**cfg.logger.wandb)
         except Exception:
             cfg.logger.wandb.offline = True
-            loggers.append(WandbLogger(**cfg.logger.wandb))
+            logger = WandbLogger(**cfg.logger.wandb)
 
         if cfg.trainer.track_grad_norm == 2:
             # use wandb rather than lightning gradients
             cfg.trainer.track_grad_norm = -1
-            loggers[-1].watch(module.p_ZlX.mapper, log="gradients", log_freq=500)
+            logger.watch(
+                module.p_ZlX.mapper,
+                log="gradients",
+                log_freq=cfg.trainer.log_every_n_steps * 10,
+            )
+
+    elif cfg.logger.name == "tensorboard":
+        logger = TensorBoardLogger(**cfg.logger.tensorboard)
+
+    else:
+        raise ValueError(f"Unkown logger={cfg.logger.name}.")
 
     # TRAINER
     last_chckpnt = Path(chckpt_kwargs.dirpath) / "last.ckpt"
@@ -184,23 +201,47 @@ def get_trainer(cfg, module, is_compressor):
         cfg.trainer.resume_from_checkpoint = last_chckpnt
 
     trainer = pl.Trainer(
-        logger=loggers, checkpoint_callback=True, callbacks=callbacks, **cfg.trainer
+        logger=logger, checkpoint_callback=True, callbacks=callbacks, **cfg.trainer
     )
 
     return trainer
+
+
+def evaluate_compression(trainer, datamodule, cfg):
+    """Evaluate the compression / representation learning."""
+    # the following will load the best model before eval
+    # test on test
+    test_results = trainer.test()
+    trainer.logger.log_metrics(test_results[0])
+
+    # test on train
+    train_results = trainer.test(test_dataloaders=datamodule.train_dataloader())
+    train_results = {
+        k.replace("test", "testtrain"): v for k, v in train_results[0].items()
+    }
+    trainer.logger.log_metrics(train_results)
+
+    train_results = {k.replace("testtrain_", ""): v for k, v in train_results.items()}
+    test_results = {k.replace("test_", ""): v for k, v in test_results[0].items()}
+    results = pd.DataFrame.from_dict(dict(train=train_results, test=test_results))
+    path = Path(cfg.paths.results) / RES_COMPRESS_FILENAME
+    results.to_csv(path, header=True, index=True)
 
 
 def finalize(cfg, trainer, compression_module):
     """Finalizes the script."""
     # logging.shutdown()
 
-    if "wandb" in cfg.logger.loggers:
+    if cfg.logger.name == "wandb":
         import wandb
 
         if wandb.run is not None:
             wandb.run.finish()  # finish the run if still on
 
-    # send latest checkpoint to main directory
+    # send best checkpoint(s) to main directory
+    dest_path = Path(cfg.paths.pretrained)
+    dest_path.mkdir(parents=True, exist_ok=True)
+    trainer.save_checkpoint(dest_path / "best.ckpt", weights_only=True)
 
 
 if __name__ == "__main__":

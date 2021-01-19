@@ -56,14 +56,14 @@ class LossylessImgDataset(LossylessCLFDataset):
     Parameters
     -----------
     equivalence : set of str, optional
-        List of equivalence relationship with respect to which to be invariant. 
+        List of equivalence relationship with respect to which to be invariant.
 
     is_augment_val : bool, optional
         Whether to augment the validation + test set.
 
     is_normalize : bool, optional
         Whether to normalize the input images. Only for colored images. If True, you should ensure
-        that `MEAN` and `STD` and `get_normalization` and `undo_normalization` in `lossyless.helpers` 
+        that `MEAN` and `STD` and `get_normalization` and `undo_normalization` in `lossyless.helpers`
         can normalize your data.
 
     kwargs:
@@ -71,7 +71,12 @@ class LossylessImgDataset(LossylessCLFDataset):
     """
 
     def __init__(
-        self, *args, equivalence={}, is_augment_val=False, is_normalize=True, **kwargs,
+        self,
+        *args,
+        equivalence={},
+        is_augment_val=False,
+        is_normalize=True,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.equivalence = equivalence
@@ -188,7 +193,7 @@ class LossylessImgAnalyticDataset(LossylessImgDataset):
     Parameters
     -----------
     equivalence : set of {"rotation","y_translation","x_translation","scale"}, optional
-        List of equivalence relationship with respect to which to be invariant. 
+        List of equivalence relationship with respect to which to be invariant.
 
     n_action_per_equiv : int, optional
         Number of actions for each equivalence. Typically 4 or 8.
@@ -201,7 +206,11 @@ class LossylessImgAnalyticDataset(LossylessImgDataset):
     """
 
     def __init__(
-        self, *args, n_action_per_equiv=8, dist_actions="uniform", **kwargs,
+        self,
+        *args,
+        n_action_per_equiv=8,
+        dist_actions="uniform",
+        **kwargs,
     ):
         self.n_action_per_equiv = n_action_per_equiv
         self.dist_actions = dist_actions
@@ -269,7 +278,7 @@ class LossylessImgAnalyticDataset(LossylessImgDataset):
         # are the indices of the transformation that you sampled. But that cannot be put in a batch
         # as Mx does not usually have same size as `self.n_action_per_equiv`. So we flatten everything
         # and will be unflattened when computing the loss
-        return torch.tensor(max_var)
+        return torch.as_tensor(max_var)
 
     @property
     def shapes_x_t_Mx(self):
@@ -302,7 +311,10 @@ class LossylessImgAnalyticDataset(LossylessImgDataset):
 class TorchvisionDataModule(LossylessDataModule):
     def get_train_val_dataset(self, **dataset_kwargs):
         dataset = self.Dataset(
-            self.data_dir, train=True, download=False, **self.dataset_kwargs,
+            self.data_dir,
+            train=True,
+            download=False,
+            **self.dataset_kwargs,
         )
 
         n_val = int_or_ratio(self.val_size, len(dataset))
@@ -324,7 +336,10 @@ class TorchvisionDataModule(LossylessDataModule):
 
     def get_test_dataset(self, **dataset_kwargs):
         test = self.Dataset(
-            self.data_dir, train=False, download=False, **self.dataset_kwargs,
+            self.data_dir,
+            train=False,
+            download=False,
+            **self.dataset_kwargs,
         )
         return test
 
@@ -424,7 +439,10 @@ class Cifar10DataModule(TorchvisionDataModule):
 # TODO add config for galaxy in config/data with good defaults
 class GalaxyDataset(LossylessImgAnalyticDataset):
     def __init__(
-        self, data_root, *args, **kwargs,
+        self,
+        data_root,
+        *args,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
         # do as needed. For best compatibility with the framework
@@ -539,7 +557,10 @@ class GalaxyDataModule(LossylessDataModule):
     # helper function for splitting train and valid
     def get_train_val_dataset(self, **dataset_kwargs):
         dataset = self.Dataset(
-            self.data_dir, train=True, download=False, **self.dataset_kwargs,
+            self.data_dir,
+            train=True,
+            download=False,
+            **self.dataset_kwargs,
         )
 
         # use the following if there's no validation set predefined
@@ -563,7 +584,10 @@ class GalaxyDataModule(LossylessDataModule):
 
     def get_test_dataset(self, **dataset_kwargs):
         test = self.Dataset(
-            self.data_dir, train=False, download=False, **self.dataset_kwargs,
+            self.data_dir,
+            train=False,
+            download=False,
+            **self.dataset_kwargs,
         )
         return test
 

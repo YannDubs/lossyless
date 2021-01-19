@@ -16,33 +16,33 @@ logger = logging.getLogger(__name__)
 
 def differential_entropy(x, k=3, eps=1e-10, p=np.inf, base=2):
     """Kozachenko-Leonenko Estimator [1] of diffential entropy.
-    
+
     Note
     ----
-    - This is an improved (vectorized + additional norms) reimplementation 
+    - This is an improved (vectorized + additional norms) reimplementation
     of https://github.com/gregversteeg/NPEET.
-    
+
     Parameters
     ----------
     x : array-like, shape=(n,d)
         Samples from which to estimate the entropy.
-        
+
     k : int, optional
-        Nearest neigbour to use for estimation. Lower means less bias, 
+        Nearest neigbour to use for estimation. Lower means less bias,
         higher less variance.
-        
+
     eps : float, otpional
         Additonal noise.
-        
+
     p : {2, np.inf}, optional
         p-norm to use for comparing distances. 2 might give instabilities.
 
     base : int, optional
         Base for the logs.
-    
+
     References
     ----------
-    [1] Kraskov, A., Stögbauer, H., & Grassberger, P. (2004). Estimating 
+    [1] Kraskov, A., Stögbauer, H., & Grassberger, P. (2004). Estimating
     mutual information. Physical review E, 69(6), 066138.
     """
     x = to_numpy(x)
@@ -85,7 +85,7 @@ def discrete_entropy(x, base=2, is_plugin=False):
 
     Reference
     ---------
-    [1] Nemenman, I., Bialek, W., & Van Steveninck, R. D. R. (2004). Entropy and information in 
+    [1] Nemenman, I., Bialek, W., & Van Steveninck, R. D. R. (2004). Entropy and information in
     neural spike trains: Progress on the sampling problem. Physical Review E, 69(5), 056111.
     """
     x = to_numpy(x)
@@ -109,16 +109,16 @@ def discrete_entropy(x, base=2, is_plugin=False):
 
 def rotate(x, angle):
     """Rotate a 2D tensor by a certain angle (in degrees)."""
-    angle = torch.tensor([angle * math.pi / 180])
+    angle = torch.as_tensor([angle * math.pi / 180])
     cos, sin = torch.cos(angle), torch.sin(angle)
-    rot_mat = torch.tensor([[cos, sin], [-sin, cos]])
+    rot_mat = torch.as_tensor([[cos, sin], [-sin, cos]])
     return x @ rot_mat
 
 
 def sample_param_augment(rv, interval_trnsf):
     """
-    Sample a parameter (and it's index) for transformations using an action r.v. `rv` and difference 
-    in parameter space between min and max transforms, i.e. `interval_trnsf`. The mean of `rv` will 
+    Sample a parameter (and it's index) for transformations using an action r.v. `rv` and difference
+    in parameter space between min and max transforms, i.e. `interval_trnsf`. The mean of `rv` will
     always correspond to 0 parameter. Eg for rotations interval_trnsf=360 and mean rv is 0 degrees.
     """
     support = rv.support()
@@ -131,13 +131,13 @@ def sample_param_augment(rv, interval_trnsf):
 
 
 class RotationAction(torch.nn.Module):
-    """Rotate the image by a sampled angle. 
-    
+    """Rotate the image by a sampled angle.
+
     Parameters
     ----------
     rv : scipy.stats.rv_discrete
         Discrete distribution to sample the rotation. The mean will correspond to 0 degrees rotation
-        and the rest will correspond to angles with a fixed interval. 
+        and the rest will correspond to angles with a fixed interval.
 
     max_angle : float, optional
         Maximimum angle by which to rotate on one one side.
@@ -159,13 +159,13 @@ class RotationAction(torch.nn.Module):
 
 
 class TranslationAction(torch.nn.Module):
-    """Translate the image by a sampled amount. 
-    
+    """Translate the image by a sampled amount.
+
     Parameters
     ----------
     rv : scipy.stats.rv_discrete
         Discrete distribution to sample the translate. The mean will correspond to 0 shift
-        and the rest will correspond to shifts with a fixed interval. 
+        and the rest will correspond to shifts with a fixed interval.
 
     dim : int, optional
         Dim on which to translate. If `0` x axis, if `1` y axis.
@@ -194,13 +194,13 @@ class TranslationAction(torch.nn.Module):
 
 
 class ScalingAction(torch.nn.Module):
-    """Scale the image by a sampled factor. 
-    
+    """Scale the image by a sampled factor.
+
     Parameters
     ----------
     rv : scipy.stats.rv_discrete
         Discrete distribution to sample the scaling. The mean will correspond to no scaling
-        and the rest will correspond to scales by a fixed delta. 
+        and the rest will correspond to scales by a fixed delta.
 
     max_scale : int, optional
         Maximum amount by which to scale. Note: the min will be 2-max_scale, eg if 1.2 then min is 0.8.

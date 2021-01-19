@@ -167,8 +167,8 @@ class MarginalUnitGaussian(nn.Module):
         super().__init__()
         self.out_dim = out_dim
 
-        self.register_buffer("loc", torch.tensor([0.0] * self.out_dim))
-        self.register_buffer("scale", torch.tensor([1.0] * self.out_dim))
+        self.register_buffer("loc", torch.as_tensor([0.0] * self.out_dim))
+        self.register_buffer("scale", torch.as_tensor([1.0] * self.out_dim))
 
     def forward(self):
         return Independent(Normal(self.loc, self.scale), 1)
@@ -180,8 +180,8 @@ class MarginalDiagGaussian(nn.Module):
     def __init__(self, out_dim):
         super().__init__()
         self.out_dim = out_dim
-        self.loc = nn.Parameter(torch.tensor([0.0] * self.out_dim))
-        self.scale = nn.Parameter(torch.tensor([0.0] * self.out_dim))
+        self.loc = nn.Parameter(torch.as_tensor([0.0] * self.out_dim))
+        self.scale = nn.Parameter(torch.as_tensor([0.0] * self.out_dim))
         self.reset_parameters()
 
     def reset_parameters(self):

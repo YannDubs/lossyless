@@ -9,11 +9,10 @@ logger = logging.getLogger(__name__)
 
 
 def create_folders(base_path, names):
-    """Safely creates a list of folders ar a certain path."""
+    """Safely creates a list of folders at a certain path."""
     for name in names:
         path = os.path.join(base_path, name)
-        if not os.path.exists(path):
-            os.makedirs(path)
+        os.makedirs(path, exist_ok=True)
 
 
 def omegaconf2namespace(cfg):
