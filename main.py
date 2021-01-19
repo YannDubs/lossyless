@@ -3,7 +3,7 @@ import logging
 import compressai
 import omegaconf
 
-import shutil
+import pandas as pd
 from pathlib import Path
 import pytorch_lightning as pl
 import pl_bolts
@@ -24,6 +24,7 @@ import utils
 
 
 logger = logging.getLogger(__name__)
+RES_COMPRESS_FILENAME = "results_compression.csv"
 
 
 @hydra.main(config_name="config", config_path="config")
@@ -46,10 +47,9 @@ def main(cfg):
 
     logger.info("TRAIN / EVALUATE compression rate.")
     trainer.fit(compression_module, datamodule=datamodule)
-    # evaluate_compression(trainer, datamodule, cfg)
+    evaluate_compression(trainer, datamodule, cfg)
 
     # # PREDICTION
-    # TODO add load checkpoint if not training
     # prediciton_module = PredictionModule(hparams=cfg, representer=compression_module)
 
     # logger.info("TRAIN / EVALUATE downstream classification.")
@@ -67,7 +67,15 @@ def begin(cfg):
 
     pl.seed_everything(cfg.seed)
     cfg.paths.work = str(Path.cwd())
-    create_folders(cfg.paths.base_dir, ["results", "logs", "pretrained"])
+    create_folders(
+        cfg.paths.base_dir,
+        [
+            f"{cfg.paths.results}",
+            f"{cfg.paths.pretrained}",
+            f"{cfg.paths.logs}",
+            f"{cfg.paths.chckpnt}",
+        ],
+    )
 
     if cfg.rate.range_coder is not None:
         compressai.set_entropy_coder(cfg.rate.range_coder)
@@ -197,6 +205,27 @@ def get_trainer(cfg, module, is_compressor):
     )
 
     return trainer
+
+
+def evaluate_compression(trainer, datamodule, cfg):
+    """Evaluate the compression / representation learning."""
+    # the following will load the best model before eval
+    # test on test
+    test_results = trainer.test()
+    trainer.logger.log_metrics(test_results[0])
+
+    # test on train
+    train_results = trainer.test(test_dataloaders=datamodule.train_dataloader())
+    train_results = {
+        k.replace("test", "testtrain"): v for k, v in train_results[0].items()
+    }
+    trainer.logger.log_metrics(train_results)
+
+    train_results = {k.replace("testtrain_", ""): v for k, v in train_results.items()}
+    test_results = {k.replace("test_", ""): v for k, v in test_results[0].items()}
+    results = pd.DataFrame.from_dict(dict(train=train_results, test=test_results))
+    path = Path(cfg.paths.results) / RES_COMPRESS_FILENAME
+    results.to_csv(path, header=True, index=True)
 
 
 def finalize(cfg, trainer, compression_module):
