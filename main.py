@@ -212,9 +212,7 @@ def finalize(cfg, trainer, compression_module):
     # send best checkpoint(s) to main directory
     dest_path = Path(cfg.paths.pretrained)
     dest_path.mkdir(parents=True, exist_ok=True)
-    for c in trainer.callbacks:
-        if isinstance(c, pl.callbacks.ModelCheckpoint):
-            shutil.copy(c.best_model_path, dest_path)
+    trainer.save_checkpoint(dest_path / "best.ckpt", weights_only=True)
 
 
 if __name__ == "__main__":
