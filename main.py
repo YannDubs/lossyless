@@ -15,6 +15,7 @@ from lossyless.callbacks import (
     WandbReconstructImages,
     WandbLatentDimInterpolator,
     WandbCodebookPlot,
+    WandbMaxinvDistributionPlot,
 )
 from lossyless import CompressionModule
 from lossyless.distributions import MarginalVamp
@@ -50,10 +51,10 @@ def main(cfg):
     evaluate_compression(trainer, datamodule, cfg)
 
     # # PREDICTION
-    # prediciton_module = PredictionModule(hparams=cfg, representer=compression_module)
+    # prediction_module = PredictionModule(hparams=cfg, representer=compression_module)
 
     # logger.info("TRAIN / EVALUATE downstream classification.")
-    # trainer.fit(prediciton_module, datamodule=datamodule)
+    # trainer.fit(prediction_module, datamodule=datamodule)
     # evaluate_prediction(trainer, datamodule, cfg)
 
     finalize(cfg, trainer, compression_module)
@@ -151,7 +152,7 @@ def get_trainer(cfg, module, is_compressor):
                     WandbReconstructImages(),
                 ]
             elif cfg.data.mode == "distribution":
-                callbacks += [WandbCodebookPlot()]
+                callbacks += [WandbCodebookPlot(), WandbMaxinvDistributionPlot()]
 
     else:
         chckpt_kwargs = cfg.callbacks.predictor_chckpt
