@@ -157,7 +157,8 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
 
     @property
     def shapes_x_t_Mx(self):
-        return dict(input=(2,), target=(1,), max_inv=(1,), max_var=(2,))
+        target_dim = 1 if self.equivalence is not None else 2
+        return dict(input=(2,), target=(target_dim,), max_inv=(1,), max_var=(2,))
 
     def get_n_data_Mxs(self, length):
         """Return an array for the examples and correcponding max inv ofa given length."""

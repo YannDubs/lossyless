@@ -15,6 +15,7 @@ trainer:
   profiler: simple # use `simple` or `"advanced"` to find bottleneck
   gpus: 0
   precision: 32 # 16 does not work for cpu
+  log_every_n_steps: 10 
 
 logger:
   wandb:
