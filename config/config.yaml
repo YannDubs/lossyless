@@ -87,6 +87,7 @@ trainer:
   resume_from_checkpoint: null # string to checkpoint if want to resume
   gradient_clip_val: 0 # increase to clip grad
   reload_dataloaders_every_epoch: False
+  log_every_n_steps: 100
   
   # ENGINEERING / SPEED
   gpus: 1 
