@@ -22,6 +22,9 @@ while getopts ':s:p:m:' flag; do
         vector) 
           add_kwargs="${add_kwargs} hydra/launcher=submitit_slurm"
           ;;
+        qvector) 
+          add_kwargs="${add_kwargs} hydra/launcher=submitit_slurm"
+          ;;
         local) 
           add_kwargs="${add_kwargs} hydra/launcher=submitit_local"
           ;;
@@ -58,8 +61,8 @@ if  [[ "$mode" == "dev" || "$mode" == "test" || "$mode" == "debug" ]]; then
     vector) 
       add_kwargs="${add_kwargs} hydra.launcher.partition=interactive +hydra.launcher.additional_parameters.qos=nopreemption"
       ;;
-    local) 
-      add_kwargs="${add_kwargs}"
+    qvector) 
+      add_kwargs="${add_kwargs} hydra.launcher.partition=interactive +hydra.launcher.additional_parameters.qos=nopreemption"
       ;;
   esac
 fi
