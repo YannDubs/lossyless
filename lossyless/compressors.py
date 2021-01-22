@@ -1,17 +1,18 @@
-import pytorch_lightning as pl
-from pytorch_lightning.core.decorators import auto_move_data
-from pl_bolts.optimizers.lars_scheduling import LARSWrapper
-import torch
 import logging
-import einops
 import math
-from .rates import get_rate_estimator
-from .architectures import get_Architecture, MLP
-from .distributions import CondDist, get_marginalDist
-from .helpers import get_lr_scheduler, BASE_LOG, orderedset
-from .distortions import get_distortion_estimator
-from .predictors import OnlineEvaluator
 
+import einops
+import pytorch_lightning as pl
+import torch
+from pl_bolts.optimizers.lars_scheduling import LARSWrapper
+from pytorch_lightning.core.decorators import auto_move_data
+
+from .architectures import MLP, get_Architecture
+from .distortions import get_distortion_estimator
+from .distributions import CondDist, get_marginalDist
+from .helpers import BASE_LOG, get_lr_scheduler, orderedset
+from .predictors import OnlineEvaluator
+from .rates import get_rate_estimator
 
 __all__ = ["CompressionModule"]
 

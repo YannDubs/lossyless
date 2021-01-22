@@ -1,9 +1,10 @@
-import os
-import torch
-from omegaconf import OmegaConf
-from argparse import Namespace
 import collections
 import logging
+import os
+from argparse import Namespace
+
+import torch
+from omegaconf import OmegaConf
 
 logger = logging.getLogger(__name__)
 

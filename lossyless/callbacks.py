@@ -1,16 +1,16 @@
-import torch
-import torchvision
 import math
-import numpy as np
+
+import einops
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
+import torch
+import torchvision
 from matplotlib.lines import Line2D
-
 from pytorch_lightning.callbacks import Callback
-import einops
 
-from .helpers import undo_normalization, setup_grid, to_numpy, plot_density, BASE_LOG
+from .helpers import BASE_LOG, plot_density, setup_grid, to_numpy, undo_normalization
 
 try:
     import wandb

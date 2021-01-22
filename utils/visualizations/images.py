@@ -1,7 +1,8 @@
-from lossyless.helpers import set_seed
+import random
+
 import matplotlib.pyplot as plt
 import torch
-import random
+from lossyless.helpers import set_seed
 from torchvision.utils import make_grid
 
 DFLT_FIGSIZE = (17, 9)

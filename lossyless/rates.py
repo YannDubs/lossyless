@@ -1,14 +1,14 @@
-import torch
 import math
+
 import compressai
+import einops
+import torch
 from compressai.entropy_models import GaussianConditional
 from compressai.models.utils import update_registered_buffers
-import einops
-from .helpers import atleast_ndim, BASE_LOG, kl_divergence, weights_init, mean
 
-from .distributions import get_marginalDist
 from .architectures import MLP
-
+from .distributions import get_marginalDist
+from .helpers import BASE_LOG, atleast_ndim, kl_divergence, mean, weights_init
 
 __all__ = ["get_rate_estimator"]
 

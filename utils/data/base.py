@@ -1,13 +1,11 @@
 import abc
 from pathlib import Path
 
-import torch
 import numpy as np
-from torch.utils.data import DataLoader
-from pytorch_lightning import LightningDataModule
-
+import torch
 from lossyless.helpers import to_numpy
-
+from pytorch_lightning import LightningDataModule
+from torch.utils.data import DataLoader
 
 DIR = Path(__file__).parents[2].joinpath("data")
 
