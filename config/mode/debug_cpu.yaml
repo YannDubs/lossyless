@@ -2,7 +2,7 @@
 
 # debug the model on cpu
 
-name: debugcpu_${time}
+experiment: debugcpu_${time}
 is_debug: True # enter debug mode
 timeout: 60
 

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import compressai
 import hydra
+import matplotlib.pyplot as plt
 import omegaconf
 import pandas as pd
 import pl_bolts
@@ -26,7 +27,7 @@ from lossyless.callbacks import (
 )
 from lossyless.distributions import MarginalVamp
 from utils.data import get_datamodule
-from utils.helpers import create_folders, omegaconf2namespace, set_debug
+from utils.helpers import create_folders, get_latest_dir, omegaconf2namespace, set_debug
 
 logger = logging.getLogger(__name__)
 RES_COMPRESS_FILENAME = "results_compression.csv"
@@ -50,9 +51,16 @@ def main(cfg):
 
     trainer = get_trainer(cfg, compression_module, is_compressor=True)
 
-    logger.info("TRAIN / EVALUATE compression rate.")
-    trainer.fit(compression_module, datamodule=datamodule)
-    evaluate_compression(trainer, datamodule, cfg)
+    if cfg.is_train_compressor:
+        logger.info("Train compressor ...")
+        trainer.fit(compression_module, datamodule=datamodule)
+        save_pretrained_compressor(cfg, trainer)
+
+    else:
+        logger.info("Load pretrained compressor ...")
+        compression_module = load_pretrained_compressor(cfg, datamodule)
+
+    evaluate_compressor(trainer, datamodule, cfg)
 
     # # PREDICTION
     # prediction_module = PredictionModule(hparams=cfg, representer=compression_module)
@@ -212,8 +220,28 @@ def get_trainer(cfg, module, is_compressor):
     return trainer
 
 
-def evaluate_compression(trainer, datamodule, cfg):
+def save_pretrained_compressor(cfg, trainer):
+    """Send best checkpoint for compressor to main directory."""
+    dest_path = Path(cfg.paths.pretrained)
+    dest_path.mkdir(parents=True, exist_ok=True)
+    trainer.save_checkpoint(dest_path / "best.ckpt", weights_only=True)
+
+
+def load_pretrained_compressor(cfg, datamodule):
+    """Load the best checkpoint from the latest run that has the same name as current run."""
+    breakpoint()
+    curr_path = Path(cfg.paths.pretrained)
+    # select the latest (but not current) checkpoint
+    chckpnt = get_latest_dir(curr_path.parent, not_eq=curr_path) / "best.ckpt"
+    compression_module = CompressionModule.load_from_checkpoint(chckpnt)
+    initialize_(compression_module, datamodule)
+    return compression_module
+
+
+def evaluate_compressor(trainer, datamodule, cfg):
     """Evaluate the compression / representation learning."""
+    logger.info("Evaluate compressor ...")
+
     # the following will load the best model before eval
     # test on test
     test_results = trainer.test()
@@ -235,18 +263,16 @@ def evaluate_compression(trainer, datamodule, cfg):
 
 def finalize(cfg, trainer, compression_module):
     """Finalizes the script."""
-    # logging.shutdown()
+
+    logging.shutdown()
+
+    plt.close("all")
 
     if cfg.logger.name == "wandb":
         import wandb
 
         if wandb.run is not None:
             wandb.run.finish()  # finish the run if still on
-
-    # send best checkpoint(s) to main directory
-    dest_path = Path(cfg.paths.pretrained)
-    dest_path.mkdir(parents=True, exist_ok=True)
-    trainer.save_checkpoint(dest_path / "best.ckpt", weights_only=True)
 
 
 if __name__ == "__main__":
