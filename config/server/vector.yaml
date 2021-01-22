@@ -17,7 +17,7 @@ hydra:
     # number of nodes to use for the job
     nodes: ${trainer.num_nodes}
     # name of the job
-    name: ${name}
+    name: ${experiment}
 
     # slurm partition to use on the cluster
     partition: rtx6000 # cpu,interactive,t4v1,t4v2,p100,rtx6000

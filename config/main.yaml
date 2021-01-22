@@ -12,13 +12,13 @@ defaults:
 
 
 ### GENERAL ###
-name: ???
+experiment: ???
 job_id: ??? # unique identifier
 seed: 123
 is_debug: False # enter debug mode
 timeout: 1440 # 24 hours
 time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is not when job runs
-long_name: ${name}/data_${data.name}/d_${distortion.name}/e_${encoder.name}/r_${rate.name}/o_${optimizer.name}/dim_${encoder.z_dim}/z_${loss.n_z_samples}/b_${loss.beta}/s_${seed}
+long_name: ${experiment}/data_${data.name}/d_${distortion.name}/e_${encoder.name}/r_${rate.name}/o_${optimizer.name}/dim_${encoder.z_dim}/z_${loss.n_z_samples}/b_${loss.beta}/s_${seed}
 
 paths:
   base_dir: ${hydra:runtime.cwd} 
@@ -57,7 +57,7 @@ logger:
     name: ${job_id}
     project: lossyless
     entity: ${wandb_entitiy}
-    group: ${name}
+    group: ${experiment}
     offline: false # Run offline (data can be streamed later to wandb servers).
     reinit: False # ensure that same wandb after preemption
     id: ${job_id}

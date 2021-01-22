@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-name=$prfx"example"
+experiment=$prfx"example"
 notes="
 **Goal**: Checkng that important moodels can overfit the data.
 **Hypothesis**: No errors
@@ -11,7 +11,7 @@ source `dirname $0`/utils.sh
 
 # define all the arguments modified or added to `conf`. If they are added use `+`
 kwargs="
-name=$name 
+experiment=$experiment 
 +mode=test
 timeout=$time
 $add_kwargs

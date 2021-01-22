@@ -17,7 +17,7 @@ hydra:
     # number of nodes to use for the job
     nodes: ${trainer.num_nodes}
     # name of the job
-    name: ${name}
+    name: ${experiment}
 
   run:
     # unfortunately cannot use hydra: is hydra so need to do everything by hand

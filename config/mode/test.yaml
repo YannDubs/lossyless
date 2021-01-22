@@ -2,7 +2,7 @@
 
 # test whether can overfit training
 
-name: test_${time}
+experiment: test_${time}
 timeout: 60
 
 trainer:
