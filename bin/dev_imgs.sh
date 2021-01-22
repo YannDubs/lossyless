@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-name="dev_imgs"
+experiment="dev_imgs"
 notes="
 **Goal**: Checking that all models on images run without errors (in parallel)
 **Hypothesis**: No errors
@@ -10,7 +10,7 @@ source `dirname $0`/utils.sh
 
 # define all the arguments modified or added to `conf`. If they are added use `+`
 kwargs="
-name=$name 
+experiment=$experiment 
 +mode=dev
 timeout=60
 $add_kwargs

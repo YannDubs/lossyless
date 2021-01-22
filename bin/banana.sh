@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-name=$prfx"banana"
+experiment=$prfx"banana"
 notes="
 **Goal**: Run banana models for plotting.
 **Hypothesis**: When using some invariance the rate should go down for a similar distortion. Furthermore, the codebook should be reminiscent of the maximal invariant.
@@ -62,7 +62,7 @@ trainer.reload_dataloaders_every_epoch=True
 "
 
 kwargs="
-name=$name 
+experiment=$experiment 
 $general_kwargs
 $encoder_kwargs
 $decoder_kwargs

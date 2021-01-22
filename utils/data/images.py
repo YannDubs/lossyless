@@ -1,40 +1,33 @@
-import logging
-from PIL import Image
 import abc
-
-import torch
-
-from torchvision.datasets import CIFAR10, MNIST, FashionMNIST
+import glob
+import logging
+import math
 import os
 import subprocess
 import zipfile
-import glob
-import torch
-import math
+
 import scipy
+import torch
+from lossyless.helpers import BASE_LOG, get_normalization
+from PIL import Image
 from torch.utils.data import random_split
 from torchvision import transforms as transform_lib
+from torchvision.datasets import CIFAR10, MNIST, FashionMNIST
 from torchvision.transforms import (
     ColorJitter,
-    RandomErasing,
     RandomAffine,
+    RandomErasing,
     RandomRotation,
-)
-
-from lossyless.helpers import (
-    get_normalization,
-    BASE_LOG,
 )
 
 from .base import LossylessCLFDataset, LossylessDataModule
 from .helpers import (
-    discrete_entropy,
     RotationAction,
-    TranslationAction,
     ScalingAction,
+    TranslationAction,
+    discrete_entropy,
     int_or_ratio,
 )
-
 
 logger = logging.getLogger(__name__)
 

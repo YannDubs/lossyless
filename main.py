@@ -1,33 +1,38 @@
-import hydra
+"""Entropy point to train the models and evaluate them.
+
+This should be called by `python main.py <conf>` where <conf> sets all configs from the cli, see 
+the file `config/main.yaml` for details about the configs. or use `python main.py -h`.
+"""
 import logging
-import compressai
-import omegaconf
-
-import pandas as pd
 from pathlib import Path
-import pytorch_lightning as pl
+
+import compressai
+import hydra
+import omegaconf
+import pandas as pd
 import pl_bolts
-from pytorch_lightning.loggers import CSVLogger, WandbLogger, TensorBoardLogger
+import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
+
 import lossyless
-
-from lossyless.callbacks import (
-    WandbReconstructImages,
-    WandbLatentDimInterpolator,
-    WandbCodebookPlot,
-)
-from lossyless import CompressionModule
-from lossyless.distributions import MarginalVamp
-from utils.helpers import create_folders, omegaconf2namespace, set_debug
-from utils.data import get_datamodule
 import utils
-
+from lossyless import CompressionModule
+from lossyless.callbacks import (
+    WandbCodebookPlot,
+    WandbLatentDimInterpolator,
+    WandbMaxinvDistributionPlot,
+    WandbReconstructImages,
+)
+from lossyless.distributions import MarginalVamp
+from utils.data import get_datamodule
+from utils.helpers import create_folders, omegaconf2namespace, set_debug
 
 logger = logging.getLogger(__name__)
 RES_COMPRESS_FILENAME = "results_compression.csv"
 
 
-@hydra.main(config_name="config", config_path="config")
+@hydra.main(config_name="main", config_path="config")
 def main(cfg):
     begin(cfg)
 
@@ -50,10 +55,10 @@ def main(cfg):
     evaluate_compression(trainer, datamodule, cfg)
 
     # # PREDICTION
-    # prediciton_module = PredictionModule(hparams=cfg, representer=compression_module)
+    # prediction_module = PredictionModule(hparams=cfg, representer=compression_module)
 
     # logger.info("TRAIN / EVALUATE downstream classification.")
-    # trainer.fit(prediciton_module, datamodule=datamodule)
+    # trainer.fit(prediction_module, datamodule=datamodule)
     # evaluate_prediction(trainer, datamodule, cfg)
 
     finalize(cfg, trainer, compression_module)
@@ -151,7 +156,7 @@ def get_trainer(cfg, module, is_compressor):
                     WandbReconstructImages(),
                 ]
             elif cfg.data.mode == "distribution":
-                callbacks += [WandbCodebookPlot()]
+                callbacks += [WandbCodebookPlot(), WandbMaxinvDistributionPlot()]
 
     else:
         chckpt_kwargs = cfg.callbacks.predictor_chckpt

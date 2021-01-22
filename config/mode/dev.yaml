@@ -2,7 +2,7 @@
 
 # check that everything is running correctly (single epoch normal)
 
-name: dev_${time}
+experiment: dev_${time}
 timeout: 60
 
 trainer:

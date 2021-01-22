@@ -1,11 +1,13 @@
-import torch.nn as nn
-import torch
 import math
-from torch.nn import functional as F
+
 import einops
-from .helpers import BASE_LOG, undo_normalization, kl_divergence, prod
+import torch
+import torch.nn as nn
+from torch.nn import functional as F
+
 from .architectures import get_Architecture
 from .distributions import Deterministic, DiagGaussian
+from .helpers import BASE_LOG, kl_divergence, prod, undo_normalization
 
 __all__ = ["get_distortion_estimator"]
 

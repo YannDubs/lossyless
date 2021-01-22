@@ -1,22 +1,21 @@
-from collections import OrderedDict
-from torch import nn
-import matplotlib.pyplot as plt
-import numpy as np
-from torch.nn.utils.rnn import PackedSequence
-import torch
-import itertools
-from torchvision.datasets import CIFAR10
-from torchvision import transforms as transform_lib
-from torch.distributions import Distribution, constraints
-from torch.distributions.utils import broadcast_all
-from numbers import Number
 import contextlib
-import random
-from functools import reduce
+import itertools
 import operator
+import random
+from collections import OrderedDict
+from functools import reduce
+from numbers import Number
 
 import einops
-
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from torch import nn
+from torch.distributions import Distribution, constraints
+from torch.distributions.utils import broadcast_all
+from torch.nn.utils.rnn import PackedSequence
+from torchvision import transforms as transform_lib
+from torchvision.datasets import CIFAR10
 
 BASE_LOG = 2
 

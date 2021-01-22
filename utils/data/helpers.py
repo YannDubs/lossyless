@@ -1,15 +1,14 @@
 import logging
-import torch
-
 import math
+
+import numpy as np
+import scipy
+import torch
+from lossyless.helpers import to_numpy
 from scipy.spatial import cKDTree
 from scipy.special import digamma, gamma
-import scipy
-import numpy as np
 from torchvision import transforms as transform_lib
 from torchvision.transforms import functional as F_trnsf
-
-from lossyless.helpers import to_numpy
 
 logger = logging.getLogger(__name__)
 

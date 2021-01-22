@@ -1,13 +1,16 @@
+import math
+
+import einops
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
 import torch
 import torchvision
-import math
-import numpy as np
-import matplotlib.pyplot as plt
-
+from matplotlib.lines import Line2D
 from pytorch_lightning.callbacks import Callback
-import einops
 
-from .helpers import undo_normalization, setup_grid, to_numpy, plot_density, BASE_LOG
+from .helpers import BASE_LOG, plot_density, setup_grid, to_numpy, undo_normalization
 
 try:
     import wandb
@@ -152,14 +155,30 @@ class WandbLatentDimInterpolator(Callback):
 
 
 class WandbCodebookPlot(Callback):
-    """
+    """Plot the source distribution and codebook for a distribution.
+
+    Notes
+    -----
+    - datamodule has to be `DistributionDataModule`.
+    - distortion should be ivae.
+
     Parameters
     ----------
-    Callback : [type]
-        [description]
+    plot_interval : int, optional
+        How many epochs to wait before plotting.
+
+    range_lim : int, optional
+        Will plot x axis and y axis in (-range_lim, range_lim).
+
+    n_pts : int, optional
+        Number of points to use for the mesgrid will be n_pts**2. Can be memory heavy as all given
+        in a single batch.
+
+    figsize : tuple of int, optional
+        Size fo figure.
     """
 
-    def __init__(self, plot_interval=10, range_lim=5, n_pts=500, figsize=(7, 7)):
+    def __init__(self, plot_interval=10, range_lim=5, n_pts=500, figsize=(9, 9)):
         super().__init__()
         self.plot_interval = plot_interval
         self.range_lim = range_lim
@@ -264,16 +283,143 @@ class WandbCodebookPlot(Callback):
         return fig
 
 
-class AlphaScheduler(Callback):
-    """
-    Set the parameter `alpha` from a model. To replicate
-    `https://github.com/tensorflow/compression/blob/master/models/toy_sources/toy_sources.ipynb`.
+class WandbMaxinvDistributionPlot(Callback):
+    """Plot the distribtion of a maximal invariant p(M(X)) as well as the learned marginal
+    q(M(X)) = E_{p(Z)}[q(M(X)|Z)].
+
+    Notes
+    -----
+    - datamodule has to be `DistributionDataModule`.
+    - distortion should be ivae.
+
+    Parameters
+    ----------
+    plot_interval : int, optional
+        How many epochs to wait before plotting.
+
+    quantile_lim : int, optional
+        Will plot M(X) in (quantile_lim,1-quantile_lim).
+
+    n_pts : int, optional
+        Number of points to sample to estimate the distribution.
+
+    figsize : tuple of int, optional
+        Size fo figure.
+
+    equivalences : list of str, optional
+        List of equivalences to use in case you are invariant to nothing.
     """
 
-    def on_epoch_start(self, trainer, logs=None):
-        model = trainer.get_model()
-        epoch = trainer.current_epoch
-        max_epochs = trainer.max_epochs
+    def __init__(
+        self,
+        plot_interval=10,
+        quantile_lim=5,
+        n_pts=500 ** 2,
+        figsize=(9, 9),
+        equivalences=["rotation", "y_translation", "x_translation"],
+    ):
+        super().__init__()
+        self.plot_interval = plot_interval
+        self.quantile_lim = quantile_lim
+        self.n_pts = n_pts
+        self.figsize = figsize
+        self.equivalences = equivalences
 
-        if epoch < max_epochs / 4:
-            model.force_alpha = 3 * (epoch + 1) / (max_epochs / 4 + 1)
+    def prepare(data, source):
+        if source.decimals is not None:
+            data = np.around(data, decimals=source.decimals)
+        return data
+
+    def on_epoch_end(self, trainer, pl_module):
+        if (trainer.current_epoch + 1) % self.plot_interval == 0:
+            dataset = trainer.datamodule.train_dataset
+            # ensure don't change
+            seed, device, equiv = dataset.seed, pl_module.device, dataset.equivalence
+            pl_module.seed = None  # generate new data
+
+            # generate new data
+            x, _ = dataset.get_n_data_Mxs(self.n_pts)
+
+            with torch.no_grad():
+                pl_module.eval()
+
+                # ensure cpu because memory ++
+                pl_module_cpu = pl_module.to(torch.device("cpu"))
+                # shape: [batch_size, z_dim]
+                z_hat = pl_module_cpu(x)
+
+                # shape: [batch_size, *x_shape]
+                x_hat = pl_module_cpu.distortion_estimator.q_YlZ(z_hat)
+
+                # allow computing plots for multiple equivalences (useful for banana without equivalence)
+                equivalences = [equiv] if equiv is not None else self.equivalences
+                for eq in equivalences:
+                    dataset.equivalence = eq
+
+                    # shape: [batch_size, *mx_shape]
+                    mx_hat = dataset.max_invariant(x_hat)
+                    mx = dataset.max_invariant(x)
+
+                    fig = self.plot_maxinv(mx, mx_hat)
+
+                    caption = f"ep: {trainer.current_epoch}"
+                    save_img_wandb(pl_module, trainer, fig, f"max. inv. {eq}", caption)
+                    plt.close(fig)
+
+            # restore
+            pl_module = pl_module.to(device)
+            dataset.seed = seed
+            dataset.equivalence = equiv
+            pl_module.train()
+
+    def plot_maxinv(self, mx, mx_hat):
+        """Return a figure of the maximal invariant computed from the source and the reconstructions."""
+
+        fig, ax = plt.subplots(1, 1, figsize=self.figsize)
+
+        data = pd.DataFrame(
+            {"p(M(X))": mx.flatten().numpy(), "q(M(X))": mx_hat.flatten().numpy()}
+        )
+
+        h = sns.histplot(
+            data=data[["q(M(X))"]],
+            fill=True,
+            element="bars",
+            stat="density",
+            discrete=True,
+            color="tab:red",
+            linestyle="-",
+            lw=0.1,
+            ax=ax,
+            legend=False,
+            alpha=0.3,
+        )
+        # color not working because not using x=
+        for p in h.patches:
+            p.set_edgecolor("tab:red")
+            p.set_facecolor("tab:red")
+            p.set_alpha(0.3)
+
+        k = sns.kdeplot(
+            data=data[["p(M(X))"]],
+            ax=ax,
+            fill=True,
+            color="tab:blue",
+            legend=False,
+            alpha=0.1,
+        )
+
+        # manual legend because changes colors
+        custom_lines = [
+            Line2D([0], [0], color="tab:red", lw=1, linestyle="-"),
+            Line2D([0], [0], color="tab:blue", lw=1),
+        ]
+        ax.legend(custom_lines, [r"$q(M(X))$", r"$p(M(X))$"])
+        ax.set_xlim(
+            data[["p(M(X))"]].quantile(0.001)[0],
+            data[["p(M(X))"]].quantile(1 - 0.001)[0],
+        )
+        ax.set_xlabel(r"$M(X)$")
+        sns.despine()
+
+        return fig

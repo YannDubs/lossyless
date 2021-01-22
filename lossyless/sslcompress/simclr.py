@@ -1,14 +1,13 @@
 import torch
-
-from pl_bolts.models.self_supervised import SimCLR
-from lossyless.rates import get_rate_estimator
 from lossyless.compressors import CompressionModule
 from lossyless.distortions import ContrastiveDistortion
+from lossyless.rates import get_rate_estimator
+from pl_bolts.models.self_supervised import SimCLR
 
 
 class SimCLRCoder(SimCLR):
     """SimCLR with an entropy bottleneck for entropy coding. See `SimCLR` for documentation.
-    
+
     Notes
     -----
     - The entropy coder should probably not be trained while SimCLR is trained, because the augmented
@@ -19,7 +18,7 @@ class SimCLRCoder(SimCLR):
     ----------
     args, kwargs
         Additional arguments to SimCLR.
-    
+
     rate_estimator : {"H_factorized","H_hyper"}, optional
         Rate estimator to use.
     """

@@ -1,14 +1,14 @@
-from functools import partial
 import math
+from functools import partial
 
+import numpy as np
 import torch
 import torch.distributions as dist
+from lossyless.helpers import BASE_LOG, tmp_seed
 from torch.utils.data import Dataset
-import numpy as np
 
-from lossyless.helpers import tmp_seed, BASE_LOG
-from .helpers import differential_entropy, discrete_entropy, rotate, int_or_ratio
-from .base import LossylessDataset, LossylessDataModule
+from .base import LossylessDataModule, LossylessDataset
+from .helpers import differential_entropy, discrete_entropy, int_or_ratio, rotate
 
 __all__ = ["BananaDataModule"]
 
@@ -33,7 +33,8 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
 
     decimals : float or None, optional
         Number of decimals to keep. If `None` keeps as much as python can. This is useful
-        to have better estimates of the entropies.
+        to have better estimates of the entropies. Formally we would be equivalent to `equivalence`
+        and rounding to decimal place.
 
     seed : int or None, optional
         Seed to force deterministic dataset (if int). This is especially useful when using
@@ -169,22 +170,26 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
 
         if self.decimals is not None:
             data = np.around(data, decimals=self.decimals)
-            Mxs = np.around(Mxs, decimals=self.decimals)
 
         return data, Mxs
 
     def max_invariant(self, samples):
         """Apply the maximal invariant M(x) to the last dim."""
         if self.equivalence == "rotation":
-            return samples.norm(2, dim=-1, keepdim=True)  # L2 norm
+            mx = samples.norm(2, dim=-1, keepdim=True)  # L2 norm
         elif self.equivalence == "y_translation":
-            return samples.chunk(2, dim=-1)[0]  # max inv is x coord
+            mx = samples.chunk(2, dim=-1)[0]  # max inv is x coord
         elif self.equivalence == "x_translation":
-            return samples.chunk(2, dim=-1)[1]  # max inv is y coord
+            mx = samples.chunk(2, dim=-1)[1]  # max inv is y coord
         elif self.equivalence is None:
-            return samples  # max inv is x itself
+            mx = samples  # max inv is x itself
         else:
             raise ValueError(f"Unkown equivalence={self.equivalence}.")
+
+        if self.decimals is not None:
+            mx = np.around(mx, decimals=self.decimals)
+
+        return mx
 
     def __len__(self):
         return self.length

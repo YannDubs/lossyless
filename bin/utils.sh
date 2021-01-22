@@ -67,9 +67,9 @@ if  [[ "$mode" == "dev" || "$mode" == "test" || "$mode" == "debug" ]]; then
   esac
 fi
 
-name="$prfx""$name"
+experiment="$prfx""$experiment"
 
-results="results/$name"
+results="results/$experiment"
 if [ -d "$results" ]; then
 
   echo -n "$results exist. Should I delete it (y/n) ? "
