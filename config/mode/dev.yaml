@@ -10,13 +10,13 @@ trainer:
   max_epochs: 2
   log_every_n_steps: 10
   # uses 5 % of data
-  limit_val_batches: 0.05
+  limit_val_batches: 0.1
   limit_train_batches: 0.05
   limit_test_batches: 0.05
 
 logger:
   wandb:
-    tags: dev
+    tags: [dev]
     anonymous: true
 
 callbacks:

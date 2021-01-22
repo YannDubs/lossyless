@@ -14,7 +14,7 @@ trainer:
 
 logger:
   wandb:
-    tags: test
+    tags: [test]
     anonymous: true
 
 callbacks:
