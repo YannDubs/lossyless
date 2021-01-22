@@ -255,12 +255,16 @@ class HRateFactorizedPrior(RateEstimator):
         unexpected_keys,
         error_msgs,
     ):
+
         # Dynamically update the entropy bottleneck buffers related to the CDFs
+
+        policy = "resize"  # resize when loading  (even if already called "update")
         update_registered_buffers(
             self.entropy_bottleneck,
             f"{prefix}entropy_bottleneck",
             ["_quantized_cdf", "_offset", "_cdf_length"],
             state_dict,
+            policy=policy,
         )
 
         super()._load_from_state_dict(
@@ -431,11 +435,13 @@ class HRateHyperprior(RateEstimator):
         error_msgs,
     ):
         # Dynamically update the entropy bottleneck buffers related to the CDFs
+        policy = "resize"  # resize when loading  (even if already called "update")
         update_registered_buffers(
             self.entropy_bottleneck,
             f"{prefix}entropy_bottleneck",
             ["_quantized_cdf", "_offset", "_cdf_length"],
             state_dict,
+            policy=policy,
         )
 
         update_registered_buffers(
@@ -443,6 +449,7 @@ class HRateHyperprior(RateEstimator):
             f"{prefix}gaussian_conditional",
             ["_quantized_cdf", "_offset", "_cdf_length", "scale_table"],
             state_dict,
+            policy=policy,
         )
 
         super()._load_from_state_dict(
