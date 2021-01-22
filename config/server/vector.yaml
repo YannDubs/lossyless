@@ -40,3 +40,14 @@ hydra:
     dir: /checkpoint/${user}/${now:%Y-%m-%d_%H-%M-%S}
     #/checkpoint/${user}/${hydra.job.id}/${now:%Y-%m-%d_%H-%M-%S}
     subdir: ${hydra.job.num}_${hydra.job.id}
+
+# NOTE:
+# I also had to change the command in submitit. specificall in submitit/slurm/slurm 
+# function: _make_sbatch_string replace the end with
+# lines += [
+#       "",
+#       "# command",
+#       "export SUBMITIT_EXECUTOR=slurm",
+#       "export MKL_SERVICE_FORCE_INTEL=1",
+#       f"srun --mem {mem} --output '{stdout}' --error '{stderr}' --unbuffered {command}",
+#   ]
