@@ -43,19 +43,18 @@ def main(cfg):
         ]
 
         for i, (val, out_f, err_f) in enumerate(zip(to_sweep, files_out, files_err)):
-
-            run_dir = f"hydra.run.dir=./{val}/"
-            val = f"{key}={val}"
-            job_id = f"job_id={i}_{cfg.job_id}"  # keep job id if preemting
-            base_dir = f"paths.base_dir={cfg.paths.base_dir}"
-            p_to_add = [run_dir, val, job_id, base_dir]
+            p_run_dir = f"hydra.run.dir=./{val}/"
+            p_val = f"{key}={val}"
+            p_job_id = f"job_id='{i}_{cfg.job_id}'"  # keep job id if preemting
+            p_base_dir = f"paths.base_dir={cfg.paths.base_dir}"
+            p_to_add = [p_run_dir, p_val, p_job_id, p_base_dir]
 
             main_script = str(Path(cfg.paths.base_dir) / "main.py")
-            command = ["python", "-u", main_script]
-            command += params + p_to_add
+            command = ["python", "-u", main_script] + params + p_to_add
 
             logger.info(f"Command: {' '.join(command) }")
-            pi = subprocess.Popen(command, bufsize=0, stdout=out_f, stderr=err_f,)
+
+            pi = subprocess.Popen(command, bufsize=0, stdout=out_f, stderr=err_f)
             processes.append(pi)
 
     exit_codes = [p.wait() for p in processes]
