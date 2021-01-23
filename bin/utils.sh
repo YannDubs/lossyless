@@ -2,14 +2,15 @@
 
 add_kwargs=""
 prfx=""
-time="2880" #2 days
+time="720" # 12 hours
 is_plot_only=false
 server=""
 mode=""
+main="main.py"
 
 
 # MODE ?
-while getopts ':s:p:m:' flag; do
+while getopts ':s:p:m:t:v:' flag; do
   case "${flag}" in
     s )
       server="${OPTARG}"
@@ -33,17 +34,26 @@ while getopts ':s:p:m:' flag; do
     m ) 
       mode="${OPTARG}"
       add_kwargs="${add_kwargs} +mode=$mode"
-      prfx="$mode_"
+      prfx="${mode}_"
       time="60"
       echo "$mode mode ..."
       ;;
-    p ) 
+    v ) 
       is_plot_only=true
       prfx=${OPTARG}
-      echo "Plotting only ..."
+      echo "Visualization/plotting only ..."
+      ;;
+    p ) 
+      main="parallel.py"
+      add_kwargs="${add_kwargs} +parallel=${OPTARG}"
+      echo "Parallel=${OPTARG} mode ..."
+      ;;
+    t ) 
+      time=${OPTARG}
+      echo "Time ${OPTARG} minutes"
       ;;
     \? ) 
-      echo "Usage: "$name".sh [-spm]" 
+      echo "Usage: "$name".sh [-stpmv]" 
       exit 1
       ;;
     : )
@@ -67,7 +77,7 @@ if  [[ "$mode" == "dev" || "$mode" == "test" || "$mode" == "debug" ]]; then
   esac
 fi
 
-experiment="$prfx""$experiment"
+experiment="${prfx}""$experiment"
 
 results="results/$experiment"
 if [ -d "$results" ]; then

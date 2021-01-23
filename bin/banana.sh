@@ -83,7 +83,7 @@ if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in  "data=bananaRot,bananaXtrnslt,bananaYtrnslt loss.beta=0.3" "data=banana loss.beta=0.15"
   do
 
-    python main.py +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
+    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
     
   done
 fi
