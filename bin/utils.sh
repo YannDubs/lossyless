@@ -10,7 +10,7 @@ main="main.py"
 
 
 # MODE ?
-while getopts ':s:p:m:t:v:' flag; do
+while getopts ':s:p:m:t:v:a:' flag; do
   case "${flag}" in
     s )
       server="${OPTARG}"
@@ -46,14 +46,18 @@ while getopts ':s:p:m:t:v:' flag; do
     p ) 
       main="parallel.py"
       add_kwargs="${add_kwargs} +parallel=${OPTARG}"
-      echo "Parallel=${OPTARG} mode ..."
+      echo "Parallel=${OPTARG} ..."
       ;;
     t ) 
       time=${OPTARG}
       echo "Time ${OPTARG} minutes"
       ;;
+    a ) 
+      add_kwargs="${add_kwargs} ${OPTARG}"
+      echo "Adding ${OPTARG}"
+      ;;
     \? ) 
-      echo "Usage: "$name".sh [-stpmv]" 
+      echo "Usage: "$name".sh [-stpmva]" 
       exit 1
       ;;
     : )
@@ -69,10 +73,10 @@ if  [[ "$mode" == "dev" || "$mode" == "test" || "$mode" == "debug" ]]; then
       add_kwargs="${add_kwargs} hydra.launcher.partition=dev"
       ;;
     vector) 
-      add_kwargs="${add_kwargs} hydra.launcher.partition=interactive +hydra.launcher.additional_parameters.qos=nopreemption"
+      add_kwargs="${add_kwargs} hydra.launcher.partition=interactive hydra.launcher.additional_parameters.qos=nopreemption"
       ;;
     qvector) 
-      add_kwargs="${add_kwargs} hydra.launcher.partition=interactive +hydra.launcher.additional_parameters.qos=nopreemption"
+      add_kwargs="${add_kwargs} hydra.launcher.partition=interactive hydra.launcher.additional_parameters.qos=nopreemption"
       ;;
   esac
 fi
