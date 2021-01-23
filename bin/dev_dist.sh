@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-experiment="dev_dist"
+experiment="dist" # should always be called with -m dev
 notes="
 **Goal**: Checking that all models on distributions run without errors (in parallel)
 **Hypothesis**: No errors
@@ -13,28 +13,21 @@ kwargs="
 experiment=$experiment 
 +mode=dev
 timeout=60
+data=bananaRot
 $add_kwargs
 "
 
 # every arguments that you are sweeping over
 kwargs_multi="
 encoder=mlp
-distortion=ivib,ivae,ince,vae
-rate=H_factorized,H_hyper,MI_unitgaussian,MI_vamp
-data=bananaRot,bananaXtrnslt,bananaYtrnslt
-" 
-
-kwargs_multi="
-encoder=mlp
-distortion=ivib
+distortion=ivib,ivae,ince
 rate=H_factorized
-data=bananaRot
 " 
 
 if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in  ""
   do
-
+    
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m 
     
   done

@@ -1,8 +1,6 @@
 # @package _global_
 
 # check that everything is running correctly (single epoch normal)
-
-experiment: dev_${time}
 timeout: 60
 
 trainer:

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-experiment="dev_imgs"
+experiment="imgs" # should always be called with -m dev
 notes="
 **Goal**: Checking that all models on images run without errors (in parallel)
 **Hypothesis**: No errors
