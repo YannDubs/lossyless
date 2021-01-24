@@ -6,16 +6,14 @@ the file `config/main.yaml` for details about the configs. or use `python main.p
 import logging
 from pathlib import Path
 
+import pandas as pd
+
 import compressai
 import hydra
+import lossyless
 import omegaconf
-import pandas as pd
 import pl_bolts
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
-
-import lossyless
 import utils
 from lossyless import CompressionModule
 from lossyless.callbacks import (
@@ -25,6 +23,8 @@ from lossyless.callbacks import (
     WandbReconstructImages,
 )
 from lossyless.distributions import MarginalVamp
+from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from utils.data import get_datamodule
 from utils.helpers import create_folders, omegaconf2namespace, set_debug
 
@@ -195,6 +195,9 @@ def get_trainer(cfg, module, is_compressor):
 
     elif cfg.logger.name == "tensorboard":
         logger = TensorBoardLogger(**cfg.logger.tensorboard)
+
+    elif cfg.logger.name == False:
+        logger = False
 
     else:
         raise ValueError(f"Unkown logger={cfg.logger.name}.")

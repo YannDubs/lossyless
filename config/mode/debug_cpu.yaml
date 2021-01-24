@@ -2,7 +2,7 @@
 
 # debug the model on cpu
 
-name: debugcpu_${time}
+experiment: debugcpu_${now:%Y-%m-%d_%H-%M-%S}
 is_debug: True # enter debug mode
 timeout: 60
 
@@ -19,7 +19,7 @@ trainer:
 
 logger:
   wandb:
-    tags: debug
+    tags: [debug]
     anonymous: true
 
 callbacks:

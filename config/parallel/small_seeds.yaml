@@ -1,0 +1,16 @@
+# @package _global_
+
+seed: [1,2,3]
+
+parallel:
+  key: seed
+
+  # the rest should really be in a default file for `parallel`
+  override_dirname: ${hydra:job.override_dirname}
+  main_script: ${hydra:runtime.cwd}/main.py
+
+hydra:
+  job:
+    config:
+      override_dirname:
+        item_sep: ' '

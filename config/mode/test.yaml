@@ -2,7 +2,6 @@
 
 # test whether can overfit training
 
-experiment: test_${time}
 timeout: 60
 
 trainer:
@@ -14,7 +13,7 @@ trainer:
 
 logger:
   wandb:
-    tags: test
+    tags: [test]
     anonymous: true
 
 callbacks:

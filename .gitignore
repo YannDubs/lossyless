@@ -4,6 +4,7 @@ outputs*
 tensorboard
 multirun
 pretrained
+checkpoints
 wandb
 test
 /data

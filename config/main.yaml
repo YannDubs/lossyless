@@ -21,13 +21,17 @@ time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is no
 long_name: ${experiment}/data_${data.name}/d_${distortion.name}/e_${encoder.name}/r_${rate.name}/o_${optimizer.name}/dim_${encoder.z_dim}/z_${loss.n_z_samples}/b_${loss.beta}/s_${seed}
 
 paths:
+  # the best practice is not to modify those paths but to simlink them to the places you want
   base_dir: ${hydra:runtime.cwd} 
   results: ${paths.base_dir}/results/${long_name}/${job_id}
   pretrained: ${paths.base_dir}/pretrained/${long_name}/${job_id}
   data: ${paths.base_dir}/data
   logs: ${paths.base_dir}/logs/${long_name}/${job_id}
-  work: ???
-  chckpnt: ${paths.work}
+  chckpnt: ${paths.base_dir}/checkpoints/${job_id} 
+  # unfortunately cannot use hydra: in hydra so need to do everything by hand
+  # i.e. cannot use ${paths.base_dir}/outputs/{time}
+  work: ${hydra.runtime.cwd}/outputs/${now:%Y-%m-%d_%H-%M-%S}
+  
   
 optimizer: # might need to be a group at some point
   name: adam # not used yet but can change if needed
@@ -56,7 +60,7 @@ logger:
   wandb:
     name: ${job_id}
     project: lossyless
-    entity: ${wandb_entitiy}
+    entity: ${wandb_entity}
     group: ${experiment}
     offline: false # Run offline (data can be streamed later to wandb servers).
     reinit: False # ensure that same wandb after preemption
@@ -149,3 +153,10 @@ hydra:
   job:
     env_set:
       NCCL_DEBUG: INFO 
+
+  run:
+    dir: ${paths.work}
+
+  sweep:
+    dir:  ${paths.work}
+    subdir: ${hydra.job.num}_${hydra.job.id}

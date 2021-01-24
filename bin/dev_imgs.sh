@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-experiment="dev_imgs"
+experiment="imgs" # should always be called with -m dev
 notes="
 **Goal**: Checking that all models on images run without errors (in parallel)
 **Hypothesis**: No errors
@@ -12,7 +12,7 @@ source `dirname $0`/utils.sh
 kwargs="
 experiment=$experiment 
 +mode=dev
-timeout=60
+timeout=$time
 $add_kwargs
 "
 
@@ -28,7 +28,7 @@ if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in  ""
   do
 
-    python main.py +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m 
+    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m 
     
   done
 fi

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-name=$prfx"banana_ratedistortion"
+experiment=$prfx"banana_ratedistortion"
 notes="
 **Goal**: Run rate distortion curve for banana distribution
 **Hypothesis**: Should be close to the estimated optimal rate distortion curve
@@ -75,7 +75,7 @@ if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in  ""
   do
 
-    python main.py +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
+    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
     
   done
 fi
