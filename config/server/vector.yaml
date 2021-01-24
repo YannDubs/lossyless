@@ -32,11 +32,12 @@ hydra:
 
 # NOTE:
 # I also had to change the command in submitit. specificall in submitit/slurm/slurm 
+# somewhere : /h/yannd/.conda/envs/lossyless/lib/python3.8/site-packages/submitit/slurm/
 # function: _make_sbatch_string replace the end with
 # lines += [
 #       "",
 #       "# command",
 #       "export SUBMITIT_EXECUTOR=slurm",
-#       "export MKL_SERVICE_FORCE_INTEL=1",
+#       "export MKL_THREADING_LAYER=GNU",
 #       f"srun --mem {mem} --output '{stdout}' --error '{stderr}' --unbuffered {command}",
 #   ]

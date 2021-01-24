@@ -12,7 +12,7 @@ source `dirname $0`/utils.sh
 kwargs="
 experiment=$experiment 
 +mode=dev
-timeout=60
+timeout=$time
 data=bananaRot
 $add_kwargs
 "
@@ -22,7 +22,7 @@ kwargs_multi="
 encoder=mlp
 distortion=ivib,ivae,ince
 rate=H_factorized
-" 
+"
 
 if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in  ""

@@ -60,7 +60,7 @@ logger:
   wandb:
     name: ${job_id}
     project: lossyless
-    entity: ${wandb_entitiy}
+    entity: ${wandb_entity}
     group: ${experiment}
     offline: false # Run offline (data can be streamed later to wandb servers).
     reinit: False # ensure that same wandb after preemption
