@@ -2,13 +2,15 @@ import math
 from functools import partial
 
 import numpy as np
+
 import torch
 import torch.distributions as dist
 from lossyless.helpers import BASE_LOG, tmp_seed
 from torch.utils.data import Dataset
+from utils.estimators import differential_entropy, discrete_entropy
 
 from .base import LossylessDataModule, LossylessDataset
-from .helpers import differential_entropy, discrete_entropy, int_or_ratio, rotate
+from .helpers import int_or_ratio, rotate
 
 __all__ = ["BananaDataModule"]
 

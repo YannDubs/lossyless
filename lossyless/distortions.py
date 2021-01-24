@@ -181,7 +181,8 @@ class DirectDistortion(nn.Module):
             neg_log_q_ylz, "(z b) ... -> z b", reduction="sum", z=n_z
         )
 
-        logs = dict(H_q_YlZ=neg_log_q_ylz.mean() / math.log(BASE_LOG))
+        # T for auxilary task to distinguish from task Y
+        logs = dict(H_q_TlZ=neg_log_q_ylz.mean() / math.log(BASE_LOG))
 
         other = dict()
         # for plotting

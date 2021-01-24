@@ -32,6 +32,8 @@ paths:
   # i.e. cannot use ${paths.base_dir}/outputs/{time}
   work: ${hydra.runtime.cwd}/outputs/${now:%Y-%m-%d_%H-%M-%S}
   
+evaluation:
+  is_est_entropies: False # whether to evaluate sample estimates of the entropies H[Y|Z], H[M(X)|Z], H[Z] should only use it with deterministic Z
   
 optimizer: # might need to be a group at some point
   name: adam # not used yet but can change if needed

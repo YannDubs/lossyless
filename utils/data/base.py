@@ -2,6 +2,7 @@ import abc
 from pathlib import Path
 
 import numpy as np
+
 import torch
 from lossyless.helpers import to_numpy
 from pytorch_lightning import LightningDataModule
@@ -37,12 +38,7 @@ class LossylessDataset(abc.ABC):
     """
 
     def __init__(
-        self,
-        *args,
-        additional_target=None,
-        equivalence=None,
-        seed=123,
-        **kwargs,
+        self, *args, additional_target=None, equivalence=None, seed=123, **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
@@ -165,11 +161,7 @@ class LossylessCLFDataset(LossylessDataset):
     """
 
     def __init__(
-        self,
-        *args,
-        n_per_target=None,
-        targets_drop=[],
-        **kwargs,
+        self, *args, n_per_target=None, targets_drop=[], **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
@@ -329,10 +321,12 @@ class LossylessDataModule(LightningDataModule):
         if stage == "test" or stage is None:
             self.test_dataset = self.get_test_dataset(**self.dataset_kwargs)
 
-    def train_dataloader(self):
-        """Return the training dataloader."""
-        if self.reload_dataloaders_every_epoch:
-            self.train_dataset = self.get_train_dataset(**self.dataset_kwargs)
+    def train_dataloader(self, **kwargs):
+        """Return the training dataloader while possibly modifying dataset kwargs."""
+        dkwargs = kwargs.pop("dataset_kwargs", {})
+        if self.reload_dataloaders_every_epoch or len(dkwargs) > 0:
+            curr_kwargs = dict(self.dataset_kwargs, **dkwargs)
+            self.train_dataset = self.get_train_dataset(**curr_kwargs)
 
         return DataLoader(
             self.train_dataset,
@@ -341,12 +335,15 @@ class LossylessDataModule(LightningDataModule):
             num_workers=self.num_workers,
             drop_last=True,
             pin_memory=True,
+            **kwargs,
         )
 
-    def val_dataloader(self):
-        """Return the validation dataloader."""
-        if self.reload_dataloaders_every_epoch:
-            self.val_dataset = self.get_val_dataset(**self.dataset_kwargs)
+    def val_dataloader(self, **kwargs):
+        """Return the validation dataloader while possibly modifying dataset kwargs."""
+        dkwargs = kwargs.pop("dataset_kwargs", {})
+        if self.reload_dataloaders_every_epoch or len(dkwargs) > 0:
+            curr_kwargs = dict(self.dataset_kwargs, **dkwargs)
+            self.val_dataset = self.get_val_dataset(**curr_kwargs)
 
         return DataLoader(
             self.val_dataset,
@@ -355,12 +352,15 @@ class LossylessDataModule(LightningDataModule):
             num_workers=self.num_workers,
             drop_last=True,
             pin_memory=True,
+            **kwargs,
         )
 
-    def test_dataloader(self):
-        """Return the test dataloader."""
-        if self.reload_dataloaders_every_epoch:
-            self.test_dataset = self.get_test_dataset(**self.dataset_kwargs)
+    def test_dataloader(self, **kwargs):
+        """Return the test dataloader while possibly modifying dataset kwargs."""
+        dkwargs = kwargs.pop("dataset_kwargs", {})
+        if self.reload_dataloaders_every_epoch or len(dkwargs) > 0:
+            curr_kwargs = dict(self.dataset_kwargs, **dkwargs)
+            self.test_dataset = self.get_test_dataset(**curr_kwargs)
 
         return DataLoader(
             self.test_dataset,
@@ -369,4 +369,5 @@ class LossylessDataModule(LightningDataModule):
             num_workers=self.num_workers,
             drop_last=True,
             pin_memory=True,
+            **kwargs,
         )
