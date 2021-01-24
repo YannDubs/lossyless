@@ -254,16 +254,17 @@ def evaluate_compression(trainer, datamodule, cfg):
         # ? this can be slow on all training set, is it necessary ?
         H_MlZ, H_YlZ, H_Z = estimate_entropies(trainer, datamodule, is_test=False)
         train_res["testtrain_H_MlZ"] = H_MlZ
-        train_res["test_H_YlZ"] = H_YlZ
+        train_res["testtrain_H_YlZ"] = H_YlZ
         train_res["testtrain_H_Z"] = H_Z
     log_metrics(trainer, train_res)
 
     # save results
     train_res = replace_keys(train_res, "testtrain_", "")
-    test_res = replace_keys(train_res, "test_", "")
+    test_res = replace_keys(test_res, "test_", "")
     results = pd.DataFrame.from_dict(dict(train=train_res, test=test_res))
     path = Path(cfg.paths.results) / RES_COMPRESS_FILENAME
     results.to_csv(path, header=True, index=True)
+    logger.info(f"Logging compressor results to {path}.")
 
 
 def log_metrics(trainer, metrics):
