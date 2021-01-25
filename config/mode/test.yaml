@@ -7,8 +7,7 @@ timeout: 60
 trainer:
   track_grad_norm: 2 # use 2 to track L2 norms of grad
   overfit_batches: 0.01 # use 0.01 to make sure you can overfit 1% of training data => training works
-  weights_summary: top # full to print show the entire model 
-  max_epochs: 30
+  max_epochs: 100
   log_every_n_steps: 20
 
 logger:

@@ -1,0 +1,19 @@
+# @package _global_
+
+data:
+  kwargs:
+    batch_size: [2048,512,128]
+
+parallel:
+  key: "data.kwargs.batch_size"
+  to_sweep: [2048,512,128]
+
+  # the rest should really be in a default file for `parallel`
+  override_dirname: ${hydra:job.override_dirname}
+  main_script: ${hydra:runtime.cwd}/main.py
+
+hydra:
+  job:
+    config:
+      override_dirname:
+        item_sep: ' '
