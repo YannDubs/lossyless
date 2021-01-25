@@ -11,6 +11,7 @@ from contextlib import ExitStack
 from pathlib import Path
 
 import hydra
+from omegaconf import OmegaConf
 from utils.helpers import create_folders
 
 logger = logging.getLogger(__name__)
@@ -19,13 +20,13 @@ logger = logging.getLogger(__name__)
 @hydra.main(config_name="main", config_path="config")
 def main(cfg):
 
+    key = cfg.parallel.key
+    to_sweep = cfg.parallel.to_sweep
+
     # all overriden parameters to keep
     params = cfg.parallel.override_dirname.split()
     p_to_remove = ["server", "launcher", "parallel"]
     params = [p for p in params if not any(rm in p for rm in p_to_remove)]
-
-    key = cfg.parallel.key
-    to_sweep = cfg[key]
 
     logger.info(f"Sweeping {key}={to_sweep} on single GPU from {str(Path.cwd())}.")
 
@@ -36,10 +37,10 @@ def main(cfg):
     with ExitStack() as stack:
         # equivalent to `with open ...` for each logging file
         files_out = [
-            stack.enter_context(open(f"./{val}/logs.out", "a+")) for val in to_sweep
+            stack.enter_context(open(f"./{val}/logs.out", "a")) for val in to_sweep
         ]
         files_err = [
-            stack.enter_context(open(f"./{val}/logs.err", "a+")) for val in to_sweep
+            stack.enter_context(open(f"./{val}/logs.err", "a")) for val in to_sweep
         ]
 
         for i, (val, out_f, err_f) in enumerate(zip(to_sweep, files_out, files_err)):

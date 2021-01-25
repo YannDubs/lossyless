@@ -4,7 +4,6 @@
 timeout: 60
 
 trainer:
-  weights_summary: top # full to print show the entire model 
   max_epochs: 2
   log_every_n_steps: 10
   # uses 5 % of data

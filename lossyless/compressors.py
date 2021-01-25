@@ -75,9 +75,7 @@ class CompressionModule(pl.LightningModule):
 
     @auto_move_data  # move data on correct device for inference
     def forward(
-        self,
-        x,
-        is_compress=False,
+        self, x, is_compress=False,
     ):
         """Represents the data `x`.
 
@@ -190,7 +188,7 @@ class CompressionModule(pl.LightningModule):
             loss = self.rate_estimator.aux_loss()
             logs = dict(coder_loss=loss)
 
-        self.log_dict({f"train_{k}": v for k, v in logs.items()})
+        self.log_dict({f"train/{k}": v for k, v in logs.items()})
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -199,7 +197,7 @@ class CompressionModule(pl.LightningModule):
         _, online_logs = self.online_evaluator(batch, self)
         logs.update(online_logs)
         self.log_dict(
-            {f"val_{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"val/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
         )
         return loss
 
@@ -208,7 +206,7 @@ class CompressionModule(pl.LightningModule):
         _, online_logs = self.online_evaluator(batch, self)
         logs.update(online_logs)
         self.log_dict(
-            {f"test_{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"test/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
         )
         return loss
 
@@ -236,6 +234,12 @@ class CompressionModule(pl.LightningModule):
         online_parameters = orderedset(self.online_evaluator.aux_parameters())
         is_optimize_coder = len(aux_parameters) > 0
         epochs = self.hparams.trainer.max_epochs
+
+        # save number of parameters for the main model (not online optimizer but with coder)
+        self.hparams.n_param = sum(p.numel() for p in aux_parameters if p.requires_grad)
+        self.hparams.n_param += sum(
+            p.numel() for p in self.parameters() if p.requires_grad
+        )
 
         optimizers = []
         schedulers = []
@@ -266,9 +270,7 @@ class CompressionModule(pl.LightningModule):
             optimizers += [optimizer_coder]
 
             scheduler = get_lr_scheduler(
-                optimizer_coder,
-                epochs=epochs,
-                **cfgoc.scheduler,
+                optimizer_coder, epochs=epochs, **cfgoc.scheduler,
             )
             if scheduler is not None:
                 schedulers += [scheduler]

@@ -16,24 +16,16 @@ import pl_bolts
 import pytorch_lightning as pl
 import utils
 from lossyless import CompressionModule
-from lossyless.callbacks import (
-    WandbCodebookPlot,
-    WandbLatentDimInterpolator,
-    WandbMaxinvDistributionPlot,
-    WandbReconstructImages,
-)
+from lossyless.callbacks import (WandbCodebookPlot, WandbLatentDimInterpolator,
+                                 WandbMaxinvDistributionPlot,
+                                 WandbReconstructImages)
 from lossyless.distributions import MarginalVamp
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
-from utils.helpers import (
-    create_folders,
-    getattr_from_oneof,
-    omegaconf2namespace,
-    replace_keys,
-    set_debug,
-)
+from utils.helpers import (create_folders, getattr_from_oneof,
+                           omegaconf2namespace, replace_keys, set_debug)
 
 logger = logging.getLogger(__name__)
 RES_COMPRESS_FILENAME = "results_compression.csv"
@@ -52,10 +44,10 @@ def main(cfg):
     # COMPRESSION
     compression_module = CompressionModule(hparams=cfg)
 
-    # some of the module compononets might needs data for initialization
-    initialize_(compression_module, datamodule)
-
     trainer = get_trainer(cfg, compression_module, is_compressor=True)
+
+    # some of the module compononets might needs data or trainer for initialization
+    initialize_(compression_module, datamodule, trainer)
 
     logger.info("TRAIN / EVALUATE compression rate.")
     trainer.fit(compression_module, datamodule=datamodule)
@@ -132,8 +124,12 @@ def instantiate_datamodule(cfg):
     return datamodule
 
 
-def initialize_(compression_module, datamodule):
+def initialize_(compression_module, datamodule, trainer):
     """Uses the data module to set some of the model's param."""
+
+    # auto lr finder
+
+    # marginal vampprior
     rate_est = compression_module.rate_estimator
     if hasattr(rate_est, "q_Z") and isinstance(rate_est.q_Z, MarginalVamp):
         # initialize vamprior such that pseudoinputs are some random images
@@ -242,9 +238,9 @@ def evaluate_compression(trainer, datamodule, cfg):
     test_res = trainer.test()[0]
     if cfg.evaluation.is_est_entropies:
         H_MlZ, H_YlZ, H_Z = estimate_entropies(trainer, datamodule, is_test=True)
-        test_res["test_H_MlZ"] = H_MlZ
-        test_res["test_H_YlZ"] = H_YlZ
-        test_res["test_H_Z"] = H_Z
+        test_res["test/H_MlZ"] = H_MlZ
+        test_res["test/H_YlZ"] = H_YlZ
+        test_res["test/H_Z"] = H_Z
     log_metrics(trainer, test_res)
 
     # test on train
@@ -253,17 +249,18 @@ def evaluate_compression(trainer, datamodule, cfg):
     if cfg.evaluation.is_est_entropies:
         # ? this can be slow on all training set, is it necessary ?
         H_MlZ, H_YlZ, H_Z = estimate_entropies(trainer, datamodule, is_test=False)
-        train_res["testtrain_H_MlZ"] = H_MlZ
-        train_res["test_H_YlZ"] = H_YlZ
-        train_res["testtrain_H_Z"] = H_Z
+        train_res["testtrain/H_MlZ"] = H_MlZ
+        train_res["testtrain/H_YlZ"] = H_YlZ
+        train_res["testtrain/H_Z"] = H_Z
     log_metrics(trainer, train_res)
 
     # save results
-    train_res = replace_keys(train_res, "testtrain_", "")
-    test_res = replace_keys(train_res, "test_", "")
+    train_res = replace_keys(train_res, "testtrain/", "")
+    test_res = replace_keys(test_res, "test/", "")
     results = pd.DataFrame.from_dict(dict(train=train_res, test=test_res))
     path = Path(cfg.paths.results) / RES_COMPRESS_FILENAME
     results.to_csv(path, header=True, index=True)
+    logger.info(f"Logging compressor results to {path}.")
 
 
 def log_metrics(trainer, metrics):
