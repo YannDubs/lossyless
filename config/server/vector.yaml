@@ -41,3 +41,6 @@ hydra:
 #       "export MKL_THREADING_LAYER=GNU",
 #       f"srun --mem {mem} --output '{stdout}' --error '{stderr}' --unbuffered {command}",
 #   ]
+#
+# and also had to add slurm to the path
+# export PATH="$PATH:/opt/slurm/bin" 
