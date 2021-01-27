@@ -4,6 +4,9 @@
 
 timeout: 60
 
+other:
+  is_quick: True
+
 trainer:
   track_grad_norm: 2 # use 2 to track L2 norms of grad
   overfit_batches: 0.01 # use 0.01 to make sure you can overfit 1% of training data => training works
@@ -12,7 +15,7 @@ trainer:
 
 logger:
   wandb:
-    tags: [test]
+    tags: [test, quick]
     anonymous: true
 
 callbacks:

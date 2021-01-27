@@ -3,8 +3,11 @@
 # debug the model 
 
 experiment: debug_${now:%Y-%m-%d_%H-%M-%S}
-is_debug: True # enter debug mode
 timeout: 60
+
+other:
+  is_debug: True # enter debug mode
+  is_quick: True
 
 trainer:
   # DEBUGGING
@@ -17,7 +20,7 @@ trainer:
 
 logger:
   wandb:
-    tags: [debug]
+    tags: [debug, quick]
     anonymous: true
 
 callbacks:

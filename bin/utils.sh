@@ -67,7 +67,7 @@ while getopts ':s:p:m:t:v:a:' flag; do
 done
 
 
-if  [[ "$mode" == "dev" || "$mode" == "test" || "$mode" == "debug" ]]; then
+if  [[ "$mode" == "dev" || "$mode" == "test" || "$mode" == "debug" || "$mode" == "nano" ]]; then
   case "$server" in
     learnfair) 
       add_kwargs="${add_kwargs} hydra.launcher.partition=dev"
