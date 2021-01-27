@@ -13,7 +13,7 @@ hydra:
     # number of tasks to spawn on each node
     tasks_per_node: 1 # number of tasks on single machine
     # memory to reserve for the job on each node (in GB)
-    mem_gb: 25
+    mem_gb: 32
     # number of nodes to use for the job
     nodes: ${trainer.num_nodes}
     # name of the job

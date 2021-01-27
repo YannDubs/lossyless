@@ -1,0 +1,16 @@
+# @package _global_
+
+# check that everything is running correctly (single epoch normal)
+timeout: 60
+
+other:
+  is_quick: True
+
+trainer:
+  max_epochs: 2
+
+logger:
+  wandb:
+    tags: [nano, quick]
+    anonymous: true
+    project: tmp

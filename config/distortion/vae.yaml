@@ -2,6 +2,7 @@
 distortion:
   name: vae # vae that reconstructs the augmented images
   mode: direct
+  factor_beta: 0.5 # distortion is always much larger but you prefer having similar distortion
   kwargs: 
     z_dim: ${encoder.z_dim}
     y_shape: ${data.aux_shape}

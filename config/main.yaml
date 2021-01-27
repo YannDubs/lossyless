@@ -15,12 +15,9 @@ defaults:
 experiment: ???
 job_id: ??? # unique identifier
 seed: 123
-is_debug: False # enter debug mode
 timeout: 1440 # 24 hours
-slurm_job_id: ${hydra:job.id}
 time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is not when job runs
 long_name: ${experiment}/data_${data.name}/d_${distortion.name}/e_${encoder.name}/r_${rate.name}/o_${optimizer.name}/dim_${encoder.z_dim}/z_${loss.n_z_samples}/b_${loss.beta}/s_${seed}
-n_param: ???
 
 paths:
   # the best practice is not to modify those paths but to simlink them to the places you want
@@ -37,6 +34,12 @@ paths:
 evaluation:
   is_est_entropies: False # whether to evaluate sample estimates of the entropies H[Y|Z], H[M(X)|Z], H[Z] should only use it with deterministic Z
   
+other:
+  # some meta information that can be useful for internal stuff (usually dirty workarounds or for logging)
+  is_debug: False # using debug mode
+  is_quick: False # using a "quick" mode and should not log very slow things
+  hydra_job_id: ${hydra:job.id} # this is the job id without the sweep number. Useful for filtering and grouping in wandb
+
 optimizer: # might need to be a group at some point
   name: adam # not used yet but can change if needed
   lr: 1e-3

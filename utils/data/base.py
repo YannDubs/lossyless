@@ -296,11 +296,22 @@ class LossylessDataModule(LightningDataModule):
         """Dowload and save data on file if needed."""
         raise NotImplementedError()
 
-    def set_info_(self, dataset):
-        """Sets some information from the dataset."""
+    @property
+    def mode(self):
+        """Says what is the mode/type of data. E.g. images, distributions, ...."""
+        raise NotImplementedError()
+
+    @property
+    def dataset(self):
+        """Return the underlying (train) datset ...."""
+        dataset = self.train_dataset
         if isinstance(dataset, torch.utils.data.Subset):
             dataset = dataset.dataset
+        return dataset
 
+    def set_info_(self):
+        """Sets some information from the dataset."""
+        dataset = self.dataset
         self.target_is_clf, self.aux_is_clf = dataset.get_is_clf()
         self.target_shape, self.aux_shape = dataset.get_shapes()
         self.shape = dataset.shapes_x_t_Mx["input"]
@@ -315,7 +326,7 @@ class LossylessDataModule(LightningDataModule):
         """Prepare the datasets for the current stage."""
         if stage == "fit" or stage is None:
             self.train_dataset = self.get_train_dataset(**self.dataset_kwargs)
-            self.set_info_(self.train_dataset)
+            self.set_info_()
             self.val_dataset = self.get_val_dataset(**self.dataset_kwargs)
 
         if stage == "test" or stage is None:
@@ -333,7 +344,6 @@ class LossylessDataModule(LightningDataModule):
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
-            drop_last=True,
             pin_memory=True,
             **kwargs,
         )
@@ -350,7 +360,6 @@ class LossylessDataModule(LightningDataModule):
             batch_size=self.val_batch_size,
             shuffle=False,
             num_workers=self.num_workers,
-            drop_last=True,
             pin_memory=True,
             **kwargs,
         )
@@ -367,7 +376,6 @@ class LossylessDataModule(LightningDataModule):
             batch_size=self.val_batch_size,
             shuffle=False,
             num_workers=self.num_workers,
-            drop_last=True,
             pin_memory=True,
             **kwargs,
         )

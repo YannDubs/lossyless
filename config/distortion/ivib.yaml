@@ -2,6 +2,7 @@
 distortion:
   name: ivib # VIB predicting the image index
   mode: direct
+  factor_beta: 0.01 # compared to ivae gives importance -- to rate 
   kwargs: 
     z_dim: ${encoder.z_dim}
     y_shape: ${data.aux_shape}
