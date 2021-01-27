@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 
-experiment=$prfx"banana"
+experiment=$prfx"banana_viz_cont"
 notes="
-**Goal**: Run banana models for plotting.
+**Goal**: Run banana models for plotting. 
 **Hypothesis**: When using some invariance the rate should go down for a similar distortion. Furthermore, the codebook should be reminiscent of the maximal invariant.
 "
+
+# e.g. command: bin/experiments/banana_viz.sh -s vector -t 360
 
 # parses special mode for running the script
 source `dirname $0`/../utils.sh
 
-# define all the arguments modified or added to `conf`. If they are added use `+`
+
 # most of these arguments are chose so as to replicate Fig.1.b. from "Non linear Transform coding" paper. 
 # See their code here: https://github.com/tensorflow/compression/blob/master/models/toy_sources/toy_sources.ipynb
 # only differences (as far as I can tell):
@@ -18,6 +20,7 @@ source `dirname $0`/../utils.sh
 # - beta = 0.15 (for no invaraince) instead of 1
 # - train batch size is 8192 instead of 1024
 # - not using soft rounding
+# - 200 epochs
 
 # Encoder
 encoder_kwargs="
@@ -32,6 +35,7 @@ encoder.arch_kwargs.complexity=null
 
 # Decoder
 decoder_kwargs="
+distortion.factor_beta=1
 distortion.kwargs.arch=mlp
 distortion.kwargs.arch_kwargs.complexity=null
 +distortion.kwargs.arch_kwargs.activation=Softplus
@@ -43,22 +47,25 @@ distortion.kwargs.arch_kwargs.complexity=null
 # Loss
 rate_kwargs="
 rate=H_factorized
-distortion=ivae
+rate.factor_beta=1
 "
-
 
 # Training / General
 general_kwargs="
 optimizer.lr=1e-3
 optimizer.scheduler.name=MultiStepLR
 +optimizer.scheduler.milestones=[50,75,87]
+optimizer_coder.lr=1e-3
+optimizer_coder.name=null
 data.kwargs.batch_size=8192
 data.kwargs.dataset_kwargs.length=1024000
 data.kwargs.val_size=100000
 data.kwargs.val_batch_size=16384
-trainer.max_epochs=100
++data.kwargs.dataset_kwargs.decimals=null
+trainer.max_epochs=200
 trainer.precision=32
 trainer.reload_dataloaders_every_epoch=True
+evaluation.is_est_entropies=True
 "
 
 kwargs="
@@ -67,12 +74,14 @@ $general_kwargs
 $encoder_kwargs
 $decoder_kwargs
 $rate_kwargs
-timeout=$time
+timeout=${time}
 $add_kwargs
 "
 
-# every arguments that you are sweeping over
 kwargs_multi="
+data=bananaRot,bananaXtrnslt,bananaYtrnslt 
+distortion=ivae,vae
+loss.beta=0.1
 " 
 
 
@@ -80,11 +89,13 @@ if [ "$is_plot_only" = false ] ; then
   # note: instead of using "ivae" and "vae" on the three augmented datasets (which gives 6 models), we run "ivae" on the 
   #       three augmented + an unaugmented data (which is equivalent to running "vae" on the augmented one) => 4 models.
   # using smaller beta for no invaraiance to be comparable
-  for kwargs_dep in  "data=bananaRot,bananaXtrnslt,bananaYtrnslt loss.beta=0.3" "data=banana loss.beta=0.15"
+  for kwargs_dep in  ""
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
     
+    sleep 3
+
   done
 fi
 
