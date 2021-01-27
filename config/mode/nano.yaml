@@ -13,3 +13,4 @@ logger:
   wandb:
     tags: [nano, quick]
     anonymous: true
+    project: tmp

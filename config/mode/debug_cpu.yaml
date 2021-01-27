@@ -24,6 +24,7 @@ logger:
   wandb:
     tags: [debug, quick]
     anonymous: true
+    project: tmp
 
 callbacks:
   additional: [TrainingDataMonitor,ModuleDataMonitor] # if add other callbacks through additional will be replaced

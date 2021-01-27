@@ -17,6 +17,7 @@ logger:
   wandb:
     tags: [test, quick]
     anonymous: true
+    project: tmp
 
 callbacks:
   additional: ["GPUStatsMonitor","TrainingDataMonitor","ModuleDataMonitor"] # if add other callbacks through additional will be replaced
