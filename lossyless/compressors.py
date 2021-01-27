@@ -1,15 +1,14 @@
 import logging
 import math
 
-import einops
 import pytorch_lightning as pl
 import torch
 from pl_bolts.optimizers.lars_scheduling import LARSWrapper
 from pytorch_lightning.core.decorators import auto_move_data
 
-from .architectures import MLP, get_Architecture
+from .architectures import get_Architecture
 from .distortions import get_distortion_estimator
-from .distributions import CondDist, get_marginalDist
+from .distributions import CondDist
 from .helpers import BASE_LOG, get_lr_scheduler, orderedset
 from .predictors import OnlineEvaluator
 from .rates import get_rate_estimator
@@ -234,12 +233,6 @@ class CompressionModule(pl.LightningModule):
         online_parameters = orderedset(self.online_evaluator.aux_parameters())
         is_optimize_coder = len(aux_parameters) > 0
         epochs = self.hparams.trainer.max_epochs
-
-        # save number of parameters for the main model (not online optimizer but with coder)
-        self.hparams.n_param = sum(p.numel() for p in aux_parameters if p.requires_grad)
-        self.hparams.n_param += sum(
-            p.numel() for p in self.parameters() if p.requires_grad
-        )
 
         optimizers = []
         schedulers = []

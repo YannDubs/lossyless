@@ -61,7 +61,7 @@ def differential_entropy(x, k=3, eps=1e-10, p=np.inf, base=2):
 
     const = digamma(n) - digamma(k) + log_vol
     h = const + d * np.log(nn_dist).mean()
-    return h / math.log(base)
+    return float(h / math.log(base))
 
 
 def discrete_entropy(x, base=2, is_plugin=False, **kwargs):
@@ -100,7 +100,7 @@ def discrete_entropy(x, base=2, is_plugin=False, **kwargs):
         logger.warn("To compute discrete entropies you need to install `ndd`.")
         return -np.inf
 
-    return ndd.entropy(counts, **kwargs) / math.log(base)
+    return float(ndd.entropy(counts, **kwargs) / math.log(base))
 
 
 def conditional_entropy(
@@ -213,7 +213,9 @@ def predict(trainer, dataloader):
     return preds, targets
 
 
-def estimate_entropies(trainer, datamodule, is_test=True):
+def estimate_entropies(
+    trainer, datamodule, is_test=True, is_discrete_M=True, is_discrete_Y=True
+):
     """Estimate the invariance distortion H[M(X)|Z] (upper bound on bayes risk) and current bayes risk 
     H[Y|Z] on train or test set. This should only be used if Z is discretized, i.e. using H bottleneck. 
     Trainer.model should be a CompressionModule.
@@ -231,11 +233,21 @@ def estimate_entropies(trainer, datamodule, is_test=True):
     y_samples = at_least_ndim(y_samples, 2, is_prefix_padded=False)
     Mx_samples = at_least_ndim(Mx_samples, 2, is_prefix_padded=False)
 
-    # you will always see at least one of each label (test or train)
-    k_y = len(np.unique(y_samples))
+    if is_discrete_Y:
+        # you will always see at least one of each label (test or train)
+        k_y = len(np.unique(y_samples))
+        H_YlZ = conditional_entropy(y_samples, z_samples, is_discrete=True, k_y=k_y)
+    else:
+        # z is discrete but m is not => directly estimate the conditional entropy
+        H_YlZ = conditional_entropy(
+            Mx_samples, z_samples, is_discrete=False, is_joint=False
+        )
 
-    # there's only one sample per Mx so cannot compute joint H[Mx,Z]
-    H_MlZ = conditional_entropy(Mx_samples, z_samples, is_discrete=True, is_joint=False)
-    H_YlZ = conditional_entropy(y_samples, z_samples, is_discrete=True, k_y=k_y)
+    # even if M is discrete there will usually only be sample per Mx so cannot compute joint H[Mx,Z]
+    # => directly estimate conditional entropy
+    H_MlZ = conditional_entropy(
+        Mx_samples, z_samples, is_discrete=is_discrete_M, is_joint=False
+    )
+
     H_Z = discrete_entropy(z_samples)
     return H_MlZ, H_YlZ, H_Z

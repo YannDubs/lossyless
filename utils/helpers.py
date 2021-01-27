@@ -129,3 +129,13 @@ def all_logging_disabled(highest_level=logging.CRITICAL):
         yield
     finally:
         logging.disable(previous_level)
+
+def log_dict(trainer, to_log, is_param):
+    """Safe logging of param or metrics."""
+    try:
+        if is_param:
+            trainer.logger.log_hyperparams(to_log)
+        else:
+            trainer.logger.log_metrics(to_log)
+    except:
+        pass

@@ -7,11 +7,11 @@ E.g. usage to run 3 subjobs for every job (every GPU) each with different seed:
 """
 import logging
 import subprocess
+import time
 from contextlib import ExitStack
 from pathlib import Path
 
 import hydra
-from omegaconf import OmegaConf
 from utils.helpers import create_folders
 
 logger = logging.getLogger(__name__)
@@ -57,6 +57,10 @@ def main(cfg):
 
             pi = subprocess.Popen(command, bufsize=0, stdout=out_f, stderr=err_f)
             processes.append(pi)
+
+            # can cause issues if alll models are at the same time. typically is make large plots at
+            # the same epoch might have memory issues so wait 2 minutes before running next
+            time.sleep(120)
 
     exit_codes = [p.wait() for p in processes]
     logger.info(f"All finished with exit codes: {exit_codes}")

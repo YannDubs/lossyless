@@ -6,9 +6,10 @@ from collections import OrderedDict
 from functools import reduce
 from numbers import Number
 
-import einops
 import matplotlib.pyplot as plt
 import numpy as np
+
+import einops
 import torch
 from torch import nn
 from torch.distributions import Distribution, constraints

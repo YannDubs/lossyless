@@ -321,6 +321,10 @@ class TorchvisionDataModule(LossylessDataModule):
         self.Dataset(self.data_dir, train=True, download=True, **self.dataset_kwargs)
         self.Dataset(self.data_dir, train=False, download=True, **self.dataset_kwargs)
 
+    @property
+    def mode(self):
+        return "image"
+
 
 ## Analytic datasets ##
 # MNIST #
@@ -411,7 +415,7 @@ class Cifar10DataModule(TorchvisionDataModule):
 # TODO @karen: modify as desired all those methods
 # TODO we should also add the mean and std of "galaxy" in `lossyless.helpers` to normalize the data
 # TODO add config for galaxy in config/data with good defaults
-class GalaxyDataset(LossylessImgAnalyticDataset):
+class GalaxyDataset(LossylessImgDataset):
     def __init__(
         self, data_root, *args, **kwargs,
     ):
@@ -560,3 +564,7 @@ class GalaxyDataModule(LossylessDataModule):
         # this is where the downlading should happen if we can if not just put `pass`
         self.Dataset(self.data_dir, train=True, download=True, **self.dataset_kwargs)
         self.Dataset(self.data_dir, train=False, download=True, **self.dataset_kwargs)
+
+    @property
+    def mode(self):
+        return "image"

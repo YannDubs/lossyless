@@ -51,7 +51,7 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
         distribution,
         length=1024000,
         equivalence="rotation",
-        decimals=5,
+        decimals=None,
         seed=None,
         **kwargs,
     ):
@@ -137,18 +137,20 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
         x_samples, Mx_samples = self.get_n_data_Mxs(n_samples)
         x_samples, Mx_samples = x_samples.numpy(), Mx_samples.numpy()
 
-        # analytic computations
-        entropies["true h[X]"] = self.distribution.entropy().item() / math.log(BASE_LOG)
+        # analytic computations (dh for differential entropy as wandb case insensitive)
+        entropies["true dh[X]"] = self.distribution.entropy().item() / math.log(
+            BASE_LOG
+        )
 
         # sample estimates
         # continuous (i.e. estimate as continuous even though we only have discrete due to float-point)
-        entropies["h[X]"] = differential_entropy(x_samples, base=BASE_LOG)
-        entropies["h[M(X)]"] = differential_entropy(Mx_samples, base=BASE_LOG)
+        entropies["dh[X]"] = differential_entropy(x_samples, base=BASE_LOG)
+        entropies["dh[M(X)]"] = differential_entropy(Mx_samples, base=BASE_LOG)
         # discrete (i.e. treat it as discrete as we only have discrete values)
         entropies["H[X]"] = discrete_entropy(x_samples, base=BASE_LOG)
         entropies["H[M(X)]"] = discrete_entropy(Mx_samples, base=BASE_LOG)
 
-        entropies["h[Y]"] = entropies["h[M(X)]"]
+        entropies["dh[Y]"] = entropies["dh[M(X)]"]
         entropies["H[Y]"] = entropies["H[M(X)]"]
 
         self._entropies = entropies
@@ -227,6 +229,10 @@ class DistributionDataModule(LossylessDataModule):
     @property
     def distribution(self):
         return self.train_dataset.distribution
+
+    @property
+    def mode(self):
+        return "distribution"
 
 
 ### Banana Distribution ###

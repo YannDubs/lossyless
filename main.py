@@ -14,18 +14,27 @@ import lossyless
 import omegaconf
 import pl_bolts
 import pytorch_lightning as pl
-import utils
 from lossyless import CompressionModule
-from lossyless.callbacks import (WandbCodebookPlot, WandbLatentDimInterpolator,
-                                 WandbMaxinvDistributionPlot,
-                                 WandbReconstructImages)
+from lossyless.callbacks import (
+    WandbCodebookPlot,
+    WandbLatentDimInterpolator,
+    WandbMaxinvDistributionPlot,
+    WandbReconstructImages,
+)
 from lossyless.distributions import MarginalVamp
+from lossyless.helpers import orderedset
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
-from utils.helpers import (create_folders, getattr_from_oneof,
-                           omegaconf2namespace, replace_keys, set_debug)
+from utils.helpers import (
+    create_folders,
+    getattr_from_oneof,
+    log_dict,
+    omegaconf2namespace,
+    replace_keys,
+    set_debug,
+)
 
 logger = logging.getLogger(__name__)
 RES_COMPRESS_FILENAME = "results_compression.csv"
@@ -47,10 +56,11 @@ def main(cfg):
     trainer = get_trainer(cfg, compression_module, is_compressor=True)
 
     # some of the module compononets might needs data or trainer for initialization
-    initialize_(compression_module, datamodule, trainer)
+    initialize_(compression_module, datamodule, trainer, cfg)
 
-    logger.info("TRAIN / EVALUATE compression rate.")
+    logger.info("Train compressor ...")
     trainer.fit(compression_module, datamodule=datamodule)
+    logger.info("Evaluate compressor ...")
     evaluate_compression(trainer, datamodule, cfg)
 
     # # PREDICTION
@@ -66,7 +76,7 @@ def main(cfg):
 
 def begin(cfg):
     """Script initialization."""
-    if cfg.is_debug:
+    if cfg.other.is_debug:
         set_debug(cfg)
 
     pl.seed_everything(cfg.seed)
@@ -99,18 +109,7 @@ def instantiate_datamodule(cfg):
     cfgd.target_is_clf = datamodule.target_is_clf
     cfgd.target_shape = datamodule.target_shape
     cfgd.aux_shape = datamodule.aux_shape
-
-    if hasattr(utils.data.distributions, type(datamodule).__name__):
-        cfgd.mode = "distribution"
-    elif hasattr(utils.data.images, type(datamodule).__name__):
-        cfgd.mode = "image"
-    elif hasattr(datamodule, "mode"):
-        cfgd.mode = datamodule.mode
-    else:
-        raise ValueError(
-            f"Cannot say whether datamodule={type(datamodule)} is distribution or image. Add a `mode` attribute."
-        )
-
+    cfgd.mode = datamodule.mode
     cfgd.neg_factor = cfgd.length / (2 * cfgd.kwargs.batch_size - 1)
 
     # TODO clean max_var for multi label multi clf
@@ -124,13 +123,13 @@ def instantiate_datamodule(cfg):
     return datamodule
 
 
-def initialize_(compression_module, datamodule, trainer):
-    """Uses the data module to set some of the model's param."""
+def initialize_(module, datamodule, trainer, cfg):
+    """Uses the data module to set some of the model's param + logging."""
 
-    # auto lr finder
+    # TODO auto lr finder
 
     # marginal vampprior
-    rate_est = compression_module.rate_estimator
+    rate_est = module.rate_estimator
     if hasattr(rate_est, "q_Z") and isinstance(rate_est.q_Z, MarginalVamp):
         # initialize vamprior such that pseudoinputs are some random images
         real_batch_size = datamodule.batch_size
@@ -139,6 +138,18 @@ def initialize_(compression_module, datamodule, trainer):
         X, _ = iter(dataloader).next()
         rate_est.q_Z.set_pseudoinput_(X)
         datamodule.batch_size = real_batch_size
+
+    # LOGGING
+    # save number of parameters for the main model (not online optimizer but with coder)
+    aux_parameters = orderedset(module.rate_estimator.aux_parameters())
+    n_param = sum(p.numel() for p in aux_parameters if p.requires_grad)
+    n_param += sum(p.numel() for p in module.parameters() if p.requires_grad)
+    log_dict(trainer, {"n_param": n_param}, is_param=True)
+
+    # estimate interesting entropies
+    entropies = datamodule.dataset.entropies
+    entropies = {f"data/{k}": v for k, v in entropies.items()}
+    log_dict(trainer, entropies, is_param=True)
 
 
 def get_callbacks(cfg, is_compressor):
@@ -237,37 +248,41 @@ def evaluate_compression(trainer, datamodule, cfg):
     # test on test
     test_res = trainer.test()[0]
     if cfg.evaluation.is_est_entropies:
-        H_MlZ, H_YlZ, H_Z = estimate_entropies(trainer, datamodule, is_test=True)
-        test_res["test/H_MlZ"] = H_MlZ
-        test_res["test/H_YlZ"] = H_YlZ
-        test_res["test/H_Z"] = H_Z
-    log_metrics(trainer, test_res)
+        append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
+    log_dict(trainer, test_res, is_param=False)
 
     # test on train
     train_res = trainer.test(test_dataloaders=datamodule.train_dataloader())[0]
     train_res = replace_keys(train_res, "test", "testtrain")
     if cfg.evaluation.is_est_entropies:
         # ? this can be slow on all training set, is it necessary ?
-        H_MlZ, H_YlZ, H_Z = estimate_entropies(trainer, datamodule, is_test=False)
-        train_res["testtrain/H_MlZ"] = H_MlZ
-        train_res["testtrain/H_YlZ"] = H_YlZ
-        train_res["testtrain/H_Z"] = H_Z
-    log_metrics(trainer, train_res)
+        append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=False)
+    log_dict(trainer, train_res, is_param=False)
 
     # save results
     train_res = replace_keys(train_res, "testtrain/", "")
     test_res = replace_keys(test_res, "test/", "")
-    results = pd.DataFrame.from_dict(dict(train=train_res, test=test_res))
+    results = pd.DataFrame.from_dict(dict(train=train_res, test=cfg.data.target_is_clf))
     path = Path(cfg.paths.results) / RES_COMPRESS_FILENAME
     results.to_csv(path, header=True, index=True)
     logger.info(f"Logging compressor results to {path}.")
 
 
-def log_metrics(trainer, metrics):
-    try:
-        trainer.logger.log_metrics(metrics)
-    except:
-        pass
+def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
+    """Append entropy estimates to the results."""
+    is_discrete_Y = cfg.data.target_is_clf
+    is_discrete_M = datamodule.dataset.is_clf_x_t_Mx["max_inv"]
+    H_MlZ, H_YlZ, H_Z = estimate_entropies(
+        trainer,
+        datamodule,
+        is_test=is_test,
+        is_discrete_M=is_discrete_M,
+        is_discrete_Y=is_discrete_Y,
+    )
+    prfx = "test" if is_test else "testtrain"
+    results[f"{prfx}/H_MlZ"] = H_MlZ
+    results[f"{prfx}/H_YlZ"] = H_YlZ
+    results[f"{prfx}/H_Z"] = H_Z
 
 
 def finalize(cfg, trainer, compression_module):
