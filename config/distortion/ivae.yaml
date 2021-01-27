@@ -2,6 +2,7 @@
 distortion:
   name: ivae # VAE reconstructing unaugmented data
   mode: direct
+  factor_beta: 1 # we use this as standard
   kwargs: 
     z_dim: ${encoder.z_dim}
     y_shape: ${data.aux_shape}
