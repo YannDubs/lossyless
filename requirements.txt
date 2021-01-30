@@ -16,3 +16,6 @@ kaggle
 
 #only necessary if want to log using wandb
 wandb
+
+# only necessary for computing area uinder RD curves (and could easily be computed without)
+sklearn

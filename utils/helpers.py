@@ -98,7 +98,7 @@ class StrFormatter:
 
     subtring_replace : dict, optional
         Dictionary of substring that will be replaced if no exact_match. Order matters.
-        Everything is title case at this point. None gets mapped to "".
+        Everything is title case at this point.
 
     to_upper : list, optional
         Words that should be upper cased.
@@ -119,14 +119,15 @@ class StrFormatter:
         key = key.title()
 
         for match, replace in self.subtring_replace.items():
-            if replace is None:
-                replace = ""
             key = key.replace(match, replace)
 
         for w in self.to_upper:
             key = key.replace(w, w.upper())
 
         return key
+
+    def __call__(self, x):
+        return self[x]
 
     def update(self, new_dict):
         """Update the substring replacer dictionary with a new one (missing keys will be prepended)."""
