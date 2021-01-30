@@ -3,7 +3,9 @@
 This should be called by `python aggregate.py <conf>` where <conf> sets all configs from the cli, see 
 the file `config/aggregate.yaml` for details about the configs. or use `python aggregate.py -h`.
 """
+import functools
 import glob
+import inspect
 import logging
 from pathlib import Path
 
@@ -108,6 +110,180 @@ def begin(cfg):
     logger.info(f"Aggregating {cfg.experiment} ...")
 
 
+# DECORATORS
+def get_default_args(func):
+    """Return the default arguments of a function.
+    credit : https://stackoverflow.com/questions/12627118/get-a-function-arguments-default-value
+    """
+    signature = inspect.signature(func)
+    return {
+        k: v.default
+        for k, v in signature.parameters.items()
+        if v.default is not inspect.Parameter.empty
+    }
+
+
+def table_summarizer(fn):
+    """Get the data and save the summarized output to a csv if needed.."""
+    dflt_kwargs = get_default_args(fn)
+
+    @functools.wraps(fn)
+    def helper(
+        self, data=dflt_kwargs["data"], filename=dflt_kwargs["filename"], **kwargs
+    ):
+        if isinstance(data, str):
+            data = self.tables[data]
+        data = data.copy()
+
+        summary = fn(self, data=data, **kwargs)
+
+        if self.is_return_plots:
+            return summary
+        else:
+            summary.to_csv(self.save_dir / f"{self.prfx}{filename}.csv")
+
+    return helper
+
+
+def folder_split(fn):
+    """Split the dataset by the values in folder_col and call fn on each subfolder."""
+    dflt_kwargs = get_default_args(fn)
+
+    @functools.wraps(fn)
+    def helper(
+        self,
+        data,
+        *args,
+        folder_col=dflt_kwargs["folder_col"],
+        filename=dflt_kwargs["filename"],
+        **kwargs,
+    ):
+        kws = ["folder_col"]
+        for kw in kws:
+            kwargs[kw] = eval(kw)
+
+        if folder_col is None:
+            processed_filename = self.save_dir / f"{self.prfx}{filename}"
+            return fn(self, data, *args, filename=processed_filename, **kwargs)
+
+        else:
+            out = []
+            for curr_folder in data[folder_col].unique():
+                curr_data = data[data[folder_col] == curr_folder]
+
+                sub_dir = self.save_dir / f"{folder_col}_{curr_folder}"
+                sub_dir.mkdir(parents=True, exist_ok=True)
+
+                processed_filename = sub_dir / f"{self.prfx}{filename}"
+
+                out.append(
+                    fn(
+                        self,
+                        curr_data,
+                        *args,
+                        filename=processed_filename,
+                        **kwargs,
+                    )
+                )
+            return out
+
+    return helper
+
+
+def single_plot(fn):
+    """
+    Wraps any of the aggregator function to produce a single figure. THis enables setting
+    general seaborn and matplotlib parameters, saving the figure if needed, and aggregating the
+    data over desired indices.
+    """
+    dflt_kwargs = get_default_args(fn)
+
+    @functools.wraps(fn)
+    def helper(
+        self,
+        data,
+        x,
+        y,
+        *args,
+        folder_col=dflt_kwargs["folder_col"],
+        filename=dflt_kwargs["filename"],
+        cols_vary_only=dflt_kwargs["cols_vary_only"],
+        cols_to_agg=dflt_kwargs["cols_to_agg"],
+        aggregates=dflt_kwargs["aggregates"],
+        plot_config_kwargs=dflt_kwargs["plot_config_kwargs"],
+        row_title=dflt_kwargs["row_title"],
+        col_title=dflt_kwargs["col_title"],
+        x_rotate=dflt_kwargs["x_rotate"],
+        is_no_legend_title=dflt_kwargs["is_no_legend_title"],
+        set_kwargs=dflt_kwargs["set_kwargs"],
+        **kwargs,
+    ):
+        filename = Path(str(filename).format(x=x, y=y))
+
+        kws = [
+            "folder_col",
+            "filename",
+            "cols_vary_only",
+            "cols_to_agg",
+            "aggregates",
+            "plot_config_kwargs",
+            "row_title",
+            "col_title",
+            "x_rotate",
+            "is_no_legend_title",
+            "set_kwargs",
+        ]
+        for kw in kws:
+            kwargs[kw] = eval(kw)  # put back in kwargs
+
+        kwargs["x"] = x
+        kwargs["y"] = y
+
+        if isinstance(data, str):
+            data = self.tables[data]
+        data = data.copy()
+
+        assert_sns_vary_only_param(data, kwargs, cols_vary_only)
+
+        data = aggregate(data, cols_to_agg, aggregates)
+        pretty_data = self.prettify_(data)
+        pretty_kwargs = self.prettify_kwargs(pretty_data, **kwargs)
+        used_plot_config = dict(self.plot_config_kwargs, **plot_config_kwargs)
+
+        with plot_config(**used_plot_config):
+            sns_plot = fn(self, pretty_data, *args, **pretty_kwargs)
+
+        for ax in sns_plot.axes.flat:
+            plt.setp(ax.texts, text="")
+        sns_plot.set_titles(row_template=row_title, col_template=col_title)
+
+        if x_rotate != 0:
+            # calling directly `set_xticklabels` on FacetGrid removes the labels sometimes
+            for axes in sns_plot.axes.flat:
+                axes.set_xticklabels(axes.get_xticklabels(), rotation=x_rotate)
+
+        if is_no_legend_title:
+            #! not going to work well if is_legend_out (double legend)
+            for ax in sns_plot.fig.axes:
+                handles, labels = ax.get_legend_handles_labels()
+                if len(handles) > 1:
+                    ax.legend(handles=handles[1:], labels=labels[1:])
+
+        sns_plot.set(**set_kwargs)
+
+        if self.is_return_plots:
+            return sns_plot
+        else:
+            sns_plot.fig.savefig(
+                f"{filename}.png",
+                dpi=self.dpi,
+            )
+            plt.close(sns_plot.fig)
+
+    return helper
+
+
+# MAIN CLASS
 class Aggregator:
     """Result aggregator.
 
@@ -406,6 +582,7 @@ class Aggregator:
             **kwargs,
         )
 
+    @table_summarizer
     def summarize_RD_curves(
         self,
         data="results",
@@ -459,10 +636,6 @@ class Aggregator:
         filename : str, optional
             Name of the file for saving to summarized RD curves.
         """
-        if isinstance(data, str):
-            data = self.tables[data]
-        data = data.copy()
-
         # to be meaningfull, both the disortion and the rate columns should be in bits / erntropies (also as approximately linar the
         # trapezoidal rule should be a very good approximation of integral)
         # h[X] = -1/2 log(2 pi e Var[X]) + KL...
@@ -500,18 +673,42 @@ class Aggregator:
         )
 
         summary = pd.concat([aurd, rate_mindist_cur, rate_mindist_all], axis=1)
+        return summary
 
-        if self.is_return_plots:
-            return summary
-        else:
-            summary.to_csv(self.save_dir / f"{self.prfx}{filename}.csv")
+    @table_summarizer
+    def summarize_metrics(
+        self,
+        data="results",
+        cols_to_agg=["s"],
+        aggregates=["mean", "sem"],
+        filename="summarized_metrics",
+    ):
+        """Aggregate all the metrics and save them.
 
+        Parameters
+        ----------
+        data : pd.DataFrame or str, optional
+                Dataframe to summarize. If str will use one of self.tables.
+
+        cols_to_agg : list of str
+            List of columns over which to aggregate. E.g. `["seed"]`.
+
+        aggregates : list of str
+            List of functions to use for aggregation. The aggregated columns will be called `{col}_{aggregate}`.
+
+        filename : str, optional
+                Name of the file for saving the metrics.
+        """
+        return aggregate(data, cols_to_agg, aggregates)
+
+    @folder_split
+    @single_plot
     def plot_scatter_lines(
         self,
         data,
         x,
         y,
-        filename="{y}_vs_{x}",
+        filename="lines_{y}_vs_{x}",
         mode="relplot",
         folder_col=None,
         logbase_x=1,
@@ -592,7 +789,7 @@ class Aggregator:
 
         is_x_errorbar,is_y_errorbar : bool, optional
             Whether to standard error (over the aggregation of cols_to_agg) as error bar . If `True`,
-            `cols_to_agg` should not be empty.
+            `cols_to_agg` should not be empty and `"sem"` should be in `aggregates`.
 
         row_title,col_title : str, optional
             Template for the titles of the Facetgrid. Can use `{row_name}` and `{col_name}`
@@ -608,122 +805,63 @@ class Aggregator:
         """
         kwargs["x"] = x
         kwargs["y"] = y
-        filename = filename.format(x=x, y=y)
-        if isinstance(data, str):
-            data = self.tables[data]
 
         if is_x_errorbar or is_y_errorbar:
-            if "sem" not in aggregates:
-                aggregates += ["sem"]
-
-            if len(cols_to_agg) == 0:
-                logger.warn("Not plotting errorbar due to empty `cols_to_agg`.")
+            if (len(cols_to_agg) == 0) or ("sem" not in aggregates):
+                logger.warn(
+                    f"Not plotting errorbars due to empty cols_to_agg={cols_to_agg} or 'sem' not in aggregates={aggregates}."
+                )
                 is_x_errorbar, is_y_errorbar = False, False
 
-        data = data.copy()
+        if mode == "relplot":
+            used_kwargs = dict(
+                legend="full",
+                kind="line",
+                markers=True,
+                facet_kws={
+                    "sharey": sharey,
+                    "sharex": sharex,
+                    "legend_out": legend_out,
+                },
+                style=kwargs.get("hue", None),
+            )
+            used_kwargs.update(kwargs)
 
-        def _helper_plot(data, save_dir):
+            sns_plot = sns.relplot(data=data, **used_kwargs)
 
-            assert_sns_vary_only_param(data, kwargs, cols_vary_only)
+        elif mode == "lmplot":
+            used_kwargs = dict(
+                legend="full",
+                sharey=sharey,
+                sharex=sharex,
+                legend_out=legend_out,
+            )
+            used_kwargs.update(kwargs)
 
-            data = aggregate(data, cols_to_agg, aggregates)
-            pretty_data = self.prettify_(data)
-            pretty_kwargs = self.prettify_kwargs(pretty_data, **kwargs)
-            used_plot_config = dict(self.plot_config_kwargs, **plot_config_kwargs)
-
-            with plot_config(**used_plot_config):
-                if mode == "relplot":
-                    used_kwargs = dict(
-                        legend="full",
-                        kind="line",
-                        markers=True,
-                        facet_kws={
-                            "sharey": sharey,
-                            "sharex": sharex,
-                            "legend_out": legend_out,
-                        },
-                        style=pretty_kwargs.get("hue", None),
-                    )
-                    used_kwargs.update(pretty_kwargs)
-
-                    sns_plot = sns.relplot(data=pretty_data, **used_kwargs)
-
-                elif mode == "lmplot":
-                    used_kwargs = dict(
-                        legend="full",
-                        sharey=sharey,
-                        sharex=sharex,
-                        legend_out=legend_out,
-                    )
-                    used_kwargs.update(pretty_kwargs)
-
-                    sns_plot = sns.lmplot(data=pretty_data, **used_kwargs)
-
-                else:
-                    raise ValueError(f"Unkown mode={mode}.")
-
-            if is_x_errorbar or is_y_errorbar:
-                xerr, yerr = None, None
-                if is_x_errorbar:
-                    x_sem = x.rsplit("_", maxsplit=1)[0] + "_sem"  # _mean -> _sem
-                    xerr = pretty_data[self.pretty_renamer[x_sem]]
-
-                if is_y_errorbar:
-                    y_sem = y.rsplit("_", maxsplit=1)[0] + "_sem"  # _mean -> _sem
-                    yerr = pretty_data[self.pretty_renamer[y_sem]]
-
-                sns_plot.map_dataframe(add_errorbars, yerr=yerr, xerr=xerr)
-
-            # all the following is not specific to line plots
-
-            # clear and reset titles
-            for ax in sns_plot.axes.flat:
-                plt.setp(ax.texts, text="")
-            sns_plot.set_titles(row_template=row_title, col_template=col_title)
-
-            if x_rotate != 0:
-                # calling directly `set_xticklabels` on FacetGrid removes the labels sometimes
-                for axes in sns_plot.axes.flat:
-                    axes.set_xticklabels(axes.get_xticklabels(), rotation=x_rotate)
-
-            if logbase_x != 1 or logbase_y != 1:
-                sns_plot.map_dataframe(set_log_scale, basex=logbase_x, basey=logbase_y)
-
-            if is_no_legend_title:
-                #! not going to work well if is_legend_out (double legend)
-                for ax in sns_plot.fig.axes:
-                    handles, labels = ax.get_legend_handles_labels()
-                    if len(handles) > 1:
-                        ax.legend(handles=handles[1:], labels=labels[1:])
-
-            sns_plot.set(**set_kwargs)
-
-            if self.is_return_plots:
-                return sns_plot
-            else:
-                sns_plot.fig.savefig(
-                    save_dir / f"{self.prfx}{filename}.png",
-                    dpi=self.dpi,
-                )
-                plt.close(sns_plot.fig)
-
-        return self._foldersplit_call(_helper_plot, folder_col, data)
-
-    def _foldersplit_call(self, fn, folder_col, data):
-        """Split the dataset by the values in folder_col and call fn on each subfolder."""
-        if folder_col is None:
-            return fn(data, self.save_dir)
+            sns_plot = sns.lmplot(data=data, **used_kwargs)
 
         else:
-            out = []
-            for curr_folder in data[folder_col].unique():
-                curr_data = data[data[folder_col] == curr_folder]
+            raise ValueError(f"Unkown mode={mode}.")
 
-                sub_dir = self.save_dir / f"{folder_col}_{curr_folder}"
-                sub_dir.mkdir(parents=True, exist_ok=True)
+        if is_x_errorbar or is_y_errorbar:
+            xerr, yerr = None, None
+            if is_x_errorbar:
+                x_sem = x.rsplit(" ", maxsplit=1)[0] + " Sem"  # _mean -> _sem
+                xerr = data[x_sem]
 
-                out.append(fn(curr_data, sub_dir))
-            return out
+            if is_y_errorbar:
+                y_sem = y.rsplit(" ", maxsplit=1)[0] + " Sem"  # _mean -> _sem
+                yerr = data[y_sem]
+
+            sns_plot.map_dataframe(add_errorbars, yerr=yerr, xerr=xerr)
+
+        if logbase_x != 1 or logbase_y != 1:
+            sns_plot.map_dataframe(set_log_scale, basex=logbase_x, basey=logbase_y)
+
+        return sns_plot
+
+
+# HELPERS
 
 
 def path_to_params(path):
