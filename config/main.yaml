@@ -4,8 +4,8 @@ defaults:
   
   - user
   - data: mnist
-  - encoder: mlp
-  - distortion: vae
+  - encoder: resnet
+  - distortion: ivae
   - rate: MI_unitgaussian
   - server: none 
   # cannot use server directly (besides none) need the correct hydra/launcher: (i.e. submitit_slurm or submitit_local)
@@ -15,21 +15,32 @@ defaults:
 experiment: ???
 job_id: ??? # unique identifier
 seed: 123
-is_debug: False # enter debug mode
 timeout: 1440 # 24 hours
 time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is not when job runs
 long_name: ${experiment}/data_${data.name}/d_${distortion.name}/e_${encoder.name}/r_${rate.name}/o_${optimizer.name}/dim_${encoder.z_dim}/z_${loss.n_z_samples}/b_${loss.beta}/s_${seed}
 is_train_compressor: True # whther to train the compressor, if not will load a pretrained comrpessor if it exists
 
 paths:
+  # the best practice is not to modify those paths but to simlink them to the places you want
   base_dir: ${hydra:runtime.cwd} 
   results: ${paths.base_dir}/results/${long_name}/${job_id}
   pretrained: ${paths.base_dir}/pretrained/${long_name}/${job_id}
   data: ${paths.base_dir}/data
   logs: ${paths.base_dir}/logs/${long_name}/${job_id}
-  work: ???
-  chckpnt: ${paths.work}
+  chckpnt: ${paths.base_dir}/checkpoints/${job_id} 
+  # unfortunately cannot use hydra: in hydra so need to do everything by hand
+  # i.e. cannot use ${paths.base_dir}/outputs/{time}
+  work: ${hydra.runtime.cwd}/outputs/${now:%Y-%m-%d_%H-%M-%S}
   
+evaluation:
+  is_est_entropies: False # whether to evaluate sample estimates of the entropies H[Y|Z], H[M(X)|Z], H[Z] should only use it with deterministic Z
+  
+other:
+  # some meta information that can be useful for internal stuff (usually dirty workarounds or for logging)
+  is_debug: False # using debug mode
+  is_quick: False # using a "quick" mode and should not log very slow things
+  hydra_job_id: ${hydra:job.id} # this is the job id without the sweep number. Useful for filtering and grouping in wandb
+
 optimizer: # might need to be a group at some point
   name: adam # not used yet but can change if needed
   lr: 1e-3
@@ -42,10 +53,10 @@ optimizer: # might need to be a group at some point
 # only used if coder needs an optimizer (for coding)
 optimizer_coder :
   name: adam # not used yet but can change if needed
-  lr: 1e-3
+  lr: 0.003 
   scheduler:
-    name: null
-
+    decay_factor: 100
+    name: "expdecay"
 
 logger:
   name: wandb # select which one to use (false for nothing)
@@ -57,7 +68,7 @@ logger:
   wandb:
     name: ${job_id}
     project: lossyless
-    entity: ${wandb_entitiy}
+    entity: ${wandb_entity}
     group: ${experiment}
     offline: false # Run offline (data can be streamed later to wandb servers).
     reinit: False # ensure that same wandb after preemption
@@ -73,7 +84,7 @@ callbacks:
 
   ModelCheckpoint_compressor:
     dirpath: ${paths.chckpnt} 
-    monitor: train_loss
+    monitor: train/loss
     mode: "min"
     verbose: true
     save_last: True
@@ -82,7 +93,7 @@ callbacks:
 
 trainer:
   #default_root_dir: ${paths.results}
-  max_epochs: 100
+  max_epochs: 200
   terminate_on_nan: true
   progress_bar_refresh_rate: 0 # increase to show progress bar
   resume_from_checkpoint: null # string to checkpoint if want to resume
@@ -99,7 +110,7 @@ trainer:
   fast_dev_run: false # use true to make a quick test (not full epoch)
   track_grad_norm: -1 # use 2 to track L2 norms of grad
   overfit_batches: 0.0 # use 0.01 to make sure you can overfit 1% of training data => training works
-  weights_summary: top # full to print show the entire model 
+  weights_summary: full # full to print show the entire model, top nly prints the top module
   profiler: null # use `simple` or `"advanced"` to find bottleneck
 
 ### GROUP DEFAULTS ###
@@ -150,3 +161,10 @@ hydra:
   job:
     env_set:
       NCCL_DEBUG: INFO 
+
+  run:
+    dir: ${paths.work}
+
+  sweep:
+    dir:  ${paths.work}
+    subdir: ${hydra.job.num}_${hydra.job.id}

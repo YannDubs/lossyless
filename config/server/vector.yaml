@@ -7,7 +7,7 @@ hydra:
     # maximum time for the job in minutes
     timeout_min: ${timeout}
     # number of cpus to use for each task
-    cpus_per_task: 10
+    cpus_per_task: 8
     # number of gpus to use on each node
     gpus_per_node: ${trainer.gpus}
     # number of tasks to spawn on each node
@@ -30,24 +30,17 @@ hydra:
     additional_parameters:
       qos: normal # normal, high, deadline, nopreemption (this is the stream of execution )
 
-  run:
-    # unfortunately cannot use hydra: is hydra so need to do everything by hand
-    # i.e. cannot use ${paths.work}/${job_id}
-    dir: /checkpoint/${user}/${now:%Y-%m-%d_%H-%M-%S}
-    #/checkpoint/${user}/${hydra.job.id}/${now:%Y-%m-%d_%H-%M-%S}
-
-  sweep:
-    dir: /checkpoint/${user}/${now:%Y-%m-%d_%H-%M-%S}
-    #/checkpoint/${user}/${hydra.job.id}/${now:%Y-%m-%d_%H-%M-%S}
-    subdir: ${hydra.job.num}_${hydra.job.id}
-
 # NOTE:
 # I also had to change the command in submitit. specificall in submitit/slurm/slurm 
+# somewhere : /h/yannd/.conda/envs/lossyless/lib/python3.8/site-packages/submitit/slurm/
 # function: _make_sbatch_string replace the end with
 # lines += [
 #       "",
 #       "# command",
 #       "export SUBMITIT_EXECUTOR=slurm",
-#       "export MKL_SERVICE_FORCE_INTEL=1",
+#       "export MKL_THREADING_LAYER=GNU",
 #       f"srun --mem {mem} --output '{stdout}' --error '{stderr}' --unbuffered {command}",
 #   ]
+#
+# and also had to add slurm to the path
+# export PATH="$PATH:/opt/slurm/bin" 

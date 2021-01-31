@@ -4,12 +4,14 @@ outputs*
 tensorboard
 multirun
 pretrained
+checkpoints
 wandb
 test
 /data
 logs
 notebooks
 .hydra
+old
 
 # MAC
 .DS_Store

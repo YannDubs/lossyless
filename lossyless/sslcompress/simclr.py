@@ -86,10 +86,10 @@ class SimCLRCoder(SimCLR):
 
     def training_step(self, batch, batch_idx):
         loss, logs = self.shared_step(batch)
-        self.log_dict({f"train_{k}": v for k, v in logs.items()})
+        self.log_dict({f"train/{k}": v for k, v in logs.items()})
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss, logs = self.shared_step(batch)
-        self.log_dict({f"valid_{k}": v for k, v in logs.items()})
+        self.log_dict({f"valid/{k}": v for k, v in logs.items()})
         return loss

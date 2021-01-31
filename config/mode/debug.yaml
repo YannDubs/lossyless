@@ -2,9 +2,12 @@
 
 # debug the model 
 
-experiment: debug_${time}
-is_debug: True # enter debug mode
+experiment: debug_${now:%Y-%m-%d_%H-%M-%S}
 timeout: 60
+
+other:
+  is_debug: True # enter debug mode
+  is_quick: True
 
 trainer:
   # DEBUGGING
@@ -17,8 +20,9 @@ trainer:
 
 logger:
   wandb:
-    tags: debug
+    tags: [debug, quick]
     anonymous: true
+    project: tmp
 
 callbacks:
   additional: ["GPUStatsMonitor","TrainingDataMonitor","ModuleDataMonitor"] # if add other callbacks through additional will be replaced

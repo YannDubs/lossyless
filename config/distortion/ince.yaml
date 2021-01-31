@@ -2,6 +2,7 @@
 distortion:
   name: ince # usual (invariant) NCE: try to classify augmented image
   mode: contrastive
+  factor_beta: 0.01 # compared to ivae gives importance ++ to rate so decrease it (value taken empirically)
   kwargs:
     temperature: 0.1
     is_symmetric: true

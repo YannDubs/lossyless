@@ -7,16 +7,26 @@ hydra:
     # maximum time for the job in minutes
     timeout_min: ${timeout}
     # number of cpus to use for each task
-    cpus_per_task: 10
+    cpus_per_task: 8
     # number of gpus to use on each node
     gpus_per_node: ${trainer.gpus}
     # number of tasks to spawn on each node
     tasks_per_node: 1 # number of tasks on single machine
     # memory to reserve for the job on each node (in GB)
-    mem_gb: 32
+    mem_gb: 25
     # number of nodes to use for the job
     nodes: ${trainer.num_nodes}
     # name of the job
-    name: ${experiment}
+    name: ${name}
 
 
+    # slurm partition to use on the cluster
+    partition: gpu # wsgpu,interactive,cpu,nlp
+    comment: null 
+    constraint: null 
+    exclude: null
+    array_parallelism: 30
+    
+    max_num_timeout: 30 # alow resume from checkpointing
+    additional_parameters:
+      qos: normal # nlp

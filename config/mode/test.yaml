@@ -2,20 +2,22 @@
 
 # test whether can overfit training
 
-experiment: test_${time}
 timeout: 60
+
+other:
+  is_quick: True
 
 trainer:
   track_grad_norm: 2 # use 2 to track L2 norms of grad
   overfit_batches: 0.01 # use 0.01 to make sure you can overfit 1% of training data => training works
-  weights_summary: top # full to print show the entire model 
-  max_epochs: 30
+  max_epochs: 100
   log_every_n_steps: 20
 
 logger:
   wandb:
-    tags: test
+    tags: [test, quick]
     anonymous: true
+    project: tmp
 
 callbacks:
   additional: ["GPUStatsMonitor","TrainingDataMonitor","ModuleDataMonitor"] # if add other callbacks through additional will be replaced

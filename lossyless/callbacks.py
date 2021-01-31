@@ -1,13 +1,14 @@
 import math
 
-import einops
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from matplotlib.lines import Line2D
+
+import einops
 import torch
 import torchvision
-from matplotlib.lines import Line2D
 from pytorch_lightning.callbacks import Callback
 
 from .helpers import BASE_LOG, plot_density, setup_grid, to_numpy, undo_normalization
@@ -24,6 +25,12 @@ def save_img_wandb(pl_module, trainer, img, name, caption):
     trainer.logger.experiment.log({name: [wandb_img]}, commit=False)
 
 
+def is_plot(trainer, plot_interval):
+    is_plot_interval = (trainer.current_epoch + 1) % plot_interval == 0
+    is_last_epoch = trainer.current_epoch == trainer.max_epochs - 1
+    return is_plot_interval or is_last_epoch
+
+
 class WandbReconstructImages(Callback):
     """Logs some reconstructed images on Wandb.
 
@@ -33,21 +40,28 @@ class WandbReconstructImages(Callback):
     a tensor "Y_hat" and a tensor "Y" both of image shape.
     - wandb needs to be in the loggers.
     - this will log one reconstructed image (+real) after each training epoch.
+
+    Parameters
+    ----------
+    plot_interval : int, optional
+        Every how many epochs to plot.
     """
 
-    def __init__(self):
+    def __init__(self, plot_interval=10):
         super().__init__()
+        self.plot_interval = plot_interval
 
     def on_train_epoch_end(self, trainer, pl_module, outputs):
 
-        #! waiting for torch lighning #1243
-        x_hat = pl_module._save["Y_hat"].float()
-        x = pl_module._save["Y"].float()
-        # undo normalization for plotting
-        x_hat, x = undo_normalization(x_hat, x, pl_module.hparams.data.dataset)
-        caption = f"ep: {trainer.current_epoch}"
-        save_img_wandb(pl_module, trainer, x_hat, "rec_img", caption)
-        save_img_wandb(pl_module, trainer, x, "real_img", caption)
+        if is_plot(trainer, self.plot_interval):
+            #! waiting for torch lighning #1243
+            x_hat = pl_module._save["Y_hat"].float()
+            x = pl_module._save["Y"].float()
+            # undo normalization for plotting
+            x_hat, x = undo_normalization(x_hat, x, pl_module.hparams.data.dataset)
+            caption = f"ep: {trainer.current_epoch}"
+            save_img_wandb(pl_module, trainer, x_hat, "rec_img", caption)
+            save_img_wandb(pl_module, trainer, x, "real_img", caption)
 
 
 class WandbLatentDimInterpolator(Callback):
@@ -92,7 +106,7 @@ class WandbLatentDimInterpolator(Callback):
         self.n_lat_traverse = n_lat_traverse
 
     def on_epoch_end(self, trainer, pl_module):
-        if (trainer.current_epoch + 1) % self.plot_interval == 0:
+        if is_plot(trainer, self.plot_interval):
             with torch.no_grad():
                 pl_module.eval()
                 traversals_2d = self.latent_traverse_2d(pl_module)
@@ -178,7 +192,7 @@ class WandbCodebookPlot(Callback):
         Size fo figure.
     """
 
-    def __init__(self, plot_interval=10, range_lim=5, n_pts=500, figsize=(9, 9)):
+    def __init__(self, plot_interval=20, range_lim=5, n_pts=500, figsize=(9, 9)):
         super().__init__()
         self.plot_interval = plot_interval
         self.range_lim = range_lim
@@ -186,7 +200,7 @@ class WandbCodebookPlot(Callback):
         self.figsize = figsize
 
     def on_epoch_end(self, trainer, pl_module):
-        if (trainer.current_epoch + 1) % self.plot_interval == 0:
+        if is_plot(trainer, self.plot_interval):
             source = trainer.datamodule.distribution
             device = pl_module.device
 
@@ -312,7 +326,7 @@ class WandbMaxinvDistributionPlot(Callback):
 
     def __init__(
         self,
-        plot_interval=10,
+        plot_interval=50,
         quantile_lim=5,
         n_pts=500 ** 2,
         figsize=(9, 9),
@@ -325,13 +339,8 @@ class WandbMaxinvDistributionPlot(Callback):
         self.figsize = figsize
         self.equivalences = equivalences
 
-    def prepare(data, source):
-        if source.decimals is not None:
-            data = np.around(data, decimals=source.decimals)
-        return data
-
     def on_epoch_end(self, trainer, pl_module):
-        if (trainer.current_epoch + 1) % self.plot_interval == 0:
+        if is_plot(trainer, self.plot_interval):
             dataset = trainer.datamodule.train_dataset
             # ensure don't change
             seed, device, equiv = dataset.seed, pl_module.device, dataset.equivalence
@@ -371,6 +380,11 @@ class WandbMaxinvDistributionPlot(Callback):
             dataset.seed = seed
             dataset.equivalence = equiv
             pl_module.train()
+
+    def prepare(data, source):
+        if source.decimals is not None:
+            data = np.around(data, decimals=source.decimals)
+        return data
 
     def plot_maxinv(self, mx, mx_hat):
         """Return a figure of the maximal invariant computed from the source and the reconstructions."""
