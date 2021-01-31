@@ -84,6 +84,8 @@ def main(cfg):
     logger.info(f"Recolting the data ..")
     aggregator.collect_data(cfg.collect_data)
 
+    aggregator.subset(cfg.col_val_subset)
+
     for f in cfg.mode:
 
         logger.info(f"Mode {f} ...")
@@ -402,20 +404,37 @@ class Aggregator:
             for k, v in kwargs.items()
         }
 
+    def subset(self, col_val):
+        """Subset all tables by keeping only the given values in given columns.
+
+        Parameters
+        ----------
+        col_val : dict
+            A dictionary where the keys are the columns to subset and values are a list of values to keep.
+        """
+        for col, val in col_val.items():
+            logger.debug("Keeping only val={val} for col={col}.")
+            for k in self.table_names:
+                self.tables[k] = self.tables[k][(self.tables[k][col]).isin(val)]
+                if self.tables[k].empty:
+                    logger.info(f"Empty table after filtering {col}={val}")
+
     def plot_superpose(
         self,
+        data,
         x,
         to_superpose,
         value_name,
         filename="superposed_{value_name}",
-        is_legend_out=False,
-        is_no_legend_title=True,
         **kwargs,
     ):
-        """Plot a single line figure with multiple lineplots.
+        """Plot a single line figure with multiple superposed lineplots.
 
         Parameters
         ----------
+        data : pd.DataFrame or str
+            Dataframe used for plotting. If str will use one of self.tables.
+
         x : str
             Column name of x axis.
 
@@ -430,35 +449,31 @@ class Aggregator:
             Name of the figure when saving. Can use {value_name} for interpolation.
 
         kwargs :
-            Additional arguments to `_plot_lines`.
+            Additional arguments to `plot_scatter_lines`.
         """
-
-        def gen_values_name(data):
-            yield value_name, filename.format(value_name=value_name)
-
-        table = self.tables["results"].copy()
+        if isinstance(data, str):
+            data = self.tables[data]
+        data = data.copy()
 
         renamer = to_superpose
         key_to_plot = to_superpose.keys()
 
-        table = table.melt(
-            id_vars=[c for c in table.columns if c in self.param_name],
+        data = data.melt(
+            ignore_index=False,
+            id_vars=[x],
             value_vars=[c for c in key_to_plot],
             value_name=value_name,
             var_name="mode",
         )
 
-        table["mode"] = table["mode"].replace(renamer)
-
+        data["mode"] = data["mode"].replace(renamer)
         kwargs["hue"] = "mode"
-        kwargs["markers"] = kwargs.get("markers", True)
 
-        return self._plot_lines(
-            gen_values_name,
-            table,
-            x,
-            is_legend_out=is_legend_out,
-            is_no_legend_title=is_no_legend_title,
+        return self.plot_scatter_lines(
+            data,
+            x=x,
+            y=value_name,
+            filename=filename.format(value_name=value_name),
             **kwargs,
         )
 

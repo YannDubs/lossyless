@@ -3,8 +3,7 @@ defaults:
   - hydra/hydra_logging: colorlog
 
 experiment: ???
-mode: [save_tables, plot_metrics] # plot_aux_trnsf, plot_histories, plot_generalization
-is_recolt: True
+mode: [summarize_metrics] # summarize_RD_curves, plot_all_RD_curves, plot_invariance_RD_curve, plot_scatter_lines, plot_superpose
 col_val_subset : {}
 
 kwargs:
