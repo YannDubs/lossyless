@@ -82,11 +82,12 @@ def main(cfg):
     aggregator = Aggregator(pretty_renamer=PRETTY_RENAMER, **cfg.kwargs)
 
     logger.info(f"Recolting the data ..")
-    aggregator.collect_data(cfg.collect_data)
+    for name, pattern in cfg.collect_data.items():
+        aggregator.collect_data(pattern=pattern, table_name=name)
 
     aggregator.subset(cfg.col_val_subset)
 
-    for f in cfg.mode:
+    for f in cfg.agg_mode:
 
         logger.info(f"Mode {f} ...")
 
@@ -170,8 +171,9 @@ def folder_split(fn):
 
         else:
             out = []
-            for curr_folder in data[folder_col].unique():
-                curr_data = data[data[folder_col] == curr_folder]
+            flat = data.reset_index(drop=False)
+            for curr_folder in flat[folder_col].unique():
+                curr_data = flat[flat[folder_col] == curr_folder]
 
                 sub_dir = self.save_dir / f"{folder_col}_{curr_folder}"
                 sub_dir.mkdir(parents=True, exist_ok=True)
@@ -181,7 +183,7 @@ def folder_split(fn):
                 out.append(
                     fn(
                         self,
-                        curr_data,
+                        curr_data.set_index(data.index.names),
                         *args,
                         filename=processed_filename,
                         **kwargs,
@@ -291,8 +293,11 @@ class Aggregator:
 
     Parameters
     ----------
-    save_dir : str
+    save_dir : str or Path
         Where to save all results.
+
+    base_dir : str or Path
+        Base folder from which all paths start.
 
     is_return_plots : bool, optional
         Whether to return plots instead of saving them.
@@ -314,13 +319,15 @@ class Aggregator:
     def __init__(
         self,
         save_dir,
+        base_dir=Path(__file__).parent,
         is_return_plots=False,
         prfx="",
         pretty_renamer=PRETTY_RENAMER,
         dpi=300,
         plot_config_kwargs={},
     ):
-        self.save_dir = Path(save_dir)
+        self.base_dir = Path(base_dir)
+        self.save_dir = self.base_dir / Path(save_dir)
         self.is_return_plots = is_return_plots
         self.prfx = prfx
         self.pretty_renamer = pretty_renamer
@@ -350,7 +357,7 @@ class Aggregator:
         table_name : str, optional
             Name of the table under which to save the loaded data.
         """
-        paths = glob.glob(pattern, recursive=True)
+        paths = glob.glob(str(self.base_dir / pattern), recursive=True)
         if len(paths) == 0:
             raise ValueError(f"No files found for your pattern={pattern}")
 
@@ -419,64 +426,6 @@ class Aggregator:
                 if self.tables[k].empty:
                     logger.info(f"Empty table after filtering {col}={val}")
 
-    def plot_superpose(
-        self,
-        data,
-        x,
-        to_superpose,
-        value_name,
-        filename="superposed_{value_name}",
-        **kwargs,
-    ):
-        """Plot a single line figure with multiple superposed lineplots.
-
-        Parameters
-        ----------
-        data : pd.DataFrame or str
-            Dataframe used for plotting. If str will use one of self.tables.
-
-        x : str
-            Column name of x axis.
-
-        to_superpose : dictionary
-            Dictionary of column values that should be plotted on the figure. The keys
-            correspond to the columns to plot and the values correspond to the name they should be given.
-
-        value_name : str
-            Name of the yaxis.
-
-        filename : str, optional
-            Name of the figure when saving. Can use {value_name} for interpolation.
-
-        kwargs :
-            Additional arguments to `plot_scatter_lines`.
-        """
-        if isinstance(data, str):
-            data = self.tables[data]
-        data = data.copy()
-
-        renamer = to_superpose
-        key_to_plot = to_superpose.keys()
-
-        data = data.melt(
-            ignore_index=False,
-            id_vars=[x],
-            value_vars=[c for c in key_to_plot],
-            value_name=value_name,
-            var_name="mode",
-        )
-
-        data["mode"] = data["mode"].replace(renamer)
-        kwargs["hue"] = "mode"
-
-        return self.plot_scatter_lines(
-            data,
-            x=x,
-            y=value_name,
-            filename=filename.format(value_name=value_name),
-            **kwargs,
-        )
-
     def plot_all_RD_curves(
         self,
         data="results",
@@ -484,6 +433,7 @@ class Aggregator:
         distortion_cols=["test_distortion", "test_online_loss"],
         logbase_x=None,
         cols_to_agg=["s"],
+        filename="all_RD_curves",
         **kwargs,
     ):
         """Main function for plotting different Rate distortion plots.
@@ -531,6 +481,7 @@ class Aggregator:
             is_y_errorbar=True,
             sharey=is_single_row,
             sharex=is_single_col,
+            filename=filename,
             **kwargs,
         )
 
@@ -715,6 +666,64 @@ class Aggregator:
                 Name of the file for saving the metrics.
         """
         return aggregate(data, cols_to_agg, aggregates)
+
+    def plot_superpose(
+        self,
+        data,
+        x,
+        to_superpose,
+        value_name,
+        filename="superposed_{value_name}",
+        **kwargs,
+    ):
+        """Plot a single line figure with multiple superposed lineplots.
+
+        Parameters
+        ----------
+        data : pd.DataFrame or str
+            Dataframe used for plotting. If str will use one of self.tables.
+
+        x : str
+            Column name of x axis.
+
+        to_superpose : dictionary
+            Dictionary of column values that should be plotted on the figure. The keys
+            correspond to the columns to plot and the values correspond to the name they should be given.
+
+        value_name : str
+            Name of the yaxis.
+
+        filename : str, optional
+            Name of the figure when saving. Can use {value_name} for interpolation.
+
+        kwargs :
+            Additional arguments to `plot_scatter_lines`.
+        """
+        if isinstance(data, str):
+            data = self.tables[data]
+        data = data.copy()
+
+        renamer = to_superpose
+        key_to_plot = to_superpose.keys()
+
+        data = data.melt(
+            ignore_index=False,
+            id_vars=[x],
+            value_vars=[c for c in key_to_plot],
+            value_name=value_name,
+            var_name="mode",
+        )
+
+        data["mode"] = data["mode"].replace(renamer)
+        kwargs["hue"] = "mode"
+
+        return self.plot_scatter_lines(
+            data,
+            x=x,
+            y=value_name,
+            filename=filename.format(value_name=value_name),
+            **kwargs,
+        )
 
     @folder_split
     @single_plot

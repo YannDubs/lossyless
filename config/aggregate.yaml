@@ -3,11 +3,16 @@ defaults:
   - hydra/hydra_logging: colorlog
 
 experiment: ???
-mode: [summarize_metrics] # summarize_RD_curves, plot_all_RD_curves, plot_invariance_RD_curve, plot_scatter_lines, plot_superpose
+agg_mode: [summarize_metrics] # summarize_RD_curves, plot_all_RD_curves, plot_invariance_RD_curve, plot_scatter_lines, plot_superpose
 col_val_subset : {}
 
+collect_data:
+  # name, pattern to find it
+  results: "results/${experiment}/**/results_compression.csv"
+
 kwargs:
-  save_dir: ${recolt_data.base_dir}results/${save_experiment}/
+  base_dir: ${hydra:runtime.cwd}
+  save_dir: results/${experiment}/
   prfx: ""
   dpi: 300
   pretty_renamer: {}
