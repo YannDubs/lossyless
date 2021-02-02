@@ -327,7 +327,7 @@ class ContrastiveDistortion(nn.Module):
         hat_H_m = math.log(self.weight * n_classes)
         hat_H_mlz = F.cross_entropy(logits, pos_idx, reduction="mean")
 
-        logs = dict(I_zm=(hat_H_m - hat_H_mlz) / math.log(BASE_LOG))
+        logs = dict(I_q_zm=(hat_H_m - hat_H_mlz) / math.log(BASE_LOG))
         other = dict()
 
         return hat_H_mlz, logs, other

@@ -37,6 +37,12 @@ while getopts ':s:p:m:t:v:a:' flag; do
       prfx="${mode}_"
       time="60"
       echo "$mode mode ..."
+
+      # overwrite max_epochs with the one from the mode
+      if  [[ "$mode" == "dev" || "$mode" == "nano" ]]; then
+        add_kwargs="${add_kwargs} trainer.max_epochs=2"
+      fi
+      
       ;;
     v ) 
       is_plot_only=true

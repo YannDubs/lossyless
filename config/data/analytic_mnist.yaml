@@ -1,0 +1,11 @@
+# @package _group_
+name: analytic_mnist
+dataset: analytic_mnist
+
+kwargs:
+  # make sure you use entire training set
+  val_size: 0.05
+  dataset_kwargs:
+    equivalence: [x_translation, y_translation,rotation,scale]
+    is_augment_val: True
+

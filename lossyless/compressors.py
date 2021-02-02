@@ -132,6 +132,7 @@ class CompressionModule(pl.LightningModule):
         # any additional information that can be useful (dict)
         other.update(r_other)
         other.update(d_other)
+        other["X"] = x[0].detach().cpu()
         other.update(dict(z=z.detach()))
 
         return loss, logs, other

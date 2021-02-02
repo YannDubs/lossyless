@@ -1,3 +1,4 @@
+from .analytic_images import *
 from .distributions import *
 from .images import *
 
@@ -7,6 +8,8 @@ def get_datamodule(datamodule):
     datamodule = datamodule.lower()
     if datamodule == "cifar10":
         return Cifar10DataModule
+    elif datamodule == "analytic_mnist":
+        return AnalyticMnistDataModule
     elif datamodule == "mnist":
         return MnistDataModule
     elif datamodule == "fashionmnist":

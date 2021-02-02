@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 
-experiment=$prfx"banana_RD_final"
+experiment=$prfx"banana_viz_vib"
 notes="
-**Goal**: Run rate distortion curve for banana distribution when predicting representative
-**Hypothesis**: Should be close to the estimated optimal rate distortion curve, and now can approximate it using differential entropies.
+**Goal**: Run banana models for plotting when predicting max invariant. 
 "
 
-# e.g. command: bin/experiments/banana_RD_final.sh -s vector 
+# e.g. command: bin/experiments/banana_viz.sh -s vector -t 360
 
 # parses special mode for running the script
 source `dirname $0`/../utils.sh
@@ -20,6 +19,7 @@ source `dirname $0`/../utils.sh
 # - beta = 0.15 (for no invaraince) instead of 1
 # - train batch size is 8192 instead of 1024
 # - not using soft rounding
+# - 200 epochs
 
 # Encoder
 encoder_kwargs="
@@ -56,13 +56,12 @@ optimizer.scheduler.name=MultiStepLR
 +optimizer.scheduler.milestones=[50,75,87]
 optimizer_coder.lr=1e-3
 optimizer_coder.name=null
-data=bananaRot
 data.kwargs.batch_size=8192
 data.kwargs.dataset_kwargs.length=1024000
 data.kwargs.val_size=100000
 data.kwargs.val_batch_size=16384
 +data.kwargs.dataset_kwargs.decimals=null
-trainer.max_epochs=100
+trainer.max_epochs=200
 trainer.precision=32
 trainer.reload_dataloaders_every_epoch=True
 evaluation.is_est_entropies=True
@@ -79,19 +78,19 @@ $add_kwargs
 "
 
 kwargs_multi="
-distortion=ivae,vae
-loss.beta=0.000001,0.00001,0.0001,0.001,0.003,0.01,0.03,0.1,0.3,1,3,10,100,1000,10000
-seed=1,2,3,4,5
+data=bananaRot,bananaXtrnslt,bananaYtrnslt 
+distortion=ivib,vib
+loss.beta=0.01,0.1,1,10,100
 " 
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in  "" 
+  for kwargs_dep in  ""
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
-
-    sleep 3
     
+    sleep 3
+
   done
 fi
 

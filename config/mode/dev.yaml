@@ -1,6 +1,6 @@
 # @package _global_
 
-# check that everything is running correctly (single epoch normal)
+# check that everything is running correctly (2 epochs small data)
 timeout: 60
 
 other:

@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 
-experiment=$prfx"banana_viz_cont"
+experiment=$prfx"banana_viz_nce"
 notes="
-**Goal**: Run banana models for plotting. 
-**Hypothesis**: When using some invariance the rate should go down for a similar distortion. Furthermore, the codebook should be reminiscent of the maximal invariant.
+**Goal**: Run banana models for plotting, when using NCE.
 "
 
-# e.g. command: bin/experiments/banana_viz.sh -s vector -t 360
+# e.g. command: bin/experiments/banana_viz_nce.sh -s vector -t 360
 
 # parses special mode for running the script
 source `dirname $0`/../utils.sh
@@ -36,12 +35,8 @@ encoder.arch_kwargs.complexity=null
 # Decoder
 decoder_kwargs="
 distortion.factor_beta=1
-distortion.kwargs.arch=mlp
-distortion.kwargs.arch_kwargs.complexity=null
-+distortion.kwargs.arch_kwargs.activation=Softplus
-+distortion.kwargs.arch_kwargs.hid_dim=1024
-+distortion.kwargs.arch_kwargs.n_hid_layers=2
-+distortion.kwargs.arch_kwargs.norm_layer=batchnorm
+distortion.kwargs.weight=1
+distortion.kwargs.is_symmetric=True
 "
 
 # Loss
@@ -57,10 +52,10 @@ optimizer.scheduler.name=MultiStepLR
 +optimizer.scheduler.milestones=[50,75,87]
 optimizer_coder.lr=1e-3
 optimizer_coder.name=null
-data.kwargs.batch_size=8192
+data.kwargs.batch_size=1024
 data.kwargs.dataset_kwargs.length=1024000
 data.kwargs.val_size=100000
-data.kwargs.val_batch_size=16384
+data.kwargs.val_batch_size=2048
 +data.kwargs.dataset_kwargs.decimals=null
 trainer.max_epochs=200
 trainer.precision=32
@@ -80,15 +75,12 @@ $add_kwargs
 
 kwargs_multi="
 data=bananaRot,bananaXtrnslt,bananaYtrnslt 
-distortion=ivae,vae
-loss.beta=0.1
+distortion=ince,nce
+loss.beta=0.01,0.1,1,10,100
 " 
 
 
 if [ "$is_plot_only" = false ] ; then
-  # note: instead of using "ivae" and "vae" on the three augmented datasets (which gives 6 models), we run "ivae" on the 
-  #       three augmented + an unaugmented data (which is equivalent to running "vae" on the augmented one) => 4 models.
-  # using smaller beta for no invaraiance to be comparable
   for kwargs_dep in  ""
   do
 

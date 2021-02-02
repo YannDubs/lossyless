@@ -3,14 +3,15 @@
 This should be called by `python main.py <conf>` where <conf> sets all configs from the cli, see 
 the file `config/main.yaml` for details about the configs. or use `python main.py -h`.
 """
+
 import logging
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import pandas as pd
 
 import compressai
 import hydra
-import matplotlib.pyplot as plt
 import lossyless
 import omegaconf
 import pl_bolts
@@ -56,7 +57,7 @@ def main(cfg):
     compression_module = CompressionModule(hparams=cfg)
 
     trainer = get_trainer(cfg, compression_module, is_compressor=True)
-    
+
     # some of the module compononets might needs data for initialization
     initialize_(compression_module, datamodule, trainer, cfg)
 
@@ -71,7 +72,6 @@ def main(cfg):
 
     logger.info("Evaluate compressor ...")
     evaluate_compressor(trainer, datamodule, cfg)
-
 
     # # PREDICTION
     # TODO should reuse the train/test dataset that were already represented as Z in `evaluate_compression`
@@ -169,14 +169,21 @@ def get_callbacks(cfg, is_compressor):
     if is_compressor:
         additional_target = cfg.data.kwargs.dataset_kwargs.additional_target
         is_reconstruct = additional_target in ["representative", "input"]
-        if cfg.logger.name == "wandb" and is_reconstruct:
-            if cfg.data.mode == "image":
+        can_estimate_Mx = ["representative", "input", "max_var", "max_inv"]
+        if cfg.logger.name == "wandb":
+            if cfg.data.mode == "image" and is_reconstruct:
                 callbacks += [
                     WandbLatentDimInterpolator(cfg.encoder.z_dim),
                     WandbReconstructImages(),
                 ]
             elif cfg.data.mode == "distribution":
-                callbacks += [WandbCodebookPlot(), WandbMaxinvDistributionPlot()]
+                callbacks += [
+                    WandbCodebookPlot(is_plot_codebook=is_reconstruct),
+                ]
+                if additional_target in can_estimate_Mx:
+                    callbacks += [
+                        WandbMaxinvDistributionPlot(),
+                    ]
 
     curr = "compressor" if is_compressor else "predictor"
     ckwargs = cfg.callbacks[f"ModelCheckpoint_{curr}"]
@@ -248,7 +255,7 @@ def save_pretrained_compressor(cfg, trainer):
     """Send best checkpoint for compressor to main directory."""
     dest_path = Path(cfg.paths.pretrained)
     dest_path.mkdir(parents=True, exist_ok=True)
-    trainer.save_checkpoint(dest_path / "best.ckpt", weights_only=True)
+    trainer.save_checkpoint(dest_path / "best_compressor.ckpt", weights_only=True)
 
 
 def load_pretrained_compressor(cfg, datamodule):
@@ -256,10 +263,13 @@ def load_pretrained_compressor(cfg, datamodule):
     breakpoint()
     curr_path = Path(cfg.paths.pretrained)
     # select the latest (but not current) checkpoint
-    chckpnt = get_latest_dir(curr_path.parent, not_eq=curr_path) / "best.ckpt"
+    chckpnt = (
+        get_latest_dir(curr_path.parent, not_eq=curr_path) / "best_compressor.ckpt"
+    )
     compression_module = CompressionModule.load_from_checkpoint(chckpnt)
     initialize_(compression_module, datamodule)
     return compression_module
+
 
 def evaluate_compression(trainer, datamodule, cfg):
     """

@@ -56,7 +56,7 @@ class WandbReconstructImages(Callback):
         if is_plot(trainer, self.plot_interval):
             #! waiting for torch lighning #1243
             x_hat = pl_module._save["Y_hat"].float()
-            x = pl_module._save["Y"].float()
+            x = pl_module._save["X"].float()
             # undo normalization for plotting
             x_hat, x = undo_normalization(x_hat, x, pl_module.hparams.data.dataset)
             caption = f"ep: {trainer.current_epoch}"
@@ -190,14 +190,26 @@ class WandbCodebookPlot(Callback):
 
     figsize : tuple of int, optional
         Size fo figure.
+
+    is_plot_codebook : bool, optional
+        Whether to plot the codebook or only the quantization space. THis can only be true for VAE 
+        and iVAE, not or iVIB and iNCE because they don't reconstruct an element in X space.
     """
 
-    def __init__(self, plot_interval=20, range_lim=5, n_pts=500, figsize=(9, 9)):
+    def __init__(
+        self,
+        plot_interval=20,
+        range_lim=5,
+        n_pts=500,
+        figsize=(9, 9),
+        is_plot_codebook=True,
+    ):
         super().__init__()
         self.plot_interval = plot_interval
         self.range_lim = range_lim
         self.n_pts = n_pts
         self.figsize = figsize
+        self.is_plot_codebook = is_plot_codebook
 
     def on_epoch_end(self, trainer, pl_module):
         if is_plot(trainer, self.plot_interval):
@@ -232,23 +244,26 @@ class WandbCodebookPlot(Callback):
         z_hat, q_z = pl_module.rate_estimator.entropy_bottleneck(z.unsqueeze(0))
         z_hat, q_z = z_hat.squeeze(), q_z.squeeze()
 
-        # - log q(z). shape: [batch_shape]
-        rates = -torch.log(q_z).sum(-1) / math.log(BASE_LOG)
-
-        # shape: [batch_size, *y_shape]
-        Y_hat = pl_module.distortion_estimator.q_YlZ(z_hat)
-
         # Find the unique set of latents for these inputs. Converts integer indexes
         # on the infinite lattice to scalar indexes into a codebook (which is only
         # valid for this set of inputs).
         z_hat = to_numpy(z_hat)
         _, i, idcs = np.unique(z_hat, return_index=True, return_inverse=True, axis=0)
 
-        # shape: [n_codebook, *y_shape]
-        codebook = to_numpy(Y_hat[i])
+        # - log q(z). shape: [batch_shape]
+        rates = -torch.log(q_z).sum(-1) / math.log(BASE_LOG)
 
         # shape: [n_codebook]
         ratebook = to_numpy(rates[i])  # rate for each codebook
+
+        if self.is_plot_codebook:
+            # shape: [batch_size, *y_shape]
+            Y_hat = pl_module.distortion_estimator.q_YlZ(z_hat)
+
+            # shape: [n_codebook, *y_shape]
+            codebook = to_numpy(Y_hat[i])
+        else:
+            codebook = None
 
         return codebook, ratebook, idcs
 
@@ -267,8 +282,8 @@ class WandbCodebookPlot(Callback):
         # ratebook, counts, p_codebook. shape: [n_codebook]
         # idcs. shape: [n_pts * n_pts]
         codebook, ratebook, idcs = self.quantize(pl_module, flat_xy)
-        counts = np.bincount(idcs, minlength=len(codebook))
-        p_codebook = BASE_LOG ** -(ratebook)
+        n_codebook = len(ratebook)  # uses ratebook because codebook can be None
+        counts = np.bincount(idcs, minlength=n_codebook)
 
         fig, ax = plt.subplots(1, 1, figsize=self.figsize)
         plot_density(source, n_pts=self.n_pts, range_lim=self.range_lim, ax=ax)
@@ -281,18 +296,21 @@ class WandbCodebookPlot(Callback):
             xy[:, :, 0],
             xy[:, :, 1],
             idcs.reshape(self.n_pts, self.n_pts),
-            np.arange(len(codebook)) + 0.5,
+            np.arange(n_codebook) + 0.5,
             colors=[google_pink],
             linewidths=0.5,
         )
 
-        # codebook
-        ax.scatter(
-            codebook[counts > 0, 0],
-            codebook[counts > 0, 1],
-            color=google_pink,
-            s=500 * p_codebook[counts > 0],  # size prop. to proba q(z)
-        )
+        if self.is_plot_codebook:
+            p_codebook = BASE_LOG ** -(ratebook)
+
+            # codebook
+            ax.scatter(
+                codebook[counts > 0, 0],
+                codebook[counts > 0, 1],
+                color=google_pink,
+                s=500 * p_codebook[counts > 0],  # size prop. to proba q(z)
+            )
 
         return fig
 
@@ -366,7 +384,9 @@ class WandbMaxinvDistributionPlot(Callback):
                     dataset.equivalence = eq
 
                     # shape: [batch_size, *mx_shape]
-                    mx_hat = dataset.max_invariant(x_hat)
+                    mx_hat = (
+                        dataset.max_invariant(x_hat) if x_hat.shape[-1] == 2 else x_hat
+                    )
                     mx = dataset.max_invariant(x)
 
                     fig = self.plot_maxinv(mx, mx_hat)
