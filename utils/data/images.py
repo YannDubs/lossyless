@@ -13,12 +13,8 @@ from lossyless.helpers import BASE_LOG, get_normalization
 from torch.utils.data import random_split
 from torchvision import transforms as transform_lib
 from torchvision.datasets import CIFAR10, MNIST, FashionMNIST
-from torchvision.transforms import (
-    ColorJitter,
-    RandomAffine,
-    RandomErasing,
-    RandomRotation,
-)
+from torchvision.transforms import (ColorJitter, RandomAffine, RandomErasing,
+                                    RandomRotation)
 from utils.estimators import discrete_entropy
 
 from .base import LossylessCLFDataset, LossylessDataModule
@@ -84,11 +80,10 @@ class LossylessImgDataset(LossylessCLFDataset):
 
     @property
     def augmentations(self):
-        shape = self.shapes_x_t_Mx["input"]
         return {
             "rotation": RandomRotation(60),
-            "y_translation": RandomAffine(0, translate=(0, shape[2])),
-            "x_translation": RandomAffine(0, translate=(shape[1], 0)),
+            "y_translation": RandomAffine(0, translate=(0.1, 0.1)),
+            "x_translation": RandomAffine(0, translate=(0.1, 0.1)),
             "scale": RandomAffine(0, scale=(0.8, 1.2)),
             "color": ColorJitter(
                 brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
@@ -355,7 +350,6 @@ class GalaxyDataset(LossylessImgDataset):
 
     @property
     def augmentations(self):
-        shape = self.shapes_x_t_Mx["input"]
         return {
             "rotation": RandomRotation(60),
             "y_translation": RandomAffine(0, translate=(0.1, 0.1)),
