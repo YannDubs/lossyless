@@ -1,5 +1,6 @@
 import math
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -10,8 +11,10 @@ import einops
 import torch
 import torchvision
 from pytorch_lightning.callbacks import Callback
+from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 
-from .helpers import BASE_LOG, plot_density, setup_grid, to_numpy, undo_normalization
+from .helpers import (BASE_LOG, plot_density, setup_grid, to_numpy,
+                      undo_normalization)
 
 try:
     import wandb
@@ -19,10 +22,23 @@ except ImportError:
     pass
 
 
-def save_img_wandb(pl_module, trainer, img, name, caption):
-    """Save an image on wandb logger."""
-    wandb_img = wandb.Image(img, caption=caption)
-    trainer.logger.experiment.log({name: [wandb_img]}, commit=False)
+def save_img(pl_module, trainer, img, name, caption):
+    """Save an image on logger. Currently only Tensorboard and wandb."""
+    experiment = trainer.logger.experiment
+    if isinstance(trainer.logger, WandbLogger):
+        wandb_img = wandb.Image(img, caption=caption)
+        experiment.log({name: [wandb_img]}, commit=False)
+
+    elif isinstance(trainer.logger, TensorBoardLogger):
+        # TODO @karen the following is not tested
+        if isinstance(img, matplotlib.figure.Figure):
+            experiment.add_figure(name, img, global_step=trainer.global_step)
+        else:
+            experiment.add_image(name, img, global_step=trainer.global_step)
+
+    else:
+        err = f"Plotting images is only available on tensorboard and Wandb but you are using {type(trainer.logger)}."
+        raise ValueError(err)
 
 
 def is_plot(trainer, plot_interval):
@@ -31,14 +47,13 @@ def is_plot(trainer, plot_interval):
     return is_plot_interval or is_last_epoch
 
 
-class WandbReconstructImages(Callback):
-    """Logs some reconstructed images on Wandb.
+class ReconstructImages(Callback):
+    """Logs some reconstructed images.
 
     Notes
     -----
     - the model should return a dictionary after each training step, containing
     a tensor "Y_hat" and a tensor "Y" both of image shape.
-    - wandb needs to be in the loggers.
     - this will log one reconstructed image (+real) after each training epoch.
 
     Parameters
@@ -60,12 +75,12 @@ class WandbReconstructImages(Callback):
             # undo normalization for plotting
             x_hat, x = undo_normalization(x_hat, x, pl_module.hparams.data.dataset)
             caption = f"ep: {trainer.current_epoch}"
-            save_img_wandb(pl_module, trainer, x_hat, "rec_img", caption)
-            save_img_wandb(pl_module, trainer, x, "real_img", caption)
+            save_img(pl_module, trainer, x_hat, "rec_img", caption)
+            save_img(pl_module, trainer, x, "real_img", caption)
 
 
-class WandbLatentDimInterpolator(Callback):
-    """Logs interpolated images (steps through the first 2 dimensions) on Wandb.
+class LatentDimInterpolator(Callback):
+    """Logs interpolated images (steps through the first 2 dimensions).
 
     Parameters
     ----------
@@ -114,8 +129,8 @@ class WandbLatentDimInterpolator(Callback):
             pl_module.train()
 
             caption = f"ep: {trainer.current_epoch}"
-            save_img_wandb(pl_module, trainer, traversals_2d, "traversals_2d", caption)
-            save_img_wandb(pl_module, trainer, traversals_1d, "traversals_1d", caption)
+            save_img(pl_module, trainer, traversals_2d, "traversals_2d", caption)
+            save_img(pl_module, trainer, traversals_1d, "traversals_1d", caption)
 
     def _traverse_line(self, idx, pl_module, z=None):
         """Return a (size, latent_size) latent sample, corresponding to a traversal
@@ -168,7 +183,7 @@ class WandbLatentDimInterpolator(Callback):
         return grid
 
 
-class WandbCodebookPlot(Callback):
+class CodebookPlot(Callback):
     """Plot the source distribution and codebook for a distribution.
 
     Notes
@@ -227,7 +242,7 @@ class WandbCodebookPlot(Callback):
             pl_module.train()
 
             caption = f"ep: {trainer.current_epoch}"
-            save_img_wandb(pl_module, trainer, fig, "quantization", caption)
+            save_img(pl_module, trainer, fig, "quantization", caption)
             plt.close(fig)
 
     def quantize(self, pl_module, x):
@@ -315,7 +330,7 @@ class WandbCodebookPlot(Callback):
         return fig
 
 
-class WandbMaxinvDistributionPlot(Callback):
+class MaxinvDistributionPlot(Callback):
     """Plot the distribtion of a maximal invariant p(M(X)) as well as the learned marginal
     q(M(X)) = E_{p(Z)}[q(M(X)|Z)].
 
@@ -392,7 +407,7 @@ class WandbMaxinvDistributionPlot(Callback):
                     fig = self.plot_maxinv(mx, mx_hat)
 
                     caption = f"ep: {trainer.current_epoch}"
-                    save_img_wandb(pl_module, trainer, fig, f"max. inv. {eq}", caption)
+                    save_img(pl_module, trainer, fig, f"max. inv. {eq}", caption)
                     plt.close(fig)
 
             # restore

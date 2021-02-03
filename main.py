@@ -19,10 +19,10 @@ import pytorch_lightning as pl
 import torch
 from lossyless import CompressionModule, PredictorModule
 from lossyless.callbacks import (
-    WandbCodebookPlot,
-    WandbLatentDimInterpolator,
-    WandbMaxinvDistributionPlot,
-    WandbReconstructImages,
+    CodebookPlot,
+    LatentDimInterpolator,
+    MaxinvDistributionPlot,
+    ReconstructImages,
 )
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import orderedset
@@ -190,19 +190,19 @@ def get_callbacks(cfg, is_compressor):
         additional_target = cfg.data.kwargs.dataset_kwargs.additional_target
         is_reconstruct = additional_target in ["representative", "input"]
         can_estimate_Mx = ["representative", "input", "max_var", "max_inv"]
-        if cfg.logger.name == "wandb":
+        if cfg.logger.name in ["wandb", "tensorboard"]:
             if cfg.data.mode == "image" and is_reconstruct:
                 callbacks += [
-                    WandbLatentDimInterpolator(cfg.encoder.z_dim),
-                    WandbReconstructImages(),
+                    LatentDimInterpolator(cfg.encoder.z_dim),
+                    ReconstructImages(),
                 ]
             elif cfg.data.mode == "distribution":
                 callbacks += [
-                    WandbCodebookPlot(is_plot_codebook=is_reconstruct),
+                    CodebookPlot(is_plot_codebook=is_reconstruct),
                 ]
                 if additional_target in can_estimate_Mx:
                     callbacks += [
-                        WandbMaxinvDistributionPlot(),
+                        MaxinvDistributionPlot(),
                     ]
 
     curr = "compressor" if is_compressor else "predictor"
