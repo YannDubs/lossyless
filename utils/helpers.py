@@ -12,13 +12,6 @@ from omegaconf import OmegaConf
 logger = logging.getLogger(__name__)
 
 
-def create_folders(base_path, names):
-    """Safely creates a list of folders at a certain path."""
-    for name in names:
-        path = os.path.join(base_path, name)
-        os.makedirs(path, exist_ok=True)
-
-
 def omegaconf2namespace(cfg):
     """Converts omegaconf to namesapce so that can use primitive types."""
     cfg = OmegaConf.to_container(cfg, resolve=True)  # primitive types
@@ -219,3 +212,7 @@ def log_dict(trainer, to_log, is_param):
             trainer.logger.log_metrics(to_log)
     except:
         pass
+
+def apply_featurizer(datamodule, featurizer):
+    """Apply a featurizer on every example of a datamodule and return a new datamodule."""
+    #TODO

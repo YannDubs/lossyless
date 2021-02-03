@@ -18,8 +18,10 @@ seed: 123
 timeout: 1440 # 24 hours
 time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is not when job runs
 long_name: exp_${experiment}/data_${data.name}/dist_${distortion.name}/enc_${encoder.name}/rate_${rate.name}/opt_${optimizer.name}/zdim_${encoder.z_dim}/zs_${loss.n_z_samples}/beta_${loss.beta}/seed_${seed}
+
 is_train_compressor: True # whether to train the compressor, if not will load a pretrained comrpessor if it exists
 is_train_predictor: True # whether to train the predictor if not will skip
+is_compress_once: False # whether to compress / featurize the entire dataset once. Or do it on the fly.
 
 paths:
   # the best practice is not to modify those paths but to simlink them to the places you want

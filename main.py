@@ -16,7 +16,8 @@ import lossyless
 import omegaconf
 import pl_bolts
 import pytorch_lightning as pl
-from lossyless import CompressionModule
+import torch
+from lossyless import CompressionModule, PredictorModule
 from lossyless.callbacks import (
     WandbCodebookPlot,
     WandbLatentDimInterpolator,
@@ -30,7 +31,7 @@ from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
 from utils.helpers import (
-    create_folders,
+    apply_featurizer,
     get_latest_match,
     getattr_from_oneof,
     log_dict,
@@ -40,12 +41,15 @@ from utils.helpers import (
 )
 
 logger = logging.getLogger(__name__)
-RES_COMPRESS_FILENAME = "results_compression.csv"
 COMPRESSOR_CKPNT = "best_compressor.ckpt"
+PREDICTOR_CKPNT = "best_predictor.ckpt"
+COMPRESSOR_RES = "results_compressor.csv"
+PREDICTOR_RES = "results_predictor.csv"
 
 
 @hydra.main(config_name="main", config_path="config")
 def main(cfg):
+    ############## STARTUP ##############
     begin(cfg)
 
     # DATA
@@ -54,37 +58,59 @@ def main(cfg):
     # make sure you are using primitive types from now on because omegaconf does not always work
     cfg = omegaconf2namespace(cfg)
 
-    # COMPRESSOR
-    compression_module = CompressionModule(hparams=cfg)
-
-    trainer = get_trainer(cfg, compression_module, is_compressor=True)
-
-    # some of the module compononents might needs data for initialization
-    initialize_(compression_module, datamodule, trainer, cfg)
-
+    ############## COMPRESSOR (i.e. sender) ##############
     if cfg.is_train_compressor:
-        logger.info("Train compressor ...")
-        trainer.fit(compression_module, datamodule=datamodule)
-        save_pretrained_compressor(cfg, trainer)
+        compressor = CompressionModule(hparams=cfg)
+        comp_trainer = get_trainer(cfg, compressor, is_compressor=True)
+        initialize_compressor_(compressor, datamodule, comp_trainer, cfg)
 
+        logger.info("Train compressor ...")
+        comp_trainer.fit(compressor, datamodule=datamodule)
+        save_pretrained(cfg, comp_trainer, COMPRESSOR_CKPNT)
     else:
         logger.info("Load pretrained compressor ...")
-        compression_module = load_pretrained_compressor(cfg)
+        compressor = load_pretrained(cfg, CompressionModule, COMPRESSOR_CKPNT)
+        comp_trainer = get_trainer(cfg, compressor, is_compressor=True)
 
     if cfg.is_train_compressor or cfg.evaluation.is_reevaluate:
         logger.info("Evaluate compressor ...")
-        evaluate_compressor(trainer, datamodule, cfg)
+        evaluate(comp_trainer, datamodule, cfg, COMPRESSOR_RES, is_est_entropies(cfg))
 
-    # # PREDICTION
-    # TODO use for loop for prediction models
-    # TODO should reuse the train/test dataset that were already represented as Z in `evaluate_compression`
-    # TODO should allow changing of the dataset
-    # prediction_module = PredictionModule(hparams=cfg, representer=compression_module)
-    # logger.info("TRAIN / EVALUATE downstream classification.")
-    # trainer.fit(prediction_module, datamodule=datamodule)
-    # evaluate_prediction(trainer, datamodule, cfg)
+    ############## COMMUNICATION (compress and decompress the datamodule) ##############
+    if cfg.is_compress_once:
+        # if you compress once the dataset this is more realistic (and quicker) but requires
+        # more memory as the compressed dataset will be saved to file
+        datamodule = apply_featurizer(datamodule, compressor)
+        featurizer = torch.nn.Identity()
+    else:
+        # this will perform compression on the fly
+        #! one issue is that if using data augmentations you will augment before the featurizer
+        #! which is not realisitic
+        featurizer = compressor
 
-    finalize(cfg, trainer, compression_module)
+    ############## DOWNSTREAM PREDICTOR (i.e. receiver) ##############
+    if cfg.is_train_predictor:
+        predictor = PredictorModule(hparams=cfg, featurizer=featurizer)
+        pred_trainer = get_trainer(cfg, predictor, is_compressor=False)
+        initialize_predictor_(predictor, datamodule, pred_trainer, cfg)
+
+        logger.info("Train predictor ...")
+        pred_trainer.fit(predictor, datamodule=datamodule)
+        save_pretrained(cfg, pred_trainer, PREDICTOR_CKPNT)
+
+    else:
+        logger.info("Load pretrained predictor ...")
+        predictor = load_pretrained(cfg, PredictorModule, PREDICTOR_CKPNT)
+        pred_trainer = get_trainer(cfg, predictor, is_compressor=True)
+
+    if cfg.is_train_predictor or cfg.evaluation.is_reevaluate:
+        logger.info("Evaluate predictor ...")
+        evaluate(pred_trainer, datamodule, cfg, PREDICTOR_RES, False)
+
+    ############## SHUTDOWN ##############
+    finalize(
+        cfg, modules=[compressor, predictor], trainers=[comp_trainer, pred_trainer]
+    )
     logger.info("Finished.")
 
 
@@ -94,16 +120,14 @@ def begin(cfg):
         set_debug(cfg)
 
     pl.seed_everything(cfg.seed)
+
     cfg.paths.work = str(Path.cwd())
-    create_folders(
-        cfg.paths.base_dir,
-        [
-            f"{cfg.paths.results}",
-            f"{cfg.paths.pretrained}",
-            f"{cfg.paths.logs}",
-            f"{cfg.paths.chckpnt}",
-        ],
-    )
+
+    for path in cfg.paths:
+        if isinstance(path, str):
+            Path(path).mkdir(parents=True, exist_ok=True)
+
+    Path(cfg.paths.pretrained.save).mkdir(parents=True, exist_ok=True)
 
     if cfg.rate.range_coder is not None:
         compressai.set_entropy_coder(cfg.rate.range_coder)
@@ -126,19 +150,11 @@ def instantiate_datamodule(cfg):
     cfgd.mode = datamodule.mode
     cfgd.neg_factor = cfgd.length / (2 * cfgd.kwargs.batch_size - 1)
 
-    # TODO clean max_var for multi label multi clf
-    # save real shape of `max_var` if you had to flatten it for batching.
-    with omegaconf.open_dict(cfg):
-        if hasattr(datamodule, "shape_max_var"):
-            cfg.distortion.kwargs.n_classes_multilabel = datamodule.shape_max_var
-            # max_var is such that all tasks are independent are should sum over them
-            cfg.distortion.kwargs.is_sum_over_tasks = True
-
     return datamodule
 
 
-def initialize_(module, datamodule, trainer, cfg):
-    """Uses the data module to set some of the model's param + logging."""
+def initialize_compressor_(module, datamodule, trainer, cfg):
+    """Additional steps needed for intitalization of the compressor + logging."""
 
     # TODO auto lr finder
 
@@ -255,36 +271,41 @@ def get_trainer(cfg, module, is_compressor):
     return trainer
 
 
-def save_pretrained_compressor(cfg, trainer):
+def save_pretrained(cfg, trainer, file):
     """Send best checkpoint for compressor to main directory."""
     dest_path = Path(cfg.paths.pretrained.save)
     dest_path.mkdir(parents=True, exist_ok=True)
-    trainer.save_checkpoint(dest_path / COMPRESSOR_CKPNT, weights_only=True)
+    trainer.save_checkpoint(dest_path / file, weights_only=True)
 
 
-def load_pretrained_compressor(cfg):
+def load_pretrained(cfg, Module, file):
     """Load the best checkpoint from the latest run that has the same name as current run."""
     save_path = Path(cfg.paths.pretrained.load)
     # select the latest checkpoint matching the path
-    chckpnt = get_latest_match(save_path / COMPRESSOR_CKPNT)
-    compression_module = CompressionModule.load_from_checkpoint(chckpnt)
-    return compression_module
+    chckpnt = get_latest_match(save_path / file)
+
+    loaded_module = Module.load_from_checkpoint(chckpnt)
+
+    return loaded_module
 
 
-def evaluate_compressor(trainer, datamodule, cfg):
-    """
-    Evaluate the compression / representation learning by loging all the metrics from the training 
-    and test set from the best bodel. Also computes samples estimates of H_Mlz, H_Ylz which will 
-    probably be better estimates than the lower bounds used during training.
-    """
+def is_est_entropies(cfg):
     # entropy estimation when Z is stochastic will not be good
     if cfg.evaluation.is_est_entropies and cfg.encoder.fam != "deterministic":
         logger.warn("Turning off `is_est_entropies` because stochastic Z.")
-        cfg.evaluation.is_est_entropies = False
+        return False
+    return cfg.evaluation.is_est_entropies
 
+
+def evaluate(trainer, datamodule, cfg, file, is_est_entropies=False):
+    """
+    Evaluate the trainer by loging all the metrics from the training and test set from the best model. 
+    Can also compute sample estimates of soem entropies, which should be better estimates than the 
+    lower bounds used during training.
+    """
     # test on test
     test_res = trainer.test()[0]
-    if cfg.evaluation.is_est_entropies:
+    if is_est_entropies:
         append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
     log_dict(trainer, test_res, is_param=False)
 
@@ -300,9 +321,9 @@ def evaluate_compressor(trainer, datamodule, cfg):
     train_res = replace_keys(train_res, "testtrain/", "")
     test_res = replace_keys(test_res, "test/", "")
     results = pd.DataFrame.from_dict(dict(train=train_res, test=test_res))
-    path = Path(cfg.paths.results) / RES_COMPRESS_FILENAME
+    path = Path(cfg.paths.results) / file
     results.to_csv(path, header=True, index=True)
-    logger.info(f"Logging compressor results to {path}.")
+    logger.info(f"Logging results to {path}.")
 
 
 def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
@@ -322,7 +343,12 @@ def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
     results[f"{prfx}/H_Z"] = H_Z
 
 
-def finalize(cfg, trainer, compression_module):
+def initialize_predictor_(module, datamodule, trainer, cfg):
+    """Additional steps needed for intitalization of the predictor + logging."""
+    # TODO auto lr finder
+
+
+def finalize(cfg, modules, trainers):
     """Finalizes the script."""
 
     logging.shutdown()

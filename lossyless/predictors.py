@@ -1,8 +1,15 @@
+import pytorch_lightning as pl
 import torch
 from pytorch_lightning.metrics.functional import accuracy
 
 from .architectures import FlattenMLP
 from .distortions import mse_or_crossentropy_loss
+
+
+class PredictorModule(pl.LightningModule):
+    """Main network for downstream prediction."""
+
+    # TODO
 
 
 class OnlineEvaluator(torch.nn.Module):
