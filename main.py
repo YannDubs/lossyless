@@ -31,7 +31,7 @@ from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
 from utils.helpers import (
     create_folders,
-    get_latest_dir,
+    get_latest_match,
     getattr_from_oneof,
     log_dict,
     omegaconf2namespace,
@@ -41,6 +41,7 @@ from utils.helpers import (
 
 logger = logging.getLogger(__name__)
 RES_COMPRESS_FILENAME = "results_compression.csv"
+COMPRESSOR_CKPNT = "best_compressor.ckpt"
 
 
 @hydra.main(config_name="main", config_path="config")
@@ -53,12 +54,12 @@ def main(cfg):
     # make sure you are using primitive types from now on because omegaconf does not always work
     cfg = omegaconf2namespace(cfg)
 
-    # COMPRESSION
+    # COMPRESSOR
     compression_module = CompressionModule(hparams=cfg)
 
     trainer = get_trainer(cfg, compression_module, is_compressor=True)
 
-    # some of the module compononets might needs data for initialization
+    # some of the module compononents might needs data for initialization
     initialize_(compression_module, datamodule, trainer, cfg)
 
     if cfg.is_train_compressor:
@@ -68,13 +69,16 @@ def main(cfg):
 
     else:
         logger.info("Load pretrained compressor ...")
-        compression_module = load_pretrained_compressor(cfg, datamodule)
+        compression_module = load_pretrained_compressor(cfg)
 
-    logger.info("Evaluate compressor ...")
-    evaluate_compressor(trainer, datamodule, cfg)
+    if cfg.is_train_compressor or cfg.evaluation.is_reevaluate:
+        logger.info("Evaluate compressor ...")
+        evaluate_compressor(trainer, datamodule, cfg)
 
     # # PREDICTION
+    # TODO use for loop for prediction models
     # TODO should reuse the train/test dataset that were already represented as Z in `evaluate_compression`
+    # TODO should allow changing of the dataset
     # prediction_module = PredictionModule(hparams=cfg, representer=compression_module)
     # logger.info("TRAIN / EVALUATE downstream classification.")
     # trainer.fit(prediction_module, datamodule=datamodule)
@@ -253,25 +257,21 @@ def get_trainer(cfg, module, is_compressor):
 
 def save_pretrained_compressor(cfg, trainer):
     """Send best checkpoint for compressor to main directory."""
-    dest_path = Path(cfg.paths.pretrained)
+    dest_path = Path(cfg.paths.pretrained.save)
     dest_path.mkdir(parents=True, exist_ok=True)
-    trainer.save_checkpoint(dest_path / "best_compressor.ckpt", weights_only=True)
+    trainer.save_checkpoint(dest_path / COMPRESSOR_CKPNT, weights_only=True)
 
 
-def load_pretrained_compressor(cfg, datamodule):
+def load_pretrained_compressor(cfg):
     """Load the best checkpoint from the latest run that has the same name as current run."""
-    breakpoint()
-    curr_path = Path(cfg.paths.pretrained)
-    # select the latest (but not current) checkpoint
-    chckpnt = (
-        get_latest_dir(curr_path.parent, not_eq=curr_path) / "best_compressor.ckpt"
-    )
+    save_path = Path(cfg.paths.pretrained.load)
+    # select the latest checkpoint matching the path
+    chckpnt = get_latest_match(save_path / COMPRESSOR_CKPNT)
     compression_module = CompressionModule.load_from_checkpoint(chckpnt)
-    initialize_(compression_module, datamodule)
     return compression_module
 
 
-def evaluate_compression(trainer, datamodule, cfg):
+def evaluate_compressor(trainer, datamodule, cfg):
     """
     Evaluate the compression / representation learning by loging all the metrics from the training 
     and test set from the best bodel. Also computes samples estimates of H_Mlz, H_Ylz which will 

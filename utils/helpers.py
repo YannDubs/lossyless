@@ -1,9 +1,10 @@
 import collections
+import glob
 import logging
 import os
 from argparse import Namespace
-from pathlib import Path
 from contextlib import contextmanager
+from pathlib import Path
 
 import torch
 from omegaconf import OmegaConf
@@ -59,13 +60,13 @@ def set_debug(cfg):
     os.environ["HYDRA_FULL_ERROR"] = "1"
 
 
-
-def get_latest_dir(path, not_eq=""):
-    """Return the latest dir in path which is not `not_eq`."""
-    path = Path(path)
-    all_dir = (p for p in path.glob("*") if p.is_dir() and p != Path(not_eq))
-    latest_dir = max(all_dir, key=lambda x: x.stat().st_mtime)
-    return latest_dir
+def get_latest_match(pattern):
+    """
+    Return the file that matches the pattern which was modified the latest.
+    """
+    all_matches = (Path(p) for p in glob.glob(str(pattern), recursive=True))
+    latest_match = max(all_matches, key=lambda x: x.stat().st_mtime)
+    return latest_match
 
 
 def update_prepending(to_update, new):
@@ -134,6 +135,7 @@ class StrFormatter:
     def update(self, new_dict):
         """Update the substring replacer dictionary with a new one (missing keys will be prepended)."""
         self.subtring_replace = update_prepending(self.subtring_replace, new_dict)
+
 
 def cont_tuple_to_tuple_cont(container):
     """Converts a container (list, tuple, dict) of tuple to a tuple of container."""
@@ -207,6 +209,7 @@ def all_logging_disabled(highest_level=logging.CRITICAL):
     finally:
         logging.disable(previous_level)
 
+
 def log_dict(trainer, to_log, is_param):
     """Safe logging of param or metrics."""
     try:
@@ -216,4 +219,3 @@ def log_dict(trainer, to_log, is_param):
             trainer.logger.log_metrics(to_log)
     except:
         pass
-
