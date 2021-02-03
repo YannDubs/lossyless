@@ -13,8 +13,7 @@ import torchvision
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 
-from .helpers import (BASE_LOG, plot_density, setup_grid, to_numpy,
-                      undo_normalization)
+from .helpers import BASE_LOG, plot_density, setup_grid, to_numpy, undo_normalization
 
 try:
     import wandb
@@ -387,11 +386,9 @@ class MaxinvDistributionPlot(Callback):
 
                 # ensure cpu because memory ++
                 pl_module_cpu = pl_module.to(torch.device("cpu"))
-                # shape: [batch_size, z_dim]
-                z_hat = pl_module_cpu(x)
 
                 # shape: [batch_size, *x_shape]
-                x_hat = pl_module_cpu.distortion_estimator.q_YlZ(z_hat)
+                x_hat = pl_module_cpu(x, is_features=False)
 
                 # allow computing plots for multiple equivalences (useful for banana without equivalence)
                 equivalences = [equiv] if equiv is not None else self.equivalences

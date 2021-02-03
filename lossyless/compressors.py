@@ -18,7 +18,7 @@ __all__ = ["CompressionModule"]
 logger = logging.getLogger(__name__)
 
 
-class CompressionModule(pl.LightningModule):
+class LearnedCompressionModule(pl.LightningModule):
     """Main network for compression."""
 
     def __init__(self, hparams):
@@ -73,9 +73,7 @@ class CompressionModule(pl.LightningModule):
         )
 
     @auto_move_data  # move data on correct device for inference
-    def forward(
-        self, x, is_compress=False,
-    ):
+    def forward(self, x, is_compress=False, is_features=None):
         """Represents the data `x`.
 
         Parameters
@@ -84,13 +82,26 @@ class CompressionModule(pl.LightningModule):
             Data to represent.
 
         is_compress : bool, optional
-            Whether to return the compressed representation.
+            Whether to perform actual compression. If not will simply apply the discretization as 
+            if we had compressed.
+
+        is_features : bool or None, optional
+            Whether to return the features / codes / representation or the reconstructed example.
+            Recontructed image only works for distortions that predict reconctructions (e.g. VAE),
+            If `None` uses the default from `hparams`.
 
         Returns
         -------
-        z : torch.Tensor of shape=[batch_size, z_dim]
-            Represented data.
+        if is_features:
+            z : torch.Tensor of shape=[batch_size, z_dim]
+                Represented data.
+        else:
+            X_hat : torch.Tensor of shape=[batch_size,  *data.shape]
+                Reconstructed data.
         """
+        if is_features is None:
+            is_features = self.hparams.featurizer.is_features
+
         p_Zlx = self.p_ZlX(x)
         z = p_Zlx.rsample([1])
 
@@ -102,7 +113,13 @@ class CompressionModule(pl.LightningModule):
             z_hat, *_ = self.rate_estimator(z, p_Zlx)
             z_hat = z_hat.squeeze(0)
 
-        return z_hat
+        if is_features:
+            out = z_hat
+        else:
+            x_hat = self.distortion_estimator.q_YlZ(z_hat)
+            out = x_hat
+
+        return out
 
     def step(self, batch):
         cfgl = self.hparams.loss

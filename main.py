@@ -17,7 +17,7 @@ import omegaconf
 import pl_bolts
 import pytorch_lightning as pl
 import torch
-from lossyless import CompressionModule, PredictorModule
+from lossyless import LearnedCompressionModule, PredictorModule
 from lossyless.callbacks import (
     CodebookPlot,
     LatentDimInterpolator,
@@ -60,7 +60,7 @@ def main(cfg):
 
     ############## COMPRESSOR (i.e. sender) ##############
     if cfg.is_train_compressor:
-        compressor = CompressionModule(hparams=cfg)
+        compressor = LearnedCompressionModule(hparams=cfg)
         comp_trainer = get_trainer(cfg, compressor, is_compressor=True)
         initialize_compressor_(compressor, datamodule, comp_trainer, cfg)
 
@@ -69,7 +69,7 @@ def main(cfg):
         save_pretrained(cfg, comp_trainer, COMPRESSOR_CKPNT)
     else:
         logger.info("Load pretrained compressor ...")
-        compressor = load_pretrained(cfg, CompressionModule, COMPRESSOR_CKPNT)
+        compressor = load_pretrained(cfg, LearnedCompressionModule, COMPRESSOR_CKPNT)
         comp_trainer = get_trainer(cfg, compressor, is_compressor=True)
 
     if cfg.is_train_compressor or cfg.evaluation.is_reevaluate:
