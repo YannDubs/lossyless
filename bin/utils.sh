@@ -34,9 +34,12 @@ while getopts ':s:p:m:t:v:a:' flag; do
     m ) 
       mode="${OPTARG}"
       add_kwargs="${add_kwargs} +mode=$mode"
-      prfx="${mode}_"
-      time="60"
       echo "$mode mode ..."
+
+      if  [[ "$mode" != "cpu" ]]; then
+        prfx="${mode}_"
+        time="60"
+      fi
 
       # overwrite max_epochs with the one from the mode
       if  [[ "$mode" == "dev" || "$mode" == "nano" ]]; then

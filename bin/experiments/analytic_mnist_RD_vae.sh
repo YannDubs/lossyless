@@ -28,9 +28,9 @@ $add_kwargs
 
 # every arguments that you are sweeping over
 kwargs_multi="
-distortion=ivae
-loss.beta=0.001
-seed=1
+distortion=ivae,vae
+loss.beta=0.001,0.01,0.1,1,10,100
+seed=1,2,3
 " 
 #loss.beta=0.01,0.03,0.1,0.3,1,3,10,30,100
 
