@@ -25,9 +25,7 @@ class LossylessDataset(abc.ABC):
         `"representative"` is a representative of the equivalence class (always the same).
         `"equiv_x"` is some random equivalent x. `"max_inv"` is the
         maximal invariant. `"max_var"` should be similar to maximal invariant but it should not be
-        invariant, e.g. if the maximal invariant is the unaugmented index then the `max_var` is the
-        augmented index (his ensure that the same losses can be used as with `max_inv`.
-        "target" uses agin the target (i.e. duplicate).
+        invariant. "target" uses agin the target (i.e. duplicate).
 
     equivalence : str or set of str, optional
         Equivalence relationship with respect to which to be invariant. Depends on the dataset.
@@ -61,10 +59,12 @@ class LossylessDataset(abc.ABC):
         """Return a representative element for current Mx."""
         ...
 
-    @abc.abstractmethod
     def get_max_var(self, x, Mx):
         """Return some element which is maximal but non invariant, and is similar form to `max_inv`."""
-        ...
+        # by default not possible
+        raise NotImplementedError(
+            f"`max_var` not implemented for {type(self).__name__}"
+        )
 
     @property
     @abc.abstractmethod
@@ -316,11 +316,6 @@ class LossylessDataModule(LightningDataModule):
         self.target_shape, self.aux_shape = dataset.get_shapes()
         self.shape = dataset.shapes_x_t_Mx["input"]
         self.additional_target = dataset.additional_target
-
-        # TODO clean max_var for multi label multi clf
-        # save real shape of `max_var` if you had to flatten it for batching.
-        if self.additional_target == "max_var" and hasattr(dataset, "shape_max_var"):
-            self.shape_max_var = dataset.shape_max_var
 
     def setup(self, stage=None):
         """Prepare the datasets for the current stage."""

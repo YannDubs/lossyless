@@ -13,8 +13,12 @@ from lossyless.helpers import BASE_LOG, get_normalization
 from torch.utils.data import random_split
 from torchvision import transforms as transform_lib
 from torchvision.datasets import CIFAR10, MNIST, FashionMNIST
-from torchvision.transforms import (ColorJitter, RandomAffine, RandomErasing,
-                                    RandomRotation)
+from torchvision.transforms import (
+    ColorJitter,
+    RandomAffine,
+    RandomErasing,
+    RandomRotation,
+)
 from utils.estimators import discrete_entropy
 
 from .base import LossylessCLFDataset, LossylessDataModule
@@ -106,11 +110,6 @@ class LossylessImgDataset(LossylessCLFDataset):
         notaug_img, _ = self.get_img_target(index)
         notaug_img = self.base_tranform(notaug_img)
         return notaug_img
-
-    def get_max_var(self, x, Mx):
-        raise NotImplementedError(
-            "`max_var` can only be used imsges that are from `LossylessImgAnalyticDataset`,"
-        )
 
     @property
     def entropies(self):
