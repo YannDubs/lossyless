@@ -7,7 +7,12 @@ from torch.nn import functional as F
 
 from .architectures import get_Architecture
 from .distributions import Deterministic, DiagGaussian
-from .helpers import BASE_LOG, kl_divergence, prod, undo_normalization
+from .helpers import (
+    BASE_LOG,
+    kl_divergence,
+    mse_or_crossentropy_loss,
+    undo_normalization,
+)
 
 __all__ = ["get_distortion_estimator"]
 
@@ -21,24 +26,6 @@ def get_distortion_estimator(name, p_ZlX, **kwargs):
 
     else:
         raise ValueError(f"Unkown loss={name}.")
-
-
-def mse_or_crossentropy_loss(Y_hat, target, is_classification, is_sum_over_tasks=False):
-    """Compute the cross entropy for multilabel clf tasks or MSE for regression"""
-
-    if is_classification:
-        loss = F.cross_entropy(Y_hat, target.long(), reduction="none")
-    else:
-        loss = F.mse_loss(Y_hat, target, reduction="none")
-
-    if not is_sum_over_tasks:
-        n_tasks = prod(Y_hat[0, 0, ...].shape)
-        loss = loss / n_tasks  # takes an average over tasks
-
-    batch_size = loss.size(0)
-    loss = loss.view(batch_size, -1).sum(keepdim=True, dim=-1)
-
-    return loss
 
 
 class DirectDistortion(nn.Module):

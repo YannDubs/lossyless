@@ -11,12 +11,13 @@ import numpy as np
 
 import einops
 import torch
+from pl_bolts.optimizers.lars_scheduling import LARSWrapper
 from torch import nn
 from torch.distributions import Distribution, constraints
 from torch.distributions.utils import broadcast_all
+from torch.nn import functional as F
 from torch.nn.utils.rnn import PackedSequence
 from torchvision import transforms as transform_lib
-from torchvision.datasets import CIFAR10
 
 BASE_LOG = 2
 
@@ -367,3 +368,40 @@ def plot_density(p, n_pts=1000, range_lim=0.7, figsize=(7, 7), title=None, ax=No
 
     if title is not None:
         ax.set_title(title)
+
+
+def mse_or_crossentropy_loss(Y_hat, y, is_classification, is_sum_over_tasks=False):
+    """Compute the cross entropy for multilabel clf tasks or MSE for regression"""
+
+    if is_classification:
+        loss = F.cross_entropy(Y_hat, y.long(), reduction="none")
+    else:
+        loss = F.mse_loss(Y_hat, y, reduction="none")
+
+    if not is_sum_over_tasks:
+        n_tasks = prod(Y_hat[0, 0, ...].shape)
+        loss = loss / n_tasks  # takes an average over tasks
+
+    batch_size = loss.size(0)
+    loss = loss.view(batch_size, -1).sum(keepdim=True, dim=-1)
+
+    return loss
+
+
+def append_optimizer_scheduler_(cfg_opt, cfg_trainer, parameters, optimizers, schedulers):
+    """Return the correct optimzier and scheduler."""
+    optimizer = torch.optim.Adam(
+        parameters, lr=cfg_opt.lr, weight_decay=cfg_opt.weight_decay,
+    )
+    if hasattr(cfg_opt, "is_lars") and cfg_opt.is_lars:
+        optimizer = LARSWrapper(optimizer)
+
+    scheduler = get_lr_scheduler(
+        optimizer, epochs=cfg_trainer.max_epochs, **cfg_opt.scheduler
+    )
+
+    optimizers += [optimizer]
+    if scheduler is not None:
+        schedulers += [scheduler]
+
+    return optimizers, schedulers

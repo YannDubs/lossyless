@@ -49,7 +49,8 @@ other:
   is_quick: False # using a "quick" mode and should not log very slow things
   hydra_job_id: ${hydra:job.id} # this is the job id without the sweep number. Useful for filtering and grouping in wandb
 
-optimizer: # might need to be a group at some point
+# TODO optimizers should be a group at somepoint such that you can do optimizer_compressor=adam
+optimizer_compressor: # might need to be a group at some point
   name: adam # not used yet but can change if needed
   lr: 1e-3
   weight_decay: 0
@@ -65,6 +66,14 @@ optimizer_coder :
   scheduler:
     decay_factor: 100
     name: "expdecay"
+
+optimizer_predictor: 
+  name: adam # not used yet but can change if needed
+  lr: 1e-3
+  weight_decay: 0
+  scheduler:
+    name: "expdecay"
+    decay_factor: 100 # by how much to reduce lr during training
 
 logger:
   name: wandb # select which one to use (false for nothing)
@@ -121,6 +130,9 @@ trainer:
   weights_summary: full # full to print show the entire model, top nly prints the top module
   profiler: null # use `simple` or `"advanced"` to find bottleneck
 
+# the trainer predictor will simply update all argumetns in the trainer
+trainer_predictor: {}
+
 ### GROUP DEFAULTS ###
 data:
   name: ???
@@ -138,6 +150,7 @@ data:
     data_dir: ${paths.data}
     batch_size: 128
     reload_dataloaders_every_epoch: ${trainer.reload_dataloaders_every_epoch}
+
 
 featurizer:
   name: ???

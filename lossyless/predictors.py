@@ -1,9 +1,11 @@
 import pytorch_lightning as pl
 import torch
+from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.metrics.functional import accuracy
 
-from .architectures import FlattenMLP
+from .architectures import FlattenMLP, get_Architecture
 from .distortions import mse_or_crossentropy_loss
+from .helpers import append_optimizer_scheduler_
 
 __all__ = ["Predictor", "OnlineEvaluator"]
 
@@ -11,29 +13,101 @@ __all__ = ["Predictor", "OnlineEvaluator"]
 class Predictor(pl.LightningModule):
     """Main network for downstream prediction."""
 
-    # TODO
+    def __init__(self, hparams, featurizer=torch.nn.Identity()):
+        super().__init__()
+        self.save_hyperparameters(hparams)
 
-    # def __init__(self, hparams, featurizer=torch.nn.Identity()):
-    #     super().__init__()
-    #     self.save_hyperparameters(hparams)
+        self.featurizer = featurizer
+        self.featurizer.freeze()
+        self.featurizer.eval()
+        self.is_clf = self.hparams.data.target_is_clf
 
-    #     self.featurizer = featurizer
+        cfg_pred = self.hparams.predictor
+        Architecture = get_Architecture(cfg_pred.arch, **cfg_pred.arch_kwargs)
+        self.predictor = Architecture(featurizer.out_shape, self.hparams.target_shape)
 
-    #     cfg_pred = self.hparams.predictor
-    #     Architecture = get_Architecture(cfg_pred.arch, **cfg_pred.arch_kwargs)
-    #     self.mapper = Architecture(in_shape, self.hparams.data.target_shape)
-    #     self.predictor =
+    @auto_move_data  # move data on correct device for inference
+    def forward(self, x, is_logits=True):
+        """Perform prediction for `x`.
 
-    #     def get_encoder(self):
-    #     """Return encoder: a mapping to a torch.Distribution (conditional distribution)."""
-    #     cfg_enc = self.hparams.encoder
-    #     return CondDist(
-    #         self.hparams.data.shape,
-    #         cfg_enc.z_dim,
-    #         family=cfg_enc.fam,
-    #         Architecture=get_Architecture(cfg_enc.arch, **cfg_enc.arch_kwargs),
-    #         **cfg_enc.fam_kwargs,
-    #     )
+        Parameters
+        ----------
+        x : torch.Tensor of shape=[batch_size, *data.shape]
+            Data to represent.
+
+        is_logit : bool, optional
+            Whether to return the logits instead of classes probablity in case you are using using
+            classification.
+
+        Returns
+        -------
+        Y_pred : torch.Tensor of shape=[batch_size, *target_shape]
+        """
+        with torch.no_grad():
+            # shape: [batch_size,  *featurizer.out_shape]
+            features = self.featurizer(x)  # can be z_hat or x_hat
+
+        # shape: [batch_size,  *target_shape]
+        Y_pred = self.predictor(features)
+
+        if not is_logits and self.is_clf:
+            return Y_pred.softmax(-1)
+
+        return Y_pred
+
+    def step(self, batch):
+        x, y = batch
+
+        # shape: [batch_size,  *target_shape]
+        Y_hat = self(x)
+
+        # Shape: [batch, 1]
+        loss = self.loss(Y_hat, y)
+
+        # Shape: []
+        loss = loss.mean()
+
+        logs = dict(pred_loss=loss)
+        if self.is_clf:
+            logs["pred_acc"] = accuracy(Y_hat.argmax(dim=-1), y)
+
+        return loss
+
+    def loss(self, Y_hat, y):
+        """Compute the MSE or cross entropy loss."""
+        return mse_or_crossentropy_loss(Y_hat, y, self.is_clf)
+
+    def training_step(self, batch, batch_idx):
+        loss, logs = self.step(batch)
+        self.log_dict({f"train/{k}": v for k, v in logs.items()})
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        loss, logs = self.step(batch)
+        self.log_dict(
+            {f"val/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+        )
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        loss, logs = self.step(batch)
+        self.log_dict(
+            {f"test/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+        )
+        return loss
+
+    def configure_optimizers(self):
+
+        optimizers, schedulers = [], []
+        cfg_trainer = self.hparams.trainer
+        cfg_trainer.update(self.hparams.trainer_predictor)  # TODO check
+
+        cfg_opt_pred = self.hparams.optimizer_predictor
+        append_optimizer_scheduler_(
+            cfg_opt_pred, cfg_trainer, self.parameters(), optimizers, schedulers
+        )
+
+        return optimizers, schedulers
 
 
 class OnlineEvaluator(torch.nn.Module):

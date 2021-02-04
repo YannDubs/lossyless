@@ -11,12 +11,16 @@ logger = logging.getLogger(__name__)
 
 
 class ClassicalCompressor(pl.LightningModule):
+    is_features = False  # classical compressors never return Z
+
     def __init__(self, hparams):
         super().__init__()
         self.save_hyperparameters(hparams)
 
         # TODO
         # self.compressor = ...
+
+        self.out_shape = self.hparams.data.shape  # always return reconstruction
 
     @auto_move_data  # move data on correct device for inference
     def forward(self, x, **kwargs):

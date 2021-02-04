@@ -3,13 +3,12 @@ import math
 
 import pytorch_lightning as pl
 import torch
-from pl_bolts.optimizers.lars_scheduling import LARSWrapper
 from pytorch_lightning.core.decorators import auto_move_data
 
 from .architectures import get_Architecture
 from .distortions import get_distortion_estimator
 from .distributions import CondDist
-from .helpers import BASE_LOG, get_lr_scheduler, orderedset
+from .helpers import BASE_LOG, append_optimizer_scheduler_, orderedset
 from .predictors import OnlineEvaluator
 from .rates import get_rate_estimator
 
@@ -29,6 +28,12 @@ class LearnableCompressor(pl.LightningModule):
         self.rate_estimator = self.get_rate_estimator()
         self.distortion_estimator = self.get_distortion_estimator()
         self.online_evaluator = self.get_online_evaluator()
+
+        # governs how the compressor acts when calling it directly
+        self.is_features = self.hparams.featurizer.is_features
+        self.out_shape = (
+            self.hparams.encoder.z_dim if self.is_features else self.hparams.data.shape
+        )
 
     def get_encoder(self):
         """Return encoder: a mapping to a torch.Distribution (conditional distribution)."""
@@ -78,7 +83,7 @@ class LearnableCompressor(pl.LightningModule):
 
         Parameters
         ----------
-        X : torch.Tensor of shape=[batch_size, *data.shape]
+        x : torch.Tensor of shape=[batch_size, *data.shape]
             Data to represent.
 
         is_compress : bool, optional
@@ -100,7 +105,7 @@ class LearnableCompressor(pl.LightningModule):
                 Reconstructed data.
         """
         if is_features is None:
-            is_features = self.hparams.featurizer.is_features
+            is_features = self.is_features
 
         p_Zlx = self.p_ZlX(x)
         z = p_Zlx.rsample([1])
@@ -122,9 +127,8 @@ class LearnableCompressor(pl.LightningModule):
         return out
 
     def step(self, batch):
-        cfgl = self.hparams.loss
         x, (_, aux_target) = batch
-        n_z = cfgl.n_z_samples
+        n_z = self.hparams.loss.n_z_samples
 
         # batch shape: [batch_size] ; event shape: [z_dim]
         p_Zlx = self.p_ZlX(x)
@@ -247,27 +251,19 @@ class LearnableCompressor(pl.LightningModule):
 
     def configure_optimizers(self):
 
+        optimizers, schedulers = [], []
+
         aux_parameters = orderedset(self.rate_estimator.aux_parameters())
         online_parameters = orderedset(self.online_evaluator.aux_parameters())
         is_optimize_coder = len(aux_parameters) > 0
-        epochs = self.hparams.trainer.max_epochs
-
-        optimizers = []
-        schedulers = []
+        cfg_trainer = self.hparams.trainer
 
         # MODEL OPTIMIZER
-        cfgo = self.hparams.optimizer
+        cfg_opt_comp = self.hparams.optimizer_compressor
 
-        optimizer = torch.optim.Adam(
-            self.parameters(), lr=cfgo.lr, weight_decay=cfgo.weight_decay
+        append_optimizer_scheduler_(
+            cfg_opt_comp, cfg_trainer, self.parameters(), optimizers, schedulers
         )
-        if cfgo.is_lars:
-            optimizer = LARSWrapper(optimizer)
-        optimizers += [optimizer]
-
-        scheduler = get_lr_scheduler(optimizer, epochs=epochs, **cfgo.scheduler)
-        if scheduler is not None:
-            schedulers += [scheduler]
 
         # ONLINE EVALUATOR
         # do not use scheduler for online eval because input (representation) is changing
@@ -276,14 +272,9 @@ class LearnableCompressor(pl.LightningModule):
 
         # CODER OPTIMIZER
         if is_optimize_coder:
-            cfgoc = self.hparams.optimizer_coder
-            optimizer_coder = torch.optim.Adam(aux_parameters, lr=cfgoc.lr)
-            optimizers += [optimizer_coder]
-
-            scheduler = get_lr_scheduler(
-                optimizer_coder, epochs=epochs, **cfgoc.scheduler,
+            cfg_opt_cod = self.hparams.optimizer_coder
+            append_optimizer_scheduler_(
+                cfg_opt_cod, cfg_trainer, self.parameters(), optimizers, schedulers
             )
-            if scheduler is not None:
-                schedulers += [scheduler]
 
         return optimizers, schedulers
