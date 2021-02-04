@@ -5,11 +5,35 @@ from pytorch_lightning.metrics.functional import accuracy
 from .architectures import FlattenMLP
 from .distortions import mse_or_crossentropy_loss
 
+__all__ = ["Predictor", "OnlineEvaluator"]
 
-class PredictorModule(pl.LightningModule):
+
+class Predictor(pl.LightningModule):
     """Main network for downstream prediction."""
 
     # TODO
+
+    # def __init__(self, hparams, featurizer=torch.nn.Identity()):
+    #     super().__init__()
+    #     self.save_hyperparameters(hparams)
+
+    #     self.featurizer = featurizer
+
+    #     cfg_pred = self.hparams.predictor
+    #     Architecture = get_Architecture(cfg_pred.arch, **cfg_pred.arch_kwargs)
+    #     self.mapper = Architecture(in_shape, self.hparams.data.target_shape)
+    #     self.predictor =
+
+    #     def get_encoder(self):
+    #     """Return encoder: a mapping to a torch.Distribution (conditional distribution)."""
+    #     cfg_enc = self.hparams.encoder
+    #     return CondDist(
+    #         self.hparams.data.shape,
+    #         cfg_enc.z_dim,
+    #         family=cfg_enc.fam,
+    #         Architecture=get_Architecture(cfg_enc.arch, **cfg_enc.arch_kwargs),
+    #         **cfg_enc.fam_kwargs,
+    #     )
 
 
 class OnlineEvaluator(torch.nn.Module):

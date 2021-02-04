@@ -13,13 +13,13 @@ from .helpers import BASE_LOG, get_lr_scheduler, orderedset
 from .predictors import OnlineEvaluator
 from .rates import get_rate_estimator
 
-__all__ = ["CompressionModule"]
+__all__ = ["LearnableCompressor"]
 
 logger = logging.getLogger(__name__)
 
 
-class LearnedCompressionModule(pl.LightningModule):
-    """Main network for compression."""
+class LearnableCompressor(pl.LightningModule):
+    """Main network for learning a neural compression."""
 
     def __init__(self, hparams):
         super().__init__()

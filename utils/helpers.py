@@ -8,6 +8,7 @@ from pathlib import Path
 
 import torch
 from omegaconf import OmegaConf
+from pytorch_lightning import pl
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +214,14 @@ def log_dict(trainer, to_log, is_param):
     except:
         pass
 
+
 def apply_featurizer(datamodule, featurizer):
     """Apply a featurizer on every example of a datamodule and return a new datamodule."""
-    #TODO
+    # TODO
+
+
+class PlaceholderTrainer(pl.Trainer):
+    """Placeholding pytorch lighning trainer for non trainable / standard compressors."""
+
+    # TODO
+    pass

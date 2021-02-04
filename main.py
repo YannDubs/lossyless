@@ -17,7 +17,7 @@ import omegaconf
 import pl_bolts
 import pytorch_lightning as pl
 import torch
-from lossyless import LearnedCompressionModule, PredictorModule
+from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
 from lossyless.callbacks import (
     CodebookPlot,
     LatentDimInterpolator,
@@ -31,6 +31,7 @@ from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
 from utils.helpers import (
+    PlaceholderTrainer,
     apply_featurizer,
     get_latest_match,
     getattr_from_oneof,
@@ -59,8 +60,15 @@ def main(cfg):
     cfg = omegaconf2namespace(cfg)
 
     ############## COMPRESSOR (i.e. sender) ##############
-    if cfg.is_train_compressor:
-        compressor = LearnedCompressionModule(hparams=cfg)
+    if not cfg.featurizer.is_learnable:
+        logger.info(f"Using classical compressor {cfg.featurizer.type} ...")
+        compressor = ClassicalCompressor(hparams=cfg)
+        comp_trainer = get_trainer(
+            cfg, compressor, is_compressor=True, is_placeholder=True
+        )
+
+    elif cfg.featurizer.is_train:
+        compressor = LearnableCompressor(hparams=cfg)
         comp_trainer = get_trainer(cfg, compressor, is_compressor=True)
         initialize_compressor_(compressor, datamodule, comp_trainer, cfg)
 
@@ -69,28 +77,28 @@ def main(cfg):
         save_pretrained(cfg, comp_trainer, COMPRESSOR_CKPNT)
     else:
         logger.info("Load pretrained compressor ...")
-        compressor = load_pretrained(cfg, LearnedCompressionModule, COMPRESSOR_CKPNT)
+        compressor = load_pretrained(cfg, LearnableCompressor, COMPRESSOR_CKPNT)
         comp_trainer = get_trainer(cfg, compressor, is_compressor=True)
 
-    if cfg.is_train_compressor or cfg.evaluation.is_reevaluate:
+    if cfg.featurizer.is_evaluate:
         logger.info("Evaluate compressor ...")
         evaluate(comp_trainer, datamodule, cfg, COMPRESSOR_RES, is_est_entropies(cfg))
 
     ############## COMMUNICATION (compress and decompress the datamodule) ##############
-    if cfg.is_compress_once:
-        # if you compress once the dataset this is more realistic (and quicker) but requires
-        # more memory as the compressed dataset will be saved to file
-        datamodule = apply_featurizer(datamodule, compressor)
-        featurizer = torch.nn.Identity()
-    else:
+    if cfg.featurizer.is_on_the_fly:
         # this will perform compression on the fly
         #! one issue is that if using data augmentations you will augment before the featurizer
         #! which is not realisitic
         featurizer = compressor
+    else:
+        # compressing once the dataset is more realistic (and quicker) but requires
+        # more memory as the compressed dataset will be saved to file
+        datamodule = apply_featurizer(datamodule, compressor)
+        featurizer = torch.nn.Identity()
 
     ############## DOWNSTREAM PREDICTOR (i.e. receiver) ##############
-    if cfg.is_train_predictor:
-        predictor = PredictorModule(hparams=cfg, featurizer=featurizer)
+    if cfg.predictor.is_train:
+        predictor = Predictor(hparams=cfg, featurizer=featurizer)
         pred_trainer = get_trainer(cfg, predictor, is_compressor=False)
         initialize_predictor_(predictor, datamodule, pred_trainer, cfg)
 
@@ -100,10 +108,10 @@ def main(cfg):
 
     else:
         logger.info("Load pretrained predictor ...")
-        predictor = load_pretrained(cfg, PredictorModule, PREDICTOR_CKPNT)
+        predictor = load_pretrained(cfg, Predictor, PREDICTOR_CKPNT)
         pred_trainer = get_trainer(cfg, predictor, is_compressor=True)
 
-    if cfg.is_train_predictor or cfg.evaluation.is_reevaluate:
+    if cfg.predictor.is_evaluate:
         logger.info("Evaluate predictor ...")
         evaluate(pred_trainer, datamodule, cfg, PREDICTOR_RES, False)
 
@@ -251,8 +259,10 @@ def get_logger(cfg, module):
     return logger
 
 
-def get_trainer(cfg, module, is_compressor):
+def get_trainer(cfg, module, is_compressor, is_placeholder=False):
     """Instantiate trainer."""
+    if is_placeholder:
+        return PlaceholderTrainer()
 
     # Resume training ?
     curr = "compressor" if is_compressor else "predictor"

@@ -19,9 +19,9 @@ timeout: 1440 # 24 hours
 time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is not when job runs
 long_name: exp_${experiment}/data_${data.name}/dist_${distortion.name}/enc_${encoder.name}/rate_${rate.name}/opt_${optimizer.name}/zdim_${encoder.z_dim}/zs_${loss.n_z_samples}/beta_${loss.beta}/seed_${seed}
 
-is_train_compressor: True # whether to train the compressor, if not will load a pretrained comrpessor if it exists
+
 is_train_predictor: True # whether to train the predictor if not will skip
-is_compress_once: False # whether to compress / featurize the entire dataset once. Or do it on the fly.
+
 
 paths:
   # the best practice is not to modify those paths but to simlink them to the places you want
@@ -35,10 +35,13 @@ paths:
     save: ${paths.base_dir}/pretrained/${long_name}/jid_${job_id} # directory for saving pretrained models
     load: ${paths.base_dir}/pretrained/${long_name}/*  # directory for loading pretrained models if you use ** or * it will glob all matching files and take the latest
   
-  
+featurizer:
+
+
+
 evaluation:
   is_est_entropies: False # whether to evaluate sample estimates of the entropies H[Y|Z], H[M(X)|Z], H[Z] should only use it with deterministic Z
-  is_reevaluate: False
+
 
 other:
   # some meta information that can be useful for internal stuff (usually dirty workarounds or for logging)
@@ -135,6 +138,19 @@ data:
     data_dir: ${paths.data}
     batch_size: 128
     reload_dataloaders_every_epoch: ${trainer.reload_dataloaders_every_epoch}
+
+featurizer:
+  name: ???
+  is_learnable: ??? # whether learnable / neural compressor (rather than classical such as jpeg)
+  is_on_the_fly: True
+  is_features: True # whether the featurizer should output z_hat (rather than x_hat). This says what input to use for the predictor
+  is_train: True # whether to train the compressor, if not will load a pretrained comrpessor if it exists. Only if `is_learnable`
+  is_evaluate: False
+
+predictor:
+  name: ???
+  is_train: True # whether to train the compressor, if not will load a pretrained comrpessor if it exists. Only if `is_learnable`
+  is_evaluate: False
 
 encoder:
   name: ???
