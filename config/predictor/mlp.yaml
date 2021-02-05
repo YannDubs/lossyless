@@ -2,4 +2,4 @@
 name: mlp
 arch: mlp 
 arch_kwargs:
-  complexity: 2
+  hid_dim: 1024
