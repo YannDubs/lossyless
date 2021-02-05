@@ -50,13 +50,13 @@ class LossylessDataset(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def sample_equivalence_action(self):
-        """Sample a function that brings any x to an equivalent x', e.g. group action."""
+    def get_representative(self, Mx):
+        """Return a representative element for current Mx."""
         ...
 
     @abc.abstractmethod
-    def get_representative(self, Mx):
-        """Return a representative element for current Mx."""
+    def get_equiv_x(self, x, Mx):
+        """Return some other random element from same equivalence class."""
         ...
 
     def get_max_var(self, x, Mx):
@@ -87,16 +87,17 @@ class LossylessDataset(abc.ABC):
     def __getitem__(self, index):
         x, target, Mx = self.get_x_target_Mx(index)
 
-        targets = [target]
-        targets += self.toadd_target(self.additional_target, x, target, Mx)
+        if self.additional_target is None:
+            targets = target
+        else:
+            targets = [target]
+            targets += self.toadd_target(self.additional_target, x, target, Mx)
 
         return x, targets
 
     def toadd_target(self, additional_target, x, target, Mx):
 
-        if additional_target is None:
-            to_add = [[]]  # just so that all the code is the same
-        elif additional_target == "input":
+        if additional_target == "input":
             to_add = [x]
         elif additional_target == "representative":
             # representative element from same equivalence class
@@ -117,13 +118,6 @@ class LossylessDataset(abc.ABC):
             raise ValueError(f"Unkown additional_target={additional_target}")
 
         return to_add
-
-    def get_equiv_x(self, x, Mx):
-        """Return some other random element from same equivalence class."""
-
-        rep = self.get_representative(Mx)
-        action = self.sample_equivalence_action()
-        return action(rep)
 
     def get_is_clf(self):
         """Return `is_clf` for the target and aux_target."""

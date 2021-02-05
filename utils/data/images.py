@@ -66,8 +66,8 @@ class LossylessImgDataset(LossylessCLFDataset):
         self.is_augment_val = is_augment_val
         self.is_normalize = is_normalize
 
-        self.base_tranform = self.get_base_transform()  # base transform
-        self.aug_transform = self.get_aug_transform()  # real augmentation
+        self.base_tranform = self.get_base_transform()
+        self.PIL_augment, self.tensor_augment = self.get_curr_augmentations()
 
     @abc.abstractmethod
     def get_img_target(self, index):
@@ -77,34 +77,35 @@ class LossylessImgDataset(LossylessCLFDataset):
     def get_x_target_Mx(self, index):
         """Return the correct example, target, and maximal invariant."""
         img, target = self.get_img_target(index)
+        img = self.PIL_augment(img)
         img = self.base_tranform(img)
-        img = self.aug_transform(img)
+        img = self.tensor_augment(img)
         max_inv = index
         return img, target, max_inv
 
     @property
     def augmentations(self):
-        return {
-            "rotation": RandomRotation(60),
-            "y_translation": RandomAffine(0, translate=(0.1, 0.1)),
-            "x_translation": RandomAffine(0, translate=(0.1, 0.1)),
-            "scale": RandomAffine(0, scale=(0.8, 1.2)),
-            "color": ColorJitter(
-                brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
-            ),
-            "erasing": RandomErasing(value=0.5),
-        }
+        """
+        Return a dictortionary of dictionaries containing all possible augmentations of interest.
+        first dictionary say which kind of data they act on.
+        """
+        return dict(
+            PIL={
+                "rotation": RandomRotation(60),
+                "y_translation": RandomAffine(0, translate=(0.1, 0.1)),
+                "x_translation": RandomAffine(0, translate=(0.1, 0.1)),
+                "scale": RandomAffine(0, scale=(0.8, 1.2)),
+                "color": ColorJitter(
+                    brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
+                ),
+            },
+            tensor={"erasing": RandomErasing(value=0.5),},
+        )
 
-    def sample_equivalence_action(self):
-        trnsfs = []
-
-        for equiv in self.equivalence:
-            if equiv in self.augmentations:
-                trnsfs += [self.augmentations[equiv]]
-            else:
-                raise ValueError(f"Unkown `equivalence={equiv}`.")
-
-        return transform_lib.Compose(trnsfs)
+    def get_equiv_x(self, x, index):
+        # to load equivalent image can load a same index (transformations will be different)
+        img, _, __ = self.get_x_target_Mx(index)
+        return img
 
     def get_representative(self, index):
         notaug_img, _ = self.get_img_target(index)
@@ -139,13 +140,27 @@ class LossylessImgDataset(LossylessCLFDataset):
 
         return transform_lib.Compose(trnsfs)
 
-    def get_aug_transform(self):
-        """Return the augmentations transorms."""
+    def get_augmentations(self):
+        """Return the augmentations transorms (tuple for PIL and tensor)."""
+        PIL_augment, tensor_augment = [], []
+        for equiv in self.equivalence:
+            if equiv in self.augmentations["PIL"]:
+                PIL_augment += [self.augmentations["PIL"][equiv]]
+            elif equiv in self.augmentations["tensor"]:
+                tensor_augment += [self.augmentations["tensor"][equiv]]
+            else:
+                raise ValueError(f"Unkown `equivalence={equiv}`.")
 
+        return transform_lib.Compose(PIL_augment), transform_lib.Compose(tensor_augment)
+
+    def get_curr_augmentations(self):
+        """Return the current augmentations transorms (tuple for PIL and tensor)."""
         if self.is_augment_val or self.train:
-            return self.sample_equivalence_action()
+            PIL_augment, tensor_augment = self.get_augmentations()
+            return PIL_augment, tensor_augment
         else:
-            return transform_lib.Compose([])  # identity
+            identity = transform_lib.Compose([])
+            return identity, identity
 
     def __len__(self):
         return len(self.data)
@@ -349,16 +364,18 @@ class GalaxyDataset(LossylessImgDataset):
 
     @property
     def augmentations(self):
-        return {
-            "rotation": RandomRotation(60),
-            "y_translation": RandomAffine(0, translate=(0.1, 0.1)),
-            "x_translation": RandomAffine(0, translate=(0.1, 0.1)),
-            "scale": RandomAffine(0, scale=(0.8, 1.2)),
-            "color": ColorJitter(
-                brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
-            ),
-            "erasing": RandomErasing(value=0.5),
-        }
+        return dict(
+            PIL={
+                "rotation": RandomRotation(60),
+                "y_translation": RandomAffine(0, translate=(0.1, 0.1)),
+                "x_translation": RandomAffine(0, translate=(0.1, 0.1)),
+                "scale": RandomAffine(0, scale=(0.8, 1.2)),
+                "color": ColorJitter(
+                    brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
+                ),
+            },
+            tensor={"erasing": RandomErasing(value=0.5),},
+        )
 
     @property
     def is_clf_x_t_Mx(self):

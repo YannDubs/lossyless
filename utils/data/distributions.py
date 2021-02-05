@@ -127,6 +127,11 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
         else:
             raise ValueError(f"Unkown equivalence={self.equivalence}.")
 
+    def get_equiv_x(self, x, Mx):
+        rep = self.get_representative(Mx)
+        action = self.sample_equivalence_action()
+        return action(rep)
+
     @property
     def entropies(self):
         if hasattr(self, "_entropies"):

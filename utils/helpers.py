@@ -6,9 +6,9 @@ from argparse import Namespace
 from contextlib import contextmanager
 from pathlib import Path
 
+import pytorch_lightning as pl
 import torch
 from omegaconf import OmegaConf
-from pytorch_lightning import pl
 
 logger = logging.getLogger(__name__)
 
