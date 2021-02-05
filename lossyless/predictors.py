@@ -13,18 +13,23 @@ __all__ = ["Predictor", "OnlineEvaluator"]
 class Predictor(pl.LightningModule):
     """Main network for downstream prediction."""
 
-    def __init__(self, hparams, featurizer=torch.nn.Identity()):
+    def __init__(self, hparams, featurizer=None):
         super().__init__()
         self.save_hyperparameters(hparams)
-
-        self.featurizer = featurizer
-        self.featurizer.freeze()
-        self.featurizer.eval()
         self.is_clf = self.hparams.data.target_is_clf
+
+        if featurizer is not None:
+            self.featurizer = featurizer
+            self.featurizer.freeze()
+            self.featurizer.eval()
+        else:
+            self.featurizer = torch.nn.Identity()
 
         cfg_pred = self.hparams.predictor
         Architecture = get_Architecture(cfg_pred.arch, **cfg_pred.arch_kwargs)
-        self.predictor = Architecture(featurizer.out_shape, self.hparams.target_shape)
+        self.predictor = Architecture(
+            featurizer.out_shape, self.hparams.data.target_shape
+        )
 
     @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_logits=True):
@@ -71,7 +76,7 @@ class Predictor(pl.LightningModule):
         if self.is_clf:
             logs["pred_acc"] = accuracy(Y_hat.argmax(dim=-1), y)
 
-        return loss
+        return loss, logs
 
     def loss(self, Y_hat, y):
         """Compute the MSE or cross entropy loss."""
@@ -99,12 +104,14 @@ class Predictor(pl.LightningModule):
     def configure_optimizers(self):
 
         optimizers, schedulers = [], []
-        cfg_trainer = self.hparams.trainer
-        cfg_trainer.update(self.hparams.trainer_predictor)  # TODO check
 
         cfg_opt_pred = self.hparams.optimizer_predictor
         append_optimizer_scheduler_(
-            cfg_opt_pred, cfg_trainer, self.parameters(), optimizers, schedulers
+            cfg_opt_pred,
+            self.hparams.trainer,
+            self.parameters(),
+            optimizers,
+            schedulers,
         )
 
         return optimizers, schedulers

@@ -9,14 +9,14 @@ import inspect
 import logging
 from pathlib import Path
 
-import hydra
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from omegaconf import OmegaConf
 
+import hydra
 from lossyless.helpers import BASE_LOG
+from omegaconf import OmegaConf
 from utils.helpers import StrFormatter, omegaconf2namespace
 from utils.visualizations.helpers import kwargs_log_scale, plot_config
 
@@ -55,15 +55,7 @@ PRETTY_RENAMER = StrFormatter(
         "Lr": "Learning Rate",
         "Online Loss": r"$\mathrm{H}_{\theta}[Y|Z]$",
     },
-    to_upper=[
-        "Cifar10",
-        "Mnist",
-        "Mlp",
-        "Vae",
-        "Nce",
-        "Vib",
-        "Adam",
-    ],
+    to_upper=["Cifar10", "Mnist", "Mlp", "Vae", "Nce", "Vib", "Adam",],
 )
 
 
@@ -279,8 +271,7 @@ def single_plot(fn):
             return sns_plot
         else:
             sns_plot.fig.savefig(
-                f"{filename}.png",
-                dpi=self.dpi,
+                f"{filename}.png", dpi=self.dpi,
             )
             plt.close(sns_plot.fig)
 
@@ -364,10 +355,10 @@ class Aggregator:
         results = []
         self.param_names[table_name] = set()
         for path in paths:
-            # rm the last folder and file (resp. job id and filename)
-            path_clean = path.rsplit("/", maxsplit=2)[0]
-            # rm the first 2 folders  (resp. "results" and experiemnt name)
-            path_clean = path_clean.split("/", maxsplit=2)[-1]
+            # rm the last folder and file (filename)
+            path_clean = path.rsplit("/", maxsplit=1)[0]
+            # rm the first folder ("results")
+            path_clean = path_clean.split("/", maxsplit=1)[-1]
 
             # make dict of params
             params = path_to_params(path_clean)
@@ -855,10 +846,7 @@ class Aggregator:
 
         elif mode == "lmplot":
             used_kwargs = dict(
-                legend="full",
-                sharey=sharey,
-                sharex=sharex,
-                legend_out=legend_out,
+                legend="full", sharey=sharey, sharex=sharex, legend_out=legend_out,
             )
             used_kwargs.update(kwargs)
 

@@ -178,7 +178,7 @@ class Resnet(nn.Module):
         first conv, and remove the max pooling layer as done (for cifar10) in
         https://gist.github.com/y0ast/d91d09565462125a1eb75acc65da1469.
 
-    out_dim : int, optional
+    out_shape : int or tuple, optional
         Size of the output.
 
     base : {'resnet18', 'resnet34', 'resnet50', 'resnet101',
@@ -198,17 +198,19 @@ class Resnet(nn.Module):
     def __init__(
         self,
         in_shape,
-        out_dim,
+        out_shape,
         base="resnet18",
         is_pretrained=False,
         norm_layer="batchnorm",
     ):
         super().__init__()
         self.in_shape = in_shape
-        self.out_dim = out_dim
+        self.out_shape = [out_shape] if isinstance(out_shape, int) else out_shape
+        self.out_dim = prod(self.out_shape)
+
         self.resnet = torchvision.models.__dict__[base](
             pretrained=is_pretrained,
-            num_classes=out_dim,
+            num_classes=self.out_dim,
             norm_layer=get_Normalization(norm_layer, 2),
         )
 
@@ -220,12 +222,14 @@ class Resnet(nn.Module):
             self.resnet.maxpool = nn.Identity()
 
         if self.out_dim != 1000:
-            self.resnet.fc = nn.Linear(self.resnet.fc.in_features, out_dim)
+            self.resnet.fc = nn.Linear(self.resnet.fc.in_features, self.out_dim)
 
         self.reset_parameters()
 
     def forward(self, X):
-        return self.resnet(X)
+        Y_pred = self.resnet(X)
+        Y_pred = Y_pred.unflatten(dim=-1, sizes=self.out_shape)
+        return Y_pred
 
     def reset_parameters(self):
         # resnet is already correctly initialized

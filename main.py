@@ -13,10 +13,8 @@ import pandas as pd
 import compressai
 import hydra
 import lossyless
-import omegaconf
 import pl_bolts
 import pytorch_lightning as pl
-import torch
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
 from lossyless.callbacks import (
     CodebookPlot,
@@ -32,7 +30,6 @@ from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
 from utils.helpers import (
     PlaceholderTrainer,
-    apply_featurizer,
     get_latest_match,
     getattr_from_oneof,
     log_dict,
@@ -49,23 +46,25 @@ PREDICTOR_RES = "results_predictor.csv"
 
 
 @hydra.main(config_name="main", config_path="config")
-def main(cfg):
+def main(cfg_hydra):
     ############## STARTUP ##############
-    begin(cfg)
-
-    # DATA
-    datamodule = instantiate_datamodule(cfg)
-
-    # make sure you are using primitive types from now on because omegaconf does not always work
-    cfg = omegaconf2namespace(cfg)
+    begin(cfg_hydra)
 
     ############## COMPRESSOR (i.e. sender) ##############
+    cfg = set_cfg(cfg_hydra, mode="compressor")
+
+    datamodule = instantiate_datamodule(cfg)
+
     if not cfg.featurizer.is_learnable:
         logger.info(f"Using classical compressor {cfg.featurizer.type} ...")
         compressor = ClassicalCompressor(hparams=cfg)
         comp_trainer = get_trainer(
             cfg, compressor, is_compressor=True, is_placeholder=True
         )
+
+        # DEV cannot currently use the standard comrpessor
+        cfg.featurizer.is_on_the_fly = True
+        cfg.featurizer.is_evaluate = False
 
     elif cfg.featurizer.is_train:
         compressor = LearnableCompressor(hparams=cfg)
@@ -85,20 +84,26 @@ def main(cfg):
         evaluate(comp_trainer, datamodule, cfg, COMPRESSOR_RES, is_est_entropies(cfg))
 
     ############## COMMUNICATION (compress and decompress the datamodule) ##############
+    cfg.stage = "communication"
     if cfg.featurizer.is_on_the_fly:
         # this will perform compression on the fly
         #! one issue is that if using data augmentations you will augment before the featurizer
         #! which is not realisitic
-        featurizer = compressor
+        onfly_featurizer = compressor
+        pre_featurizer = None
     else:
         # compressing once the dataset is more realistic (and quicker) but requires
         # more memory as the compressed dataset will be saved to file
-        datamodule = apply_featurizer(datamodule, compressor)
-        featurizer = torch.nn.Identity()
+        onfly_featurizer = None
+        pre_featurizer = compressor
 
     ############## DOWNSTREAM PREDICTOR (i.e. receiver) ##############
+    cfg = set_cfg(cfg_hydra, mode="predictor")
+
+    datamodule = instantiate_datamodule(cfg, pre_featurizer=pre_featurizer)
+
     if cfg.predictor.is_train:
-        predictor = Predictor(hparams=cfg, featurizer=featurizer)
+        predictor = Predictor(hparams=cfg, featurizer=onfly_featurizer)
         pred_trainer = get_trainer(cfg, predictor, is_compressor=False)
         initialize_predictor_(predictor, datamodule, pred_trainer, cfg)
 
@@ -116,6 +121,7 @@ def main(cfg):
         evaluate(pred_trainer, datamodule, cfg, PREDICTOR_RES, False)
 
     ############## SHUTDOWN ##############
+    cfg.stage = "shutdown"
     finalize(
         cfg, modules=[compressor, predictor], trainers=[comp_trainer, pred_trainer]
     )
@@ -131,20 +137,45 @@ def begin(cfg):
 
     cfg.paths.work = str(Path.cwd())
 
-    for path in cfg.paths:
-        if isinstance(path, str):
-            Path(path).mkdir(parents=True, exist_ok=True)
-
-    Path(cfg.paths.pretrained.save).mkdir(parents=True, exist_ok=True)
-
     if cfg.rate.range_coder is not None:
         compressai.set_entropy_coder(cfg.rate.range_coder)
 
     logger.info(f"Running {cfg.long_name} from {cfg.paths.work}.")
 
 
-def instantiate_datamodule(cfg):
+def set_cfg(cfg, mode):
+    """Set the configurations for a specfiic mode."""
+    cfg = omegaconf2namespace(cfg)  # compy and ensure that using real python types
+    if mode == "compressor":
+        cfg.stage = "compressor"
+
+    elif mode == "predictor":
+        # ensure that checkpointing and logging in different folders if using multiple predictors
+        cfg.stage = f"pred_{cfg.predictor.name}"
+        # only need target
+        cfg.data.kwargs.dataset_kwargs.additional_target = None
+
+        cfg_ckpt = cfg.callbacks.ModelCheckpoint
+        cfg_ckpt.update(cfg.callbacks.ModelCheckpoint_predictor)
+
+        cfg.trainer.update(cfg.trainer_predictor)
+
+    # make sure all paths exist
+    for _, path in cfg.paths.items():
+        if isinstance(path, str):
+            Path(path).mkdir(parents=True, exist_ok=True)
+
+    Path(cfg.paths.pretrained.save).mkdir(parents=True, exist_ok=True)
+
+    return cfg
+
+
+def instantiate_datamodule(cfg, pre_featurizer=None):
     """Instantiate dataset."""
+
+    if pre_featurizer is not None:
+        pass  # TODO (probabby give to datamodule)
+
     cfgd = cfg.data
     datamodule = get_datamodule(cfgd.dataset)(**cfgd.kwargs)
     datamodule.prepare_data()
@@ -213,9 +244,8 @@ def get_callbacks(cfg, is_compressor):
                         MaxinvDistributionPlot(),
                     ]
 
-    curr = "compressor" if is_compressor else "predictor"
-    ckwargs = cfg.callbacks[f"ModelCheckpoint_{curr}"]
-    callbacks += [ModelCheckpoint(**ckwargs)]
+    cfg_ckpt = cfg.callbacks.ModelCheckpoint
+    callbacks += [ModelCheckpoint(**cfg_ckpt)]
 
     for name in cfg.callbacks.additional:
         cllbck_kwargs = cfg.callbacks.get(name, {})
@@ -265,11 +295,9 @@ def get_trainer(cfg, module, is_compressor, is_placeholder=False):
         return PlaceholderTrainer()
 
     # Resume training ?
-    curr = "compressor" if is_compressor else "predictor"
-    ckwargs = cfg.callbacks[f"ModelCheckpoint_{curr}"]
-    last_chckpnt = Path(ckwargs.dirpath) / "last.ckpt"
+    last_chckpnt = Path(cfg.callbacks.ModelCheckpoint.dirpath) / "last.ckpt"
     if last_chckpnt.exists():
-        cfg.trainer.resume_from_checkpoint = last_chckpnt
+        cfg.trainer.resume_from_checkpoint = str(last_chckpnt)
 
     trainer = pl.Trainer(
         logger=get_logger(cfg, module),
