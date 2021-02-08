@@ -35,6 +35,12 @@ paths:
 
 evaluation:
   is_est_entropies: False # whether to evaluate sample estimates of the entropies H[Y|Z], H[M(X)|Z], H[Z] should only use it with deterministic Z
+  featurizer:
+    ckpt_path: "best"
+    is_evaluate: ${featurizer.is_train}
+  predictor:
+    ckpt_path: "best"
+    is_evaluate: ${predictor.is_train}
 
 other:
   # some meta information that can be useful for internal stuff (usually dirty workarounds or for logging)
@@ -154,12 +160,10 @@ featurizer:
   is_on_the_fly: True
   is_features: ${featurizer.is_learnable} # whether the featurizer should output z_hat (rather than x_hat). This says what input to use for the predictor
   is_train: True # whether to train the compressor, if not will load a pretrained comrpessor if it exists. Only if `is_learnable`
-  is_evaluate: ${featurizer.is_train}
 
 predictor:
   name: ???
   is_train: True 
-  is_evaluate: ${featurizer.is_train}
   arch: ???
   arch_kwargs: {}
 

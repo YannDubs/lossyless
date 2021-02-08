@@ -1,4 +1,4 @@
-# @package _group_
-name: neural
-is_learnable: True 
-is_evaluate: False
+# @package _global_
+featurizer:
+  name: neural
+  is_learnable: True 

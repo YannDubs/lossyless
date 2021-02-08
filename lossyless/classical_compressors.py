@@ -1,13 +1,128 @@
 import logging
-import math
+
+import PIL
 
 import pytorch_lightning as pl
 import torch
+import torch.nn as nn
+from compressai.utils.bench import codecs
 from pytorch_lightning.core.decorators import auto_move_data
+from torchvision.transforms import ToPILImage, ToTensor
+
+from .helpers import Normalizer, UnNormalizer, dict_mean
 
 __all__ = ["ClassicalCompressor"]
 
 logger = logging.getLogger(__name__)
+
+
+class PillowCodec(codecs.PillowCodec):
+    def __init__(self, quality, *args):
+        super().__init__(args)
+        self.to_PIL = ToPILImage()
+        self.to_tensor = ToTensor()
+        self.quality = quality
+
+    def batch_run(self, tensors, return_rec=True, return_metrics=True):
+        """Perform compression on a batch of tensors."""
+        batch, channel, height, width = tensors.shape
+        device = tensors.device
+
+        outs = []
+        recs = []
+        if height < 160 or width < 160:
+            return_metrics = False  # cannot use mssim if smaller than 160
+
+        for tensor in tensors:
+            img = self.to_PIL(tensor.cpu().detach())
+            out = self._run(
+                img, self.quality, return_rec=return_rec, return_metrics=return_metrics
+            )
+
+            if return_rec:
+                out, rec = out
+                recs.append(self.to_tensor(rec))
+
+            outs.append(out)
+
+        batch_out = dict_mean(outs)
+        batch_out["n_bits"] = batch_out["bpp"] * height * width
+
+        if return_rec:
+            batch_rec = torch.stack(recs).to(device)
+            return batch_out, batch_rec
+
+        return batch_out
+
+
+class JPEG(PillowCodec):
+    """Use libjpeg linked in Pillow"""
+
+    fmt = "jpeg"
+    _description = f"JPEG. Pillow version {PIL.__version__}"
+
+    @property
+    def name(self):
+        return "JPEG"
+
+
+class WebP(PillowCodec):
+    """Use libwebp linked in Pillow"""
+
+    fmt = "webp"
+    _description = f"WebP. Pillow version {PIL.__version__}"
+
+    @property
+    def name(self):
+        return "WebP"
+
+
+class PNG(PillowCodec):
+    """
+    Use ZLIB linked in Pillow for PNG (lossless) compression. 
+    """
+
+    fmt = "png"
+    _description = f"PNG. Pillow version {PIL.__version__}"
+
+    @property
+    def name(self):
+        return "PNG"
+
+
+class Identity(codecs.Codec):
+    """Placeholding compressor. Only has `run_from_tensor`. """
+
+    _description = f"Identity."
+
+    def __init__(self, *args):
+        super().__init__(args)
+
+    @property
+    def name(self):
+        return "identity"
+
+    def batch_run(self, tensors, return_rec=True, return_metrics=True):
+        """Perform no compression on a batch of tensors."""
+        batch, channel, height, width = tensors.shape
+
+        bpp = torch.finfo(tensors[0].dtype).bits * channel
+        n_bits = bpp * height * width
+        out = {
+            "bpp": bpp,
+            "n_bits": n_bits,
+            "encoding_time": 0,
+            "decoding_time": 0,
+        }
+
+        if return_metrics:
+            out["psnr"] = float("inf")  # division by 0
+            out["ms-ssim"] = 1
+
+        if return_rec:
+            return out, tensors
+
+        return out
 
 
 class ClassicalCompressor(pl.LightningModule):
@@ -16,14 +131,27 @@ class ClassicalCompressor(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
         self.save_hyperparameters(hparams)
-
-        # TODO
-        # self.compressor = ...
-
         self.out_shape = self.hparams.data.shape  # always return reconstruction
 
+        dataset = self.hparams.data.dataset
+        self.unormalizer = UnNormalizer(dataset)
+        self.normalizer = Normalizer(dataset)
+
+        if self.hparams.featurizer.type is None:
+            self.compressor = Identity()
+        else:
+            quality = self.hparams.featurizer.quality
+            if self.hparams.featurizer.type.lower() == "png":
+                self.compressor = PNG(quality)
+            elif self.hparams.featurizer.type.lower() == "jpeg":
+                self.compressor = JPEG(quality)
+            elif self.hparams.featurizer.type.lower() == "webp":
+                self.compressor = WebP(quality)
+            else:
+                raise ValueError(f"Unkown featurizer={self.hparams.featurizer.type}")
+
     @auto_move_data  # move data on correct device for inference
-    def forward(self, x, **kwargs):
+    def forward(self, x, is_return_out=False, **kwargs):
         """Represents the data `x`.
 
         Parameters
@@ -36,84 +164,46 @@ class ClassicalCompressor(pl.LightningModule):
 
         Returns
         -------
-        if is_features:
-            z : torch.Tensor of shape=[batch_size, z_dim]
-                Represented data.
-        else:
-            X_hat : torch.Tensor of shape=[batch_size,  *data.shape]
-                Reconstructed data.
+        X_hat : torch.Tensor of shape=[batch_size,  *data.shape]
+            Reconstructed data.
+
+        out : dict
+            Only if `is_return_out`. Dictionnary containing information shuch as reconstruction quality
+            bits per pixel, compression time...
         """
-        return x
+        x = self.unormalizer(x)  # temporary unormalize for compression
 
-    # def step(self, batch):
-    #     cfgl = self.hparams.loss
-    #     x, (_, aux_target) = batch
-    #     n_z = cfgl.n_z_samples
+        out, x_hat = self.compressor.batch_run(
+            x, return_rec=True, return_metrics=is_return_out,
+        )
 
-    #     # batch shape: [batch_size] ; event shape: [z_dim]
-    #     p_Zlx = self.p_ZlX(x)
+        x_hat = self.normalizer(x_hat)  # reapply normalization
 
-    #     # shape: [n_z, batch_size, z_dim]
-    #     z = p_Zlx.rsample([n_z])
+        if is_return_out:
+            return x_hat, out
 
-    #     # z_hat. shape: [n_z, batch_size, z_dim]
-    #     z_hat, rates, r_logs, r_other = self.rate_estimator(z, p_Zlx)
+        return x_hat
 
-    #     distortions, d_logs, d_other = self.distortion_estimator(
-    #         z_hat, aux_target, p_Zlx
-    #     )
+    def step(self, batch):
+        other = {}
+        loss = 0
+        x, _ = batch
+        _, logs = self(x, is_return_out=True)
+        return loss, logs, other
 
-    #     loss, logs, other = self.loss(rates, distortions)
+    def test_step(self, batch, batch_idx):
+        loss, logs, _ = self.step(batch)
+        self.log_dict(
+            {f"test/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+        )
+        return loss
 
-    #     # to log (dict)
-    #     logs.update(r_logs)
-    #     logs.update(d_logs)
-    #     logs.update(dict(zmin=z.min(), zmax=z.max(), zmean=z.mean()))
+    # uses placeholders (necessary for `setup`)
+    def training_step(self, *args, **kwargs):
+        pass
 
-    #     # any additional information that can be useful (dict)
-    #     other.update(r_other)
-    #     other.update(d_other)
-    #     other["X"] = x[0].detach().cpu()
-    #     other.update(dict(z=z.detach()))
+    def validation_step(self, *args, **kwargs):
+        pass
 
-    #     return loss, logs, other
-
-    # def loss(self, rates, distortions):
-    #     n_z = rates.size(0)
-    #     cfg = self.hparams
-    #     beta = cfg.loss.beta * cfg.rate.factor_beta * cfg.distortion.factor_beta
-
-    #     # loose_loss for plotting. shape: []
-    #     loose_loss = (distortions + beta * rates).mean()
-
-    #     # tightens bound using IWAE: log 1/k sum exp(loss). shape: [batch_size]
-    #     if n_z > 1:
-    #         rates = torch.logsumexp(rates, 0) - math.log(n_z)
-    #         distortions = torch.logsumexp(distortions, 0) - math.log(n_z)
-    #     else:
-    #         distortions = distortions.squeeze(0)
-    #         rates = rates.squeeze(0)
-
-    #     # E_x[...]. shape: shape: []
-    #     rate = rates.mean(0)
-    #     distortion = distortions.mean(0)
-    #     loss = distortion + beta * rate
-
-    #     logs = dict(
-    #         loose_loss=loose_loss / math.log(BASE_LOG),
-    #         loss=loss / math.log(BASE_LOG),
-    #         rate=rate / math.log(BASE_LOG),
-    #         distortion=distortion / math.log(BASE_LOG),
-    #     )
-    #     other = dict()
-
-    #     return loss, logs, other
-
-    # def test_step(self, batch, batch_idx):
-    #     loss, logs, _ = self.step(batch)
-    #     _, online_logs = self.online_evaluator(batch, self)
-    #     logs.update(online_logs)
-    #     self.log_dict(
-    #         {f"test/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
-    #     )
-    #     return loss
+    def configure_optimizers(self, *args, **kwargs):
+        pass

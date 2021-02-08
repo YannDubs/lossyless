@@ -58,13 +58,8 @@ def main(cfg_hydra):
     if not cfg.featurizer.is_learnable:
         logger.info(f"Using classical compressor {cfg.featurizer.type} ...")
         compressor = ClassicalCompressor(hparams=cfg)
-        comp_trainer = get_trainer(
-            cfg, compressor, is_compressor=True, is_placeholder=True
-        )
-
-        # DEV cannot currently use the standard comrpessor
-        cfg.featurizer.is_on_the_fly = True
-        cfg.featurizer.is_evaluate = False
+        comp_trainer = get_trainer(cfg, compressor, is_compressor=True,)
+        placeholder_fit(comp_trainer, compressor, datamodule)
 
     elif cfg.featurizer.is_train:
         compressor = LearnableCompressor(hparams=cfg)
@@ -79,9 +74,16 @@ def main(cfg_hydra):
         compressor = load_pretrained(cfg, LearnableCompressor, COMPRESSOR_CKPNT)
         comp_trainer = get_trainer(cfg, compressor, is_compressor=True)
 
-    if cfg.featurizer.is_evaluate:
+    if cfg.evaluation.featurizer.is_evaluate:
         logger.info("Evaluate compressor ...")
-        evaluate(comp_trainer, datamodule, cfg, COMPRESSOR_RES, is_est_entropies(cfg))
+        evaluate(
+            comp_trainer,
+            datamodule,
+            cfg,
+            COMPRESSOR_RES,
+            is_est_entropies(cfg),
+            ckpt_path=cfg.evaluation.featurizer.ckpt_path,
+        )
 
     ############## COMMUNICATION (compress and decompress the datamodule) ##############
     cfg.stage = "communication"
@@ -116,9 +118,16 @@ def main(cfg_hydra):
         predictor = load_pretrained(cfg, Predictor, PREDICTOR_CKPNT)
         pred_trainer = get_trainer(cfg, predictor, is_compressor=True)
 
-    if cfg.predictor.is_evaluate:
+    if cfg.evaluation.predictor.is_evaluate:
         logger.info("Evaluate predictor ...")
-        evaluate(pred_trainer, datamodule, cfg, PREDICTOR_RES, False)
+        evaluate(
+            pred_trainer,
+            datamodule,
+            cfg,
+            PREDICTOR_RES,
+            False,
+            ckpt_path=cfg.evaluation.predictor.ckpt_path,
+        )
 
     ############## SHUTDOWN ##############
     cfg.stage = "shutdown"
@@ -289,10 +298,10 @@ def get_logger(cfg, module):
     return logger
 
 
-def get_trainer(cfg, module, is_compressor, is_placeholder=False):
+def get_trainer(cfg, module, is_compressor):
     """Instantiate trainer."""
-    if is_placeholder:
-        return PlaceholderTrainer()
+    # if is_placeholder:
+    #     return pl.Trainer()
 
     # Resume training ?
     last_chckpnt = Path(cfg.callbacks.ModelCheckpoint.dirpath) / "last.ckpt"
@@ -307,6 +316,12 @@ def get_trainer(cfg, module, is_compressor, is_placeholder=False):
     )
 
     return trainer
+
+
+def placeholder_fit(trainer, module, datamodule):
+    """Necessary setup of trainer before testing if you don't fit it."""
+    trainer.train_loop.setup_fit(module, None, None, datamodule)
+    trainer.model = module
 
 
 def save_pretrained(cfg, trainer, file):
@@ -335,20 +350,22 @@ def is_est_entropies(cfg):
     return cfg.evaluation.is_est_entropies
 
 
-def evaluate(trainer, datamodule, cfg, file, is_est_entropies=False):
+def evaluate(trainer, datamodule, cfg, file, is_est_entropies=False, ckpt_path="best"):
     """
     Evaluate the trainer by loging all the metrics from the training and test set from the best model. 
     Can also compute sample estimates of soem entropies, which should be better estimates than the 
     lower bounds used during training.
     """
     # test on test
-    test_res = trainer.test()[0]
+    test_res = trainer.test(ckpt_path=ckpt_path)[0]
     if is_est_entropies:
         append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
     log_dict(trainer, test_res, is_param=False)
 
     # test on train
-    train_res = trainer.test(test_dataloaders=datamodule.train_dataloader())[0]
+    train_res = trainer.test(
+        test_dataloaders=datamodule.train_dataloader(), ckpt_path=ckpt_path
+    )[0]
     train_res = replace_keys(train_res, "test", "testtrain")
     if cfg.evaluation.is_est_entropies:
         # ? this can be slow on all training set, is it necessary ?

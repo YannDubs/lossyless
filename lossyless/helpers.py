@@ -22,6 +22,14 @@ from torchvision import transforms as transform_lib
 BASE_LOG = 2
 
 
+def dict_mean(dicts):
+    """Average a list of dictionary."""
+    means = {}
+    for key in dicts[0].keys():
+        means[key] = sum(d[key] for d in dicts) / len(dicts)
+    return means
+
+
 def orderedset(l):
     """Return a list of unique elements."""
     # could use list(dict.fromkeys(l)) in python 3.6+
@@ -234,10 +242,40 @@ STDS = dict(
 )
 
 
+class Normalizer:
+    def __init__(self, dataset):
+        super().__init__()
+        self.normalizer = transform_lib.Normalize(
+            mean=MEANS[dataset], std=STDS[dataset]
+        )
+
+    def __call__(self, x):
+        return self.normalizer(x)
+
+
+class UnNormalizer:
+    def __init__(self, dataset):
+        super().__init__()
+        try:
+            mean, std = MEANS[dataset], STDS[dataset]
+            self.unnormalizer = transform_lib.Normalize(
+                [-m / s for m, s in zip(mean, std)], std=[1 / s for s in std]
+            )
+        except:
+            self.unnormalizer = None
+
+    def __call__(self, x):
+        if x.size(-3) != 3 and self.unnormalizer is None:
+            # if not colored and wasn't in dict
+            return x
+
+        return self.unnormalizer(x)
+
+
 def get_normalization(Dataset):
     """Return corrrect normalization given dataset class."""
     if "cifar10" in Dataset.__name__.lower():
-        return transform_lib.Normalize(mean=MEANS["cifar10"], std=STDS["cifar10"])
+        return Normalizer("cifar10")
     # TODO add galaxy
     else:
         raise ValueError(f"Uknown mean and std for {Dataset}.")
@@ -250,15 +288,9 @@ def undo_normalization(Y_hat, targets, dataset):
     # images are in [0,1] due to `ToTensor` so can use sigmoid to ensure output is also in [0,1]
     Y_hat = torch.sigmoid(Y_hat)
 
-    if Y_hat.size(-3) == 3:
-        # only normalized if color
-        mean, std = MEANS[dataset], STDS[dataset]
-        denormalize = transform_lib.Normalize(
-            [-m / s for m, s in zip(mean, std)], std=[1 / s for s in std]
-        )
-        Y_hat, targets = denormalize(Y_hat), denormalize(targets)
+    unnormalizer = UnNormalizer(dataset)
 
-    return Y_hat, targets
+    return unnormalizer(Y_hat), unnormalizer(targets)
 
 
 def atleast_ndim(x, ndim):
@@ -388,7 +420,9 @@ def mse_or_crossentropy_loss(Y_hat, y, is_classification, is_sum_over_tasks=Fals
     return loss
 
 
-def append_optimizer_scheduler_(cfg_opt, cfg_trainer, parameters, optimizers, schedulers):
+def append_optimizer_scheduler_(
+    cfg_opt, cfg_trainer, parameters, optimizers, schedulers
+):
     """Return the correct optimzier and scheduler."""
     optimizer = torch.optim.Adam(
         parameters, lr=cfg_opt.lr, weight_decay=cfg_opt.weight_decay,

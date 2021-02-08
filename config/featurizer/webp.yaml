@@ -1,5 +1,0 @@
-# @package _group_
-name: webp
-type: jpeg
-is_learnable: False 
-is_evaluate: True
