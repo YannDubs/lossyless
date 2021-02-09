@@ -2,7 +2,6 @@
 
 # debug the model on cpu
 
-
 experiment: debugcpu_${now:%Y-%m-%d_%H-%M-%S}
 timeout: 60
 

@@ -1,4 +1,6 @@
-# @package _group_
+defaults:
+  - base
+
 name: mnist
 dataset: mnist
 
@@ -8,4 +10,3 @@ kwargs:
   dataset_kwargs:
     equivalence: [x_translation, y_translation,rotation,scale] # don't use color changin because black and white
     is_augment_val: True
-

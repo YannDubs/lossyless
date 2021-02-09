@@ -1,0 +1,9 @@
+name: ???
+kwargs:
+  dirpath: ${paths.chckpnt} 
+  monitor: ???
+  mode: ???
+  verbose: true
+  save_last: True
+  save_top_k: 1
+  save_weights_only: false

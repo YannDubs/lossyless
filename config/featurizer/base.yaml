@@ -1,0 +1,5 @@
+name: ???
+is_learnable: ??? # whether learnable / neural compressor (rather than classical such as jpeg)
+is_on_the_fly: True
+is_features: false # whether the featurizer should output z_hat (rather than x_hat). This says what input to use for the predictor
+is_train: True # whether to train the compressor, if not will load a pretrained comrpessor if it exists. Only if `is_learnable`

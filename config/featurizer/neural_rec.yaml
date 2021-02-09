@@ -1,0 +1,7 @@
+defaults:
+  base
+
+# neural compressor that uses x_hat for predicition
+
+name: neural
+is_learnable: True 

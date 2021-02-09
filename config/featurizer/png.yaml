@@ -1,11 +1,6 @@
-# @package _global_
-featurizer:
-  name: png
-  type: png
-  is_learnable: False 
-  quality: 90
+defaults:
+  base_classical
 
-evaluation:
-  is_est_entropies: False # cannot
-  featurizer:
-    ckpt_path: null # has to use current checkpoint (cannot use best because nottrained)
+name: png
+type: png
+quality: 90

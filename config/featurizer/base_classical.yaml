@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  base
+
+featurizer:
+  is_learnable: False 
+
+evaluation:
+  is_est_entropies: False # cannot
+  featurizer:
+    ckpt_path: null # has to use current checkpoint (cannot use best because nottrained)

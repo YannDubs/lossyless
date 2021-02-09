@@ -52,19 +52,19 @@ def main(cfg_hydra):
     begin(cfg_hydra)
 
     ############## COMPRESSOR (i.e. sender) ##############
-    cfg = set_cfg(cfg_hydra, mode="compressor")
+    cfg = set_cfg(cfg_hydra, mode="featurizer")
     datamodule = instantiate_datamodule_(cfg)
     cfg = omegaconf2namespace(cfg)  # ensure real python types (only once cfg are fixed)
 
     if not cfg.featurizer.is_learnable:
         logger.info(f"Using classical compressor {cfg.featurizer.type} ...")
         compressor = ClassicalCompressor(hparams=cfg)
-        comp_trainer = get_trainer(cfg, compressor, is_compressor=True,)
+        comp_trainer = get_trainer(cfg, compressor, is_featurizer=True,)
         placeholder_fit(comp_trainer, compressor, datamodule)
 
     elif cfg.featurizer.is_train:
         compressor = LearnableCompressor(hparams=cfg)
-        comp_trainer = get_trainer(cfg, compressor, is_compressor=True)
+        comp_trainer = get_trainer(cfg, compressor, is_featurizer=True)
         initialize_compressor_(compressor, datamodule, comp_trainer, cfg)
 
         logger.info("Train compressor ...")
@@ -73,7 +73,7 @@ def main(cfg_hydra):
     else:
         logger.info("Load pretrained compressor ...")
         compressor = load_pretrained(cfg, LearnableCompressor, COMPRESSOR_CKPNT)
-        comp_trainer = get_trainer(cfg, compressor, is_compressor=True)
+        comp_trainer = get_trainer(cfg, compressor, is_featurizer=True)
 
     if cfg.evaluation.featurizer.is_evaluate:
         logger.info("Evaluate compressor ...")
@@ -87,7 +87,6 @@ def main(cfg_hydra):
         )
 
     ############## COMMUNICATION (compress and decompress the datamodule) ##############
-    cfg.stage = "communication"
     if cfg.featurizer.is_on_the_fly:
         # this will perform compression on the fly
         #! one issue is that if using data augmentations you will augment before the featurizer
@@ -107,7 +106,7 @@ def main(cfg_hydra):
 
     if cfg.predictor.is_train:
         predictor = Predictor(hparams=cfg, featurizer=onfly_featurizer)
-        pred_trainer = get_trainer(cfg, predictor, is_compressor=False)
+        pred_trainer = get_trainer(cfg, predictor, is_featurizer=False)
         initialize_predictor_(predictor, datamodule, pred_trainer, cfg)
 
         logger.info("Train predictor ...")
@@ -117,7 +116,7 @@ def main(cfg_hydra):
     else:
         logger.info("Load pretrained predictor ...")
         predictor = load_pretrained(cfg, Predictor, PREDICTOR_CKPNT)
-        pred_trainer = get_trainer(cfg, predictor, is_compressor=True)
+        pred_trainer = get_trainer(cfg, predictor, is_featurizer=True)
 
     if cfg.evaluation.predictor.is_evaluate:
         logger.info("Evaluate predictor ...")
@@ -131,7 +130,6 @@ def main(cfg_hydra):
         )
 
     ############## SHUTDOWN ##############
-    cfg.stage = "shutdown"
     finalize(
         cfg, modules=[compressor, predictor], trainers=[comp_trainer, pred_trainer]
     )
@@ -157,19 +155,25 @@ def set_cfg(cfg, mode):
     """Set the configurations for a specific mode."""
     cfg = copy.deepcopy(cfg)  # not inplace
 
-    if mode == "compressor":
-        cfg.stage = "compressor"
+    if mode == "featurizer":
+        cfg.stage = "feat"
+        cfg.long_name = cfg.long_name_feat
+
+        cfg.data.update(cfg.datafeat)
+        cfg.trainer.update(cfg.update_trainer_feat)
+        cfg.checkpoint.update(cfg.checkpoint_feat)
 
     elif mode == "predictor":
-        # ensure that checkpointing and logging in different folders if using multiple predictors
-        cfg.stage = f"pred_{cfg.predictor.name}"
+        cfg.stage = "pred"
+        cfg.long_name = cfg.long_name_ored
+
+        cfg.data.update(cfg.datapred)
+        cfg.trainer.update(cfg.update_trainer_pred)
+        cfg.checkpoint.update(cfg.checkpoint_pred)
+
         # only need target
         cfg.data.kwargs.dataset_kwargs.additional_target = None
 
-        cfg_ckpt = cfg.callbacks.ModelCheckpoint
-        cfg_ckpt.update(cfg.callbacks.ModelCheckpoint_predictor)
-
-        cfg.trainer.update(cfg.trainer_predictor)
     else:
         raise ValueError(f"Unkown mode={mode}.")
 
@@ -208,8 +212,6 @@ def instantiate_datamodule_(cfg, pre_featurizer=None):
 def initialize_compressor_(module, datamodule, trainer, cfg):
     """Additional steps needed for intitalization of the compressor + logging."""
 
-    # TODO auto lr finder
-
     # marginal vampprior
     rate_est = module.rate_estimator
     if hasattr(rate_est, "q_Z") and isinstance(rate_est.q_Z, MarginalVamp):
@@ -234,15 +236,15 @@ def initialize_compressor_(module, datamodule, trainer, cfg):
     log_dict(trainer, entropies, is_param=True)
 
 
-def get_callbacks(cfg, is_compressor):
+def get_callbacks(cfg, is_featurizer):
     """Return list of callbacks."""
     callbacks = []
 
-    if is_compressor:
+    if is_featurizer:
         additional_target = cfg.data.kwargs.dataset_kwargs.additional_target
         is_reconstruct = additional_target in ["representative", "input"]
         can_estimate_Mx = ["representative", "input", "max_var", "max_inv"]
-        if cfg.logger.name in ["wandb", "tensorboard"]:
+        if cfg.logger.is_can_plot_img:
             if cfg.data.mode == "image" and is_reconstruct:
                 callbacks += [
                     LatentDimInterpolator(cfg.encoder.z_dim),
@@ -257,8 +259,7 @@ def get_callbacks(cfg, is_compressor):
                         MaxinvDistributionPlot(),
                     ]
 
-    cfg_ckpt = cfg.callbacks.ModelCheckpoint
-    callbacks += [ModelCheckpoint(**cfg_ckpt)]
+    callbacks += [ModelCheckpoint(**cfg.checkpoint_feat.kwargs)]
 
     for name in cfg.callbacks.additional:
         cllbck_kwargs = cfg.callbacks.get(name, {})
@@ -272,14 +273,14 @@ def get_callbacks(cfg, is_compressor):
 def get_logger(cfg, module):
     """Return coorect logger."""
     if cfg.logger.name == "csv":
-        logger = CSVLogger(**cfg.logger.csv)
+        logger = CSVLogger(**cfg.logger.kwargs)
 
     elif cfg.logger.name == "wandb":
         try:
-            logger = WandbLogger(**cfg.logger.wandb)
+            logger = WandbLogger(**cfg.logger.kwargs)
         except Exception:
             cfg.logger.wandb.offline = True
-            logger = WandbLogger(**cfg.logger.wandb)
+            logger = WandbLogger(**cfg.logger.kwargs)
 
         if cfg.trainer.track_grad_norm == 2:
             # use wandb rather than lightning gradients
@@ -291,9 +292,9 @@ def get_logger(cfg, module):
             )
 
     elif cfg.logger.name == "tensorboard":
-        logger = TensorBoardLogger(**cfg.logger.tensorboard)
+        logger = TensorBoardLogger(**cfg.logger.kwargs)
 
-    elif cfg.logger.name == False:
+    elif cfg.logger.name is None:
         logger = False
 
     else:
@@ -302,7 +303,7 @@ def get_logger(cfg, module):
     return logger
 
 
-def get_trainer(cfg, module, is_compressor):
+def get_trainer(cfg, module, is_featurizer):
     """Instantiate trainer."""
     # if is_placeholder:
     #     return pl.Trainer()
@@ -314,7 +315,7 @@ def get_trainer(cfg, module, is_compressor):
 
     trainer = pl.Trainer(
         logger=get_logger(cfg, module),
-        callbacks=get_callbacks(cfg, is_compressor),
+        callbacks=get_callbacks(cfg, is_featurizer),
         checkpoint_callback=True,
         **cfg.trainer,
     )

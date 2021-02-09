@@ -1,0 +1,18 @@
+name: ???
+dataset: ???
+
+##### the following will be updated at run time #####
+mode: ???
+length: ???
+shape: ???
+target_shape: ???
+aux_shape: ???
+aux_is_clf: ??? 
+target_is_clf: ???
+neg_factor: ??? # useful for contrastive loss. should be len(train_dataset) / (2*batch_size-1)
+#########################################################
+
+kwargs:
+  data_dir: ${paths.data}
+  batch_size: 128
+  reload_dataloaders_every_epoch: ${trainer.reload_dataloaders_every_epoch}

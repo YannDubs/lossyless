@@ -1,4 +1,0 @@
-# @package _global_
-featurizer:
-  name: neural
-  is_learnable: True 

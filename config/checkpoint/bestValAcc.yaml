@@ -1,0 +1,7 @@
+defaults:
+  base
+
+name: bestValAcc
+kwargs:
+  monitor: val/${stage}_acc
+  mode: max
