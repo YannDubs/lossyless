@@ -3,7 +3,7 @@ featurizer:
   name: webp++
   type: webp
   is_learnable: False 
-  quality: 30
+  quality: 70
 
 evaluation:
   is_est_entropies: False # cannot

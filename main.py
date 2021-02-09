@@ -17,17 +17,27 @@ import lossyless
 import pl_bolts
 import pytorch_lightning as pl
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
-from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
-                                 MaxinvDistributionPlot, ReconstructImages)
+from lossyless.callbacks import (
+    CodebookPlot,
+    LatentDimInterpolator,
+    MaxinvDistributionPlot,
+    ReconstructImages,
+)
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import orderedset
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
-from utils.helpers import (get_latest_match, getattr_from_oneof,
-                           learning_rate_finder, log_dict, omegaconf2namespace,
-                           replace_keys, set_debug)
+from utils.helpers import (
+    get_latest_match,
+    getattr_from_oneof,
+    learning_rate_finder,
+    log_dict,
+    omegaconf2namespace,
+    replace_keys,
+    set_debug,
+)
 
 logger = logging.getLogger(__name__)
 COMPRESSOR_CKPNT = "best_compressor.ckpt"
@@ -81,7 +91,7 @@ def main(cfg_hydra):
     if cfg.featurizer.is_on_the_fly:
         # this will perform compression on the fly
         #! one issue is that if using data augmentations you will augment before the featurizer
-        #! which is less realisitic
+        # which is less realisitic (normalization is dealt with correctly though)
         onfly_featurizer = compressor
         pre_featurizer = None
     else:
@@ -91,8 +101,7 @@ def main(cfg_hydra):
         pre_featurizer = compressor
 
     ############## DOWNSTREAM PREDICTOR (i.e. receiver) ##############
-    cfg = copy.deepcopy(cfg_hydra)
-    cfg = set_cfg(cfg_hydra, mode="predictor")
+    cfg = set_cfg(cfg, mode="predictor")
     datamodule = instantiate_datamodule_(cfg, pre_featurizer=pre_featurizer)
     cfg = omegaconf2namespace(cfg)  # ensure real python types (only once cfg are fixed)
 

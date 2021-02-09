@@ -5,7 +5,7 @@ from pytorch_lightning.metrics.functional import accuracy
 
 from .architectures import FlattenMLP, get_Architecture
 from .distortions import mse_or_crossentropy_loss
-from .helpers import append_optimizer_scheduler_
+from .helpers import Timer, append_optimizer_scheduler_
 
 __all__ = ["Predictor", "OnlineEvaluator"]
 
@@ -52,8 +52,11 @@ class Predictor(pl.LightningModule):
             # shape: [batch_size,  *featurizer.out_shape]
             features = self.featurizer(x)  # can be z_hat or x_hat
 
-        # shape: [batch_size,  *target_shape]
-        Y_pred = self.predictor(features)
+        features = features.detach()  # shouldn't be needed
+
+        with Timer() as inference_timer:
+            # shape: [batch_size,  *target_shape]
+            Y_pred = self.predictor(features)
 
         if not is_logits and self.is_clf:
             return Y_pred.softmax(-1)
@@ -72,9 +75,9 @@ class Predictor(pl.LightningModule):
         # Shape: []
         loss = loss.mean()
 
-        logs = dict(pred_loss=loss)
+        logs = dict(loss=loss)
         if self.is_clf:
-            logs["pred_acc"] = accuracy(Y_hat.argmax(dim=-1), y)
+            logs["acc"] = accuracy(Y_hat.argmax(dim=-1), y)
 
         return loss, logs
 
@@ -84,20 +87,20 @@ class Predictor(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
-        self.log_dict({f"train/{k}": v for k, v in logs.items()})
+        self.log_dict({f"train/pred_{k}": v for k, v in logs.items()})
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
         self.log_dict(
-            {f"val/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"val/pred_{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
         )
         return loss
 
     def test_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
         self.log_dict(
-            {f"test/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"test/pred_{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
         )
         return loss
 
@@ -181,8 +184,9 @@ class OnlineEvaluator(torch.nn.Module):
 
         z = z.detach()
 
-        # Shape: [batch, *Y_shape]
-        Y_hat = self.model(z)
+        with Timer() as inference_timer:
+            # Shape: [batch, *Y_shape]
+            Y_hat = self.model(z)
 
         # Shape: [batch, 1]
         loss = mse_or_crossentropy_loss(Y_hat, y, self.is_classification)
@@ -190,7 +194,7 @@ class OnlineEvaluator(torch.nn.Module):
         # Shape: []
         loss = loss.mean()
 
-        logs = dict(online_loss=loss)
+        logs = dict(online_loss=loss, inference_time=inference_timer.duration)
         if self.is_classification:
             logs["online_acc"] = accuracy(Y_hat.argmax(dim=-1), y)
 

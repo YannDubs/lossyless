@@ -9,7 +9,7 @@ from compressai.utils.bench import codecs
 from pytorch_lightning.core.decorators import auto_move_data
 from torchvision.transforms import ToPILImage, ToTensor
 
-from .helpers import Normalizer, UnNormalizer, dict_mean
+from .helpers import Normalizer, UnNormalizer, dict_mean, rename_keys_
 
 __all__ = ["ClassicalCompressor"]
 
@@ -47,6 +47,10 @@ class PillowCodec(codecs.PillowCodec):
 
         batch_out = dict_mean(outs)
         batch_out["n_bits"] = batch_out["bpp"] * height * width
+        rename_keys_(
+            batch_out,
+            {"encoding_time": "sender_time", "decoding_time": "receiver_time"},
+        )
 
         if return_rec:
             batch_rec = torch.stack(recs).to(device)
@@ -112,8 +116,8 @@ class Identity(codecs.Codec):
         out = {
             "bpp": bpp,
             "n_bits": n_bits,
-            "encoding_time": 0,
-            "decoding_time": 0,
+            "sender_time": 0,
+            "receiver_time": 0,
         }
 
         if return_metrics:

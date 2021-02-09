@@ -11,6 +11,7 @@ from .architectures import MLP
 from .distributions import get_marginalDist
 from .helpers import (
     BASE_LOG,
+    Timer,
     atleast_ndim,
     kl_divergence,
     mean,
@@ -153,14 +154,12 @@ class RateEstimator(torch.nn.Module):
         n_z, batch, z_dim = z.shape
         z = einops.rearrange(z, "n_z b d -> (n_z b) d", n_z=n_z)
 
-        start = time.time()
-        all_strings = self.compress(z)
-        enc_time = time.time() - start
+        with Timer() as compress_timer:
+            all_strings = self.compress(z)
 
         if is_log:
-            start = time.time()
-            _ = self.decompress(all_strings)
-            dec_time = time.time() - start
+            with Timer() as decompress_timer:
+                _ = self.decompress(all_strings)
 
         # sum over all latents (for hierachical). mean over batch and n_z.
         n_bytes = sum(mean([len(s) for s in strings]) for strings in all_strings)
@@ -168,7 +167,9 @@ class RateEstimator(torch.nn.Module):
 
         if is_log:
             log = dict(
-                enc_time=enc_time / batch, dec_time=dec_time / batch, n_bits=n_bits
+                compress_time=compress_timer.duration / batch,
+                receiver_time=decompress_timer.duration / batch,
+                n_bits=n_bits,
             )
             return n_bits, log
 

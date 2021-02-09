@@ -2,6 +2,7 @@ import contextlib
 import itertools
 import operator
 import random
+import time
 from collections import OrderedDict
 from functools import reduce
 from numbers import Number
@@ -20,6 +21,24 @@ from torch.nn.utils.rnn import PackedSequence
 from torchvision import transforms as transform_lib
 
 BASE_LOG = 2
+
+
+class Timer:
+    """Timer context manager"""
+    def __enter__(self):
+        """Start a new timer as a context manager"""
+        self.start = time.start()
+        return self
+
+    def __exit__(self, *args):
+        """Stop the context manager timer"""
+        self.end = time.stop()
+        self.duration = self.end - self.start
+
+def rename_keys_(dictionary, renamer):
+    """Rename the keys in a dictionary using the renamer."""
+    for old,new in renamer.items():
+        dictionary[new] = dictionary.pop(old)
 
 
 def dict_mean(dicts):

@@ -8,7 +8,7 @@ from pytorch_lightning.core.decorators import auto_move_data
 from .architectures import get_Architecture
 from .distortions import get_distortion_estimator
 from .distributions import CondDist
-from .helpers import BASE_LOG, append_optimizer_scheduler_, orderedset
+from .helpers import BASE_LOG, Timer, append_optimizer_scheduler_, orderedset
 from .predictors import OnlineEvaluator
 from .rates import get_rate_estimator
 
@@ -130,8 +130,9 @@ class LearnableCompressor(pl.LightningModule):
         x, (_, aux_target) = batch
         n_z = self.hparams.loss.n_z_samples
 
-        # batch shape: [batch_size] ; event shape: [z_dim]
-        p_Zlx = self.p_ZlX(x)
+        with Timer() as encoder_timer:
+            # batch shape: [batch_size] ; event shape: [z_dim]
+            p_Zlx = self.p_ZlX(x)
 
         # shape: [n_z, batch_size, z_dim]
         z = p_Zlx.rsample([n_z])
@@ -152,6 +153,8 @@ class LearnableCompressor(pl.LightningModule):
         if "n_bits" in logs:
             batch_size, channel, height, width = x.shape
             logs["bpp"] = logs["n_bits"] / (height * width)
+            logs["encoder_time"] = encoder_timer.duration / batch_size
+            logs["sender_time"] = logs["encoder_time"] + logs["compress_time"]
 
         # any additional information that can be useful (dict)
         other.update(r_other)
@@ -212,7 +215,7 @@ class LearnableCompressor(pl.LightningModule):
             loss = self.rate_estimator.aux_loss()
             logs = dict(coder_loss=loss)
 
-        self.log_dict({f"train/{k}": v for k, v in logs.items()})
+        self.log_dict({f"train/feat_{k}": v for k, v in logs.items()})
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -221,7 +224,7 @@ class LearnableCompressor(pl.LightningModule):
         _, online_logs = self.online_evaluator(batch, self)
         logs.update(online_logs)
         self.log_dict(
-            {f"val/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"val/feat_{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
         )
         return loss
 
@@ -230,7 +233,7 @@ class LearnableCompressor(pl.LightningModule):
         _, online_logs = self.online_evaluator(batch, self)
         logs.update(online_logs)
         self.log_dict(
-            {f"test/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"test/feat_{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
         )
         return loss
 
