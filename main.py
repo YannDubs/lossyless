@@ -4,6 +4,7 @@ This should be called by `python main.py <conf>` where <conf> sets all configs f
 the file `config/main.yaml` for details about the configs. or use `python main.py -h`.
 """
 
+import copy
 import logging
 from pathlib import Path
 
@@ -16,27 +17,17 @@ import lossyless
 import pl_bolts
 import pytorch_lightning as pl
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
-from lossyless.callbacks import (
-    CodebookPlot,
-    LatentDimInterpolator,
-    MaxinvDistributionPlot,
-    ReconstructImages,
-)
+from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
+                                 MaxinvDistributionPlot, ReconstructImages)
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import orderedset
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
-from utils.helpers import (
-    PlaceholderTrainer,
-    get_latest_match,
-    getattr_from_oneof,
-    log_dict,
-    omegaconf2namespace,
-    replace_keys,
-    set_debug,
-)
+from utils.helpers import (get_latest_match, getattr_from_oneof,
+                           learning_rate_finder, log_dict, omegaconf2namespace,
+                           replace_keys, set_debug)
 
 logger = logging.getLogger(__name__)
 COMPRESSOR_CKPNT = "best_compressor.ckpt"
@@ -52,8 +43,8 @@ def main(cfg_hydra):
 
     ############## COMPRESSOR (i.e. sender) ##############
     cfg = set_cfg(cfg_hydra, mode="compressor")
-
-    datamodule = instantiate_datamodule(cfg)
+    datamodule = instantiate_datamodule_(cfg)
+    cfg = omegaconf2namespace(cfg)  # ensure real python types (only once cfg are fixed)
 
     if not cfg.featurizer.is_learnable:
         logger.info(f"Using classical compressor {cfg.featurizer.type} ...")
@@ -90,7 +81,7 @@ def main(cfg_hydra):
     if cfg.featurizer.is_on_the_fly:
         # this will perform compression on the fly
         #! one issue is that if using data augmentations you will augment before the featurizer
-        #! which is not realisitic
+        #! which is less realisitic
         onfly_featurizer = compressor
         pre_featurizer = None
     else:
@@ -100,9 +91,10 @@ def main(cfg_hydra):
         pre_featurizer = compressor
 
     ############## DOWNSTREAM PREDICTOR (i.e. receiver) ##############
+    cfg = copy.deepcopy(cfg_hydra)
     cfg = set_cfg(cfg_hydra, mode="predictor")
-
-    datamodule = instantiate_datamodule(cfg, pre_featurizer=pre_featurizer)
+    datamodule = instantiate_datamodule_(cfg, pre_featurizer=pre_featurizer)
+    cfg = omegaconf2namespace(cfg)  # ensure real python types (only once cfg are fixed)
 
     if cfg.predictor.is_train:
         predictor = Predictor(hparams=cfg, featurizer=onfly_featurizer)
@@ -153,8 +145,9 @@ def begin(cfg):
 
 
 def set_cfg(cfg, mode):
-    """Set the configurations for a specfiic mode."""
-    cfg = omegaconf2namespace(cfg)  # compy and ensure that using real python types
+    """Set the configurations for a specific mode."""
+    cfg = copy.deepcopy(cfg)  # not inplace
+
     if mode == "compressor":
         cfg.stage = "compressor"
 
@@ -168,6 +161,8 @@ def set_cfg(cfg, mode):
         cfg_ckpt.update(cfg.callbacks.ModelCheckpoint_predictor)
 
         cfg.trainer.update(cfg.trainer_predictor)
+    else:
+        raise ValueError(f"Unkown mode={mode}.")
 
     # make sure all paths exist
     for _, path in cfg.paths.items():
@@ -179,7 +174,7 @@ def set_cfg(cfg, mode):
     return cfg
 
 
-def instantiate_datamodule(cfg, pre_featurizer=None):
+def instantiate_datamodule_(cfg, pre_featurizer=None):
     """Instantiate dataset."""
 
     if pre_featurizer is not None:
@@ -400,7 +395,14 @@ def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
 
 def initialize_predictor_(module, datamodule, trainer, cfg):
     """Additional steps needed for intitalization of the predictor + logging."""
-    # TODO auto lr finder
+    if module.hparams.optimizer_predictor.is_lr_find:
+        old_lr = module.hparams.optimizer_predictor.lr
+        new_lr = learning_rate_finder(module, datamodule, trainer)
+        if old_lr is None:
+            module.hparams.optimizer_predictor.lr = new_lr
+            logger.info(f"Using lr={new_lr} for the predictor.")
+        else:
+            module.hparams.optimizer_predictor.lr = old_lr
 
 
 def finalize(cfg, modules, trainers):

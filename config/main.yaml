@@ -69,7 +69,8 @@ optimizer_coder :
 
 optimizer_predictor: 
   name: adam # not used yet but can change if needed
-  lr: 1e-3
+  lr: 0.003 
+  is_lr_find: true # whether to automatically look for best lr
   weight_decay: 0
   scheduler:
     name: "expdecay"
@@ -114,10 +115,10 @@ callbacks:
 trainer:
   #default_root_dir: ${paths.results}
   max_epochs: 200
-  terminate_on_nan: true
+  terminate_on_nan: false # makes it slower if true
   progress_bar_refresh_rate: 0 # increase to show progress bar
   resume_from_checkpoint: null # string to checkpoint if want to resume
-  gradient_clip_val: 0 # increase to clip grad
+  gradient_clip_val: 3 # 0 means no clip #TODO tune (1 seemed to be good in compressai)
   reload_dataloaders_every_epoch: False
   log_every_n_steps: 100
   

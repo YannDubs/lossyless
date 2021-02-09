@@ -1,30 +1,38 @@
 import collections
+import copy
 import glob
 import logging
 import os
+import types
 from argparse import Namespace
 from contextlib import contextmanager
 from pathlib import Path
 
+import numpy as np
+
 import pytorch_lightning as pl
 import torch
+from lossyless.callbacks import save_img
 from omegaconf import OmegaConf
 
 logger = logging.getLogger(__name__)
 
 
-def omegaconf2namespace(cfg):
+def omegaconf2namespace(cfg, is_allow_missing=False):
     """Converts omegaconf to namesapce so that can use primitive types."""
     cfg = OmegaConf.to_container(cfg, resolve=True)  # primitive types
-    return dict2namespace(cfg)
+    return dict2namespace(cfg, is_allow_missing=is_allow_missing)
 
 
-def dict2namespace(d):
+def dict2namespace(d, is_allow_missing=False, all_keys=""):
     """Converts recursively dictionary to namespace."""
     namespace = NamespaceMap(**d)
     for k, v in d.items():
-        if isinstance(v, dict):
-            namespace[k] = dict2namespace(v)
+        all_keys += f"{k}"
+        if v == "???":
+            raise ValueError(f"Missing value for {all_keys}.")
+        elif isinstance(v, dict):
+            namespace[k] = dict2namespace(v, all_keys + ".")
     return namespace
 
 
@@ -215,13 +223,53 @@ def log_dict(trainer, to_log, is_param):
         pass
 
 
+def learning_rate_finder(
+    module, datamodule, trainer, min_max_lr=[1e-7,10], is_argmin=True
+):
+    """
+    Automatically select the new learning rate and plot the learing rate finder in the `min_max_lr`
+    bounds. If `is_argmin` choses the lr that ields the argmin on the plot (usually larger lr), if 
+    not selects the one with the most negative derivative (usually smaller lr). 
+    """
+    module = copy.deepcopy(module)
+    min_lr, max_lr = min_max_lr
+    module.hparams.optimizer_predictor.lr = min_lr
+    lr_finder = trainer.tuner.lr_find(
+        module, datamodule=datamodule, min_lr=min_lr, max_lr=max_lr
+    )
+
+    if is_argmin:
+        lr_finder.suggestion = types.MethodType(suggest_min_lr, lr_finder)
+
+    fig = lr_finder.plot(suggest=True)
+    try:
+        save_img(module, trainer, fig, "Learning Rate Finder", "")
+    except:
+        pass
+
+    new_lr = lr_finder.suggestion()
+    log_dict(trainer, dict(suggested_lr=new_lr), True)
+
+    return new_lr
+
+
+def suggest_min_lr(self, skip_begin: int = 10, skip_end: int = 1):
+    """ This will propose a suggestion for choice of initial learning rate
+    as the point with smallest lr.
+    """
+    try:
+        loss = np.array(self.results["loss"][skip_begin:-skip_end])
+        loss = loss[np.isfinite(loss)]
+        min_grad = loss.argmin()
+        self._optimal_idx = min_grad + skip_begin
+        return self.results["lr"][self._optimal_idx]
+    except Exception:
+        logger.exception(
+            "Failed to compute suggesting for `lr`. There might not be enough points."
+        )
+        self._optimal_idx = None
+
+
 def apply_featurizer(datamodule, featurizer):
     """Apply a featurizer on every example of a datamodule and return a new datamodule."""
     # TODO
-
-
-class PlaceholderTrainer(pl.Trainer):
-    """Placeholding pytorch lighning trainer for non trainable / standard compressors."""
-
-    # TODO
-    pass
