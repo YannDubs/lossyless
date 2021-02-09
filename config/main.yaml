@@ -70,7 +70,7 @@ optimizer_coder :
 optimizer_predictor: 
   name: adam # not used yet but can change if needed
   lr: 0.003 
-  is_lr_find: true # whether to automatically look for best lr
+  is_lr_find: True # whether to automatically look for best lr (only set the sugggested value if lr is None, if not just plots)
   weight_decay: 0
   scheduler:
     name: "expdecay"
@@ -98,7 +98,10 @@ logger:
     name: ${job_id}
 
 callbacks:
-  additional: []
+  additional: [LearningRateMonitor]
+
+  LearningRateMonitor:
+    logging_interval : epoch
 
   ModelCheckpoint:
     dirpath: ${paths.chckpnt} 

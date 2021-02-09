@@ -28,7 +28,7 @@ logger:
     project: tmp
 
 callbacks:
-  additional: [TrainingDataMonitor,ModuleDataMonitor] # if add other callbacks through additional will be replaced
+  additional: [TrainingDataMonitor,ModuleDataMonitor,"LearningRateMonitor"] # if add other callbacks through additional will be replaced
 
   TrainingDataMonitor:
     log_every_n_steps: 100

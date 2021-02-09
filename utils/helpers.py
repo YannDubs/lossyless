@@ -224,7 +224,7 @@ def log_dict(trainer, to_log, is_param):
 
 
 def learning_rate_finder(
-    module, datamodule, trainer, min_max_lr=[1e-7,10], is_argmin=True
+    module, datamodule, trainer, min_max_lr=[1e-7, 10], is_argmin=True
 ):
     """
     Automatically select the new learning rate and plot the learing rate finder in the `min_max_lr`
@@ -232,6 +232,8 @@ def learning_rate_finder(
     not selects the one with the most negative derivative (usually smaller lr). 
     """
     module = copy.deepcopy(module)
+    trainer = copy.deepcopy(trainer)
+
     min_lr, max_lr = min_max_lr
     module.hparams.optimizer_predictor.lr = min_lr
     lr_finder = trainer.tuner.lr_find(
