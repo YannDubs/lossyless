@@ -245,11 +245,18 @@ STDS = dict(
 class Normalizer:
     def __init__(self, dataset):
         super().__init__()
-        self.normalizer = transform_lib.Normalize(
-            mean=MEANS[dataset], std=STDS[dataset]
-        )
+        try:
+            self.normalizer = transform_lib.Normalize(
+                mean=MEANS[dataset], std=STDS[dataset]
+            )
+        except:
+            self.normalizer = None
 
     def __call__(self, x):
+        if x.size(-3) != 3 and self.normalizer is None:
+            # if not colored and wasn't in dict
+            return x
+
         return self.normalizer(x)
 
 

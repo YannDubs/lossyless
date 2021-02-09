@@ -1,6 +1,6 @@
 # @package _global_
 featurizer:
-  name: jpeg
+  name: jpeg--
   type: jpeg
   is_learnable: False 
   quality: 90

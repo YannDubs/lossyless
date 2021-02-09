@@ -1,6 +1,6 @@
 # @package _global_
 featurizer:
-  name: webp
+  name: webp--
   type: webp
   is_learnable: False 
   quality: 90

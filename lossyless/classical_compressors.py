@@ -66,6 +66,7 @@ class JPEG(PillowCodec):
         return "JPEG"
 
 
+#! webp shouldn't be used with black and white images because converts to colors!!
 class WebP(PillowCodec):
     """Use libwebp linked in Pillow"""
 

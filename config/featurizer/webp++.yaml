@@ -1,9 +1,9 @@
 # @package _global_
 featurizer:
-  name: webp
+  name: webp++
   type: webp
   is_learnable: False 
-  quality: 70
+  quality: 30
 
 evaluation:
   is_est_entropies: False # cannot
