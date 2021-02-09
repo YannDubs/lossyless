@@ -149,6 +149,9 @@ class LearnableCompressor(pl.LightningModule):
         logs.update(r_logs)
         logs.update(d_logs)
         logs.update(dict(zmin=z.min(), zmax=z.max(), zmean=z.mean()))
+        if "n_bits" in logs:
+            batch_size, channel, height, width = x.shape
+            logs["bpp"] = logs["n_bits"] / (height * width)
 
         # any additional information that can be useful (dict)
         other.update(r_other)
@@ -274,7 +277,7 @@ class LearnableCompressor(pl.LightningModule):
         if is_optimize_coder:
             cfg_opt_cod = self.hparams.optimizer_coder
             append_optimizer_scheduler_(
-                cfg_opt_cod, cfg_trainer, self.parameters(), optimizers, schedulers
+                cfg_opt_cod, cfg_trainer, aux_parameters, optimizers, schedulers
             )
 
         return optimizers, schedulers
