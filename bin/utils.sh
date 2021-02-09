@@ -16,20 +16,6 @@ while getopts ':s:p:m:t:v:a:' flag; do
       server="${OPTARG}"
       add_kwargs="${add_kwargs} server=$server"
       echo "$server server ..."
-      case "$server" in
-        learnfair) 
-          add_kwargs="${add_kwargs} hydra/launcher=submitit_slurm"
-          ;;
-        vector) 
-          add_kwargs="${add_kwargs} hydra/launcher=submitit_slurm"
-          ;;
-        qvector) 
-          add_kwargs="${add_kwargs} hydra/launcher=submitit_slurm"
-          ;;
-        local) 
-          add_kwargs="${add_kwargs} hydra/launcher=submitit_local"
-          ;;
-        esac
       ;;
     m ) 
       mode="${OPTARG}"

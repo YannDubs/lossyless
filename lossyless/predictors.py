@@ -108,10 +108,9 @@ class Predictor(pl.LightningModule):
 
         optimizers, schedulers = [], []
 
-        cfg_opt_pred = self.hparams.optimizer_predictor
         append_optimizer_scheduler_(
-            cfg_opt_pred,
-            self.hparams.trainer,
+            self.hparams.optimizer_predictor,
+            self.hparams.scheduler_predictor,
             self.parameters(),
             optimizers,
             schedulers,

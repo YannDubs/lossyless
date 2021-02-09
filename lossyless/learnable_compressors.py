@@ -262,13 +262,14 @@ class LearnableCompressor(pl.LightningModule):
         aux_parameters = orderedset(self.rate_estimator.aux_parameters())
         online_parameters = orderedset(self.online_evaluator.aux_parameters())
         is_optimize_coder = len(aux_parameters) > 0
-        cfg_trainer = self.hparams.trainer
 
-        # MODEL OPTIMIZER
-        cfg_opt_comp = self.hparams.optimizer_compressor
-
+        # COMPRESSOR OPTIMIZER
         append_optimizer_scheduler_(
-            cfg_opt_comp, cfg_trainer, self.parameters(), optimizers, schedulers
+            self.hparams.optimizer_compressor,
+            self.hparams.scheduler_compressor,
+            self.parameters(),
+            optimizers,
+            schedulers,
         )
 
         # ONLINE EVALUATOR
@@ -278,9 +279,12 @@ class LearnableCompressor(pl.LightningModule):
 
         # CODER OPTIMIZER
         if is_optimize_coder:
-            cfg_opt_cod = self.hparams.optimizer_coder
             append_optimizer_scheduler_(
-                cfg_opt_cod, cfg_trainer, aux_parameters, optimizers, schedulers
+                self.hparams.optimizer_coder,
+                self.hparams.scheduler_coder,
+                aux_parameters,
+                optimizers,
+                schedulers,
             )
 
         return optimizers, schedulers

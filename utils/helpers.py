@@ -224,7 +224,7 @@ def log_dict(trainer, to_log, is_param):
 
 
 def learning_rate_finder(
-    module, datamodule, trainer, min_max_lr=[1e-7, 10], is_argmin=True
+    module, datamodule, trainer, min_max_lr=[1e-7, 10], is_argmin=False
 ):
     """
     Automatically select the new learning rate and plot the learing rate finder in the `min_max_lr`

@@ -142,18 +142,18 @@ class ClassicalCompressor(pl.LightningModule):
         self.unormalizer = UnNormalizer(dataset)
         self.normalizer = Normalizer(dataset)
 
-        if self.hparams.featurizer.type is None:
+        if self.hparams.featurizer.mode is None:
             self.compressor = Identity()
         else:
             quality = self.hparams.featurizer.quality
-            if self.hparams.featurizer.type.lower() == "png":
+            if self.hparams.featurizer.mode.lower() == "png":
                 self.compressor = PNG(quality)
-            elif self.hparams.featurizer.type.lower() == "jpeg":
+            elif self.hparams.featurizer.mode.lower() == "jpeg":
                 self.compressor = JPEG(quality)
-            elif self.hparams.featurizer.type.lower() == "webp":
+            elif self.hparams.featurizer.mode.lower() == "webp":
                 self.compressor = WebP(quality)
             else:
-                raise ValueError(f"Unkown featurizer={self.hparams.featurizer.type}")
+                raise ValueError(f"Unkown featurizer={self.hparams.featurizer.mode}")
 
     @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_return_out=False, **kwargs):

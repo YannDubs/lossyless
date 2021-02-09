@@ -25,6 +25,7 @@ BASE_LOG = 2
 
 class Timer:
     """Timer context manager"""
+
     def __enter__(self):
         """Start a new timer as a context manager"""
         self.start = time.start()
@@ -35,9 +36,10 @@ class Timer:
         self.end = time.stop()
         self.duration = self.end - self.start
 
+
 def rename_keys_(dictionary, renamer):
     """Rename the keys in a dictionary using the renamer."""
-    for old,new in renamer.items():
+    for old, new in renamer.items():
         dictionary[new] = dictionary.pop(old)
 
 
@@ -192,39 +194,6 @@ def mean(array):
 def is_pow2(n):
     """Check if a number is a power of 2."""
     return (n != 0) and (n & (n - 1) == 0)
-
-
-def get_lr_scheduler(optimizer, name, epochs=None, decay_factor=None, **kwargs):
-    """Return the correct learning rate scheduler.
-
-    Parameters
-    ----------
-    optimizer : Optimizer
-        Optimizer to wrap.
-
-    name : {None, "expdecay"}U{any torch lr_scheduler}
-        Name of the optimizer to use. "expdecay" uses an exponential decay scheduler where the lr
-        is decayed by `decay_factor` during training. Needs to be given `epochs`. If another `str`
-        it must be a `torch.optim.lr_scheduler` in which case the arguments are given by `kwargs`.
-
-    epochs : int, optional
-        Number of epochs during training.
-
-    decay_factor : int, optional
-        By how much to reduce learning rate during training. Only if `name = "expdecay"`.
-
-    kwargs :
-        Additional arguments to any `torch.optim.lr_scheduler`.
-
-    """
-    if name is None:
-        return None
-    elif name == "expdecay":
-        gamma = (1 / decay_factor) ** (1 / epochs)
-        return torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma)
-    else:
-        Scheduler = getattr(torch.optim.lr_scheduler, name)
-        return Scheduler(optimizer, **kwargs)
 
 
 def kl_divergence(p, q, z_samples=None, is_lower_var=False, is_reduce=True):
@@ -446,22 +415,64 @@ def mse_or_crossentropy_loss(Y_hat, y, is_classification, is_sum_over_tasks=Fals
     return loss
 
 
+def get_lr_scheduler(optimizer, mode, epochs=None, decay_factor=None, **kwargs):
+    """Return the correct learning rate scheduler.
+
+    Parameters
+    ----------
+    optimizer : Optimizer
+        Optimizer to wrap.
+
+    mode : {None, "expdecay"}U{any torch lr_scheduler}
+        Name of the optimizer to use. "expdecay" uses an exponential decay scheduler where the lr
+        is decayed by `decay_factor` during training. Needs to be given `epochs`. If another `str`
+        it must be a `torch.optim.lr_scheduler` in which case the arguments are given by `kwargs`.
+
+    epochs : int, optional
+        Number of epochs during training.
+
+    decay_factor : int, optional
+        By how much to reduce learning rate during training. Only if `name = "expdecay"`.
+
+    kwargs :
+        Additional arguments to any `torch.optim.lr_scheduler`.
+
+    """
+    if mode is None:
+        return None
+    elif mode == "expdecay":
+        gamma = (1 / decay_factor) ** (1 / epochs)
+        return torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma)
+    else:
+        Scheduler = getattr(torch.optim.lr_scheduler, mode)
+        return Scheduler(optimizer, **kwargs)
+
+
+def get_optimizer(parameters, mode, is_lars=False, kwargs={}):
+    """Return an inistantiated optimizer.
+
+    Parameters
+    ----------
+    optimizer : {"gdn"}U{any torch.optim optimizer}
+        Optimizer to use.mode
+    """
+    Optimizer = getattr(torch.optim, mode)
+    optimizer = Optimizer(parameters, **kwargs)
+    if is_lars:
+        optimizer = LARSWrapper(optimizer)
+    return optimizer
+
+
 def append_optimizer_scheduler_(
-    cfg_opt, cfg_trainer, parameters, optimizers, schedulers
+    hparams_opt, hparams_sch, parameters, optimizers, schedulers
 ):
     """Return the correct optimzier and scheduler."""
-    optimizer = torch.optim.Adam(
-        parameters, lr=cfg_opt.lr, weight_decay=cfg_opt.weight_decay,
-    )
-    if hasattr(cfg_opt, "is_lars") and cfg_opt.is_lars:
-        optimizer = LARSWrapper(optimizer)
-
-    scheduler = get_lr_scheduler(
-        optimizer, epochs=cfg_trainer.max_epochs, **cfg_opt.scheduler
-    )
-
+    optimizer = get_optimizer(parameters, **hparams_opt)
     optimizers += [optimizer]
-    if scheduler is not None:
+
+    for mode in hparams_sch.modes:
+        sch_kwargs = hparams_sch.kwargs.get(mode, {})
+        scheduler = get_lr_scheduler(optimizer, mode, **sch_kwargs)
         schedulers += [scheduler]
 
     return optimizers, schedulers

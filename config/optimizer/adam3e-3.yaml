@@ -1,3 +1,5 @@
-name: adam 
-lr: 0.003 
-weight_decay: 0
+name: adam3e-3
+mode: Adam
+kwargs:
+  lr: 0.003 
+  weight_decay: 0

@@ -2,4 +2,4 @@ defaults:
   base_classical
 
 name: none
-type: null
+mode: null

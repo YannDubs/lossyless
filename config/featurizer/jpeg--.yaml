@@ -2,5 +2,5 @@ defaults:
   base_classical
 
 name: jpeg--
-type: jpeg
+mode: jpeg
 quality: 90
