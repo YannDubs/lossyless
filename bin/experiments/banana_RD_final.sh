@@ -6,7 +6,7 @@ notes="
 **Hypothesis**: Should be close to the estimated optimal rate distortion curve, and can approximate it using differential entropies.
 "
 
-# e.g. command: bin/experiments/banana_RD_final.sh -s vector 
+# e.g. command: bin/experiments/banana_RD_final.sh -s vector  -t 720
 
 # parses special mode for running the script
 source `dirname $0`/../utils.sh

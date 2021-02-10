@@ -63,26 +63,26 @@ class LossylessImgAnalyticDataset(LossylessImgDataset):
         super().__init__(*args, **kwargs)
 
     def get_x_target_Mx(self, index):
-        # don't return the target only the max_inv
-        img, _ = self.get_img_target(index)
-        img = self.base_tranform(img)
-        img = self.aug_transform(img)
-        max_inv = index
-        return img, max_inv, max_inv
+        img, _, max_inv = super().get_x_target_Mx(index)
+        target = max_inv
+        return img, target, max_inv
 
     @property
     def augmentations(self):
         shape = self.shapes_x_t_Mx["input"]
-        return {
-            "rotation": RotationAction(self.rv_A, max_angle=60),
-            "y_translation": TranslationAction(
-                self.rv_A, dim=1, max_trnslt=shape[1] // 8
-            ),
-            "x_translation": TranslationAction(
-                self.rv_A, dim=0, max_trnslt=shape[2] // 8
-            ),
-            "scale": ScalingAction(self.rv_A, max_scale=1.2),
-        }
+        return dict(
+            PIL={
+                "rotation": RotationAction(self.rv_A, max_angle=60),
+                "y_translation": TranslationAction(
+                    self.rv_A, dim=1, max_trnslt=shape[1] // 8
+                ),
+                "x_translation": TranslationAction(
+                    self.rv_A, dim=0, max_trnslt=shape[2] // 8
+                ),
+                "scale": ScalingAction(self.rv_A, max_scale=1.2),
+            },
+            tensor={},
+        )
 
     @property
     def entropies(self):
