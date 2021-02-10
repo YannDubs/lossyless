@@ -1,18 +1,31 @@
 # @package _global_
 
-# check that everything is running correctly
+# check that everything is running correctly (single epoch normal)
+timeout: 60
 
-name: dev_${time}
+other:
+  is_quick: True
 
 trainer:
-  fast_dev_run: True
-  weights_summary: top # full to print show the entire model 
   max_epochs: 2
+  log_every_n_steps: 10
+  num_sanity_val_steps: 0 # was giving error
+  # uses 5 % of data
+  limit_val_batches: 0.2
+  limit_train_batches: 0.05
+  limit_test_batches: 0.05
+
+data:
+  kwargs:
+    # use smaller because was giving error
+    batch_size: 128
+    val_batch_size: 128
 
 logger:
   wandb:
-    tags: dev
+    tags: [dev, quick]
     anonymous: true
+    project: tmp
 
 callbacks:
   additional: ["GPUStatsMonitor"] # if add other callbacks through additional will be replaced

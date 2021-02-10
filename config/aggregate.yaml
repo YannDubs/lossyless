@@ -1,0 +1,14 @@
+defaults:
+  - hydra/job_logging: colorlog
+  - hydra/hydra_logging: colorlog
+
+experiment: ???
+mode: [save_tables, plot_metrics] # plot_aux_trnsf, plot_histories, plot_generalization
+is_recolt: True
+col_val_subset : {}
+
+kwargs:
+  save_dir: ${recolt_data.base_dir}results/${save_experiment}/
+  prfx: ""
+  dpi: 300
+  pretty_renamer: {}

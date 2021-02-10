@@ -2,6 +2,7 @@
 distortion:
   name: ince # non-invariant NCE: try to classify unaugmented image. Need to be careful: theoretically you should also have augmented images as negatives
   mode: contrastive
+  factor_beta: 0.005 # compared to ivae gives importance ++ to rate so decrease it (value taken empirically)
   kwargs:
     temperature: 0.1
     is_symmetric: true

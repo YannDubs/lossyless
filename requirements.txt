@@ -4,8 +4,18 @@ hydra_colorlog
 hydra-submitit-launcher
 pytorch-lightning
 pytorch-lightning-bolts
-sklearn
 matplotlib
 seaborn
-kaggle
 git+git://github.com/InterDigitalInc/CompressAI.git#egg=compressai
+pillow
+einops
+pandas
+
+# only necessary when estimting entropies
+ndd
+
+# only necessay for satellite dataset
+kaggle
+
+#only necessary if want to log using wandb
+wandb

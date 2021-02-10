@@ -1,12 +1,14 @@
+import math
 from functools import partial
+from typing import Iterable
+
 import torch
 import torch.nn as nn
-from torch.nn.modules.conv import Conv2d
 import torchvision
-import math
-from typing import Iterable
 from compressai.layers import GDN
-from .helpers import weights_init, batch_flatten, batch_unflatten, prod, is_pow2
+from torch.nn.modules.conv import Conv2d
+
+from .helpers import batch_flatten, batch_unflatten, is_pow2, prod, weights_init
 
 __all__ = ["get_Architecture"]
 

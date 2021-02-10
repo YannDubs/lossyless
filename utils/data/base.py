@@ -1,13 +1,12 @@
 import abc
 from pathlib import Path
 
-import torch
 import numpy as np
-from torch.utils.data import DataLoader
-from pytorch_lightning import LightningDataModule
 
+import torch
 from lossyless.helpers import to_numpy
-
+from pytorch_lightning import LightningDataModule
+from torch.utils.data import DataLoader
 
 DIR = Path(__file__).parents[2].joinpath("data")
 
@@ -39,12 +38,7 @@ class LossylessDataset(abc.ABC):
     """
 
     def __init__(
-        self,
-        *args,
-        additional_target=None,
-        equivalence=None,
-        seed=123,
-        **kwargs,
+        self, *args, additional_target=None, equivalence=None, seed=123, **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
@@ -167,11 +161,7 @@ class LossylessCLFDataset(LossylessDataset):
     """
 
     def __init__(
-        self,
-        *args,
-        n_per_target=None,
-        targets_drop=[],
-        **kwargs,
+        self, *args, n_per_target=None, targets_drop=[], **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
@@ -306,11 +296,22 @@ class LossylessDataModule(LightningDataModule):
         """Dowload and save data on file if needed."""
         raise NotImplementedError()
 
-    def set_info_(self, dataset):
-        """Sets some information from the dataset."""
+    @property
+    def mode(self):
+        """Says what is the mode/type of data. E.g. images, distributions, ...."""
+        raise NotImplementedError()
+
+    @property
+    def dataset(self):
+        """Return the underlying (train) datset ...."""
+        dataset = self.train_dataset
         if isinstance(dataset, torch.utils.data.Subset):
             dataset = dataset.dataset
+        return dataset
 
+    def set_info_(self):
+        """Sets some information from the dataset."""
+        dataset = self.dataset
         self.target_is_clf, self.aux_is_clf = dataset.get_is_clf()
         self.target_shape, self.aux_shape = dataset.get_shapes()
         self.shape = dataset.shapes_x_t_Mx["input"]
@@ -325,50 +326,56 @@ class LossylessDataModule(LightningDataModule):
         """Prepare the datasets for the current stage."""
         if stage == "fit" or stage is None:
             self.train_dataset = self.get_train_dataset(**self.dataset_kwargs)
-            self.set_info_(self.train_dataset)
+            self.set_info_()
             self.val_dataset = self.get_val_dataset(**self.dataset_kwargs)
 
         if stage == "test" or stage is None:
             self.test_dataset = self.get_test_dataset(**self.dataset_kwargs)
 
-    def train_dataloader(self):
-        """Return the training dataloader."""
-        if self.reload_dataloaders_every_epoch:
-            self.train_dataset = self.get_train_dataset(**self.dataset_kwargs)
+    def train_dataloader(self, **kwargs):
+        """Return the training dataloader while possibly modifying dataset kwargs."""
+        dkwargs = kwargs.pop("dataset_kwargs", {})
+        if self.reload_dataloaders_every_epoch or len(dkwargs) > 0:
+            curr_kwargs = dict(self.dataset_kwargs, **dkwargs)
+            self.train_dataset = self.get_train_dataset(**curr_kwargs)
 
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
-            drop_last=True,
             pin_memory=True,
+            **kwargs,
         )
 
-    def val_dataloader(self):
-        """Return the validation dataloader."""
-        if self.reload_dataloaders_every_epoch:
-            self.val_dataset = self.get_val_dataset(**self.dataset_kwargs)
+    def val_dataloader(self, **kwargs):
+        """Return the validation dataloader while possibly modifying dataset kwargs."""
+        dkwargs = kwargs.pop("dataset_kwargs", {})
+        if self.reload_dataloaders_every_epoch or len(dkwargs) > 0:
+            curr_kwargs = dict(self.dataset_kwargs, **dkwargs)
+            self.val_dataset = self.get_val_dataset(**curr_kwargs)
 
         return DataLoader(
             self.val_dataset,
             batch_size=self.val_batch_size,
             shuffle=False,
             num_workers=self.num_workers,
-            drop_last=True,
             pin_memory=True,
+            **kwargs,
         )
 
-    def test_dataloader(self):
-        """Return the test dataloader."""
-        if self.reload_dataloaders_every_epoch:
-            self.test_dataset = self.get_test_dataset(**self.dataset_kwargs)
+    def test_dataloader(self, **kwargs):
+        """Return the test dataloader while possibly modifying dataset kwargs."""
+        dkwargs = kwargs.pop("dataset_kwargs", {})
+        if self.reload_dataloaders_every_epoch or len(dkwargs) > 0:
+            curr_kwargs = dict(self.dataset_kwargs, **dkwargs)
+            self.test_dataset = self.get_test_dataset(**curr_kwargs)
 
         return DataLoader(
             self.test_dataset,
             batch_size=self.val_batch_size,
             shuffle=False,
             num_workers=self.num_workers,
-            drop_last=True,
             pin_memory=True,
+            **kwargs,
         )

@@ -2,6 +2,7 @@
 distortion:
   name: vib # vib predicting the index + which transformations were applied
   mode: direct
+  factor_beta: 0.005 # compared to ivae gives importance -- to rate 
   kwargs: 
     z_dim: ${encoder.z_dim}
     y_shape: ${data.aux_shape}

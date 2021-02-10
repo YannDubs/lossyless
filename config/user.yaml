@@ -3,5 +3,5 @@
 ### USER SPECIFIC ###
 #! change for your usecase
 user: yannd #${env:USER}
-wandb_entitiy: lossyless # team name
+wandb_entity: lossyless # team name
 #####################

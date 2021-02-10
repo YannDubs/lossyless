@@ -1,43 +1,31 @@
-import logging
-from PIL import Image
 import abc
-
-import torch
-from torchvision.datasets import CIFAR10, MNIST, FashionMNIST
+import logging
 import os
 from os import path
 import subprocess
 import zipfile
 import glob
 import numpy as np
-import csv
 import math
 import scipy
 import cv2
 import pandas as pd
+from PIL import Image
+import torch
+from lossyless.helpers import BASE_LOG, get_normalization
 from torch.utils.data import random_split
 from torchvision import transforms as transform_lib
+from torchvision.datasets import CIFAR10, MNIST, FashionMNIST
 from torchvision.transforms import (
     ColorJitter,
-    RandomErasing,
     RandomAffine,
+    RandomErasing,
     RandomRotation,
 )
-
-from lossyless.helpers import (
-    get_normalization,
-    BASE_LOG,
-)
+from utils.estimators import discrete_entropy
 
 from .base import LossylessCLFDataset, LossylessDataModule
-from .helpers import (
-    discrete_entropy,
-    RotationAction,
-    TranslationAction,
-    ScalingAction,
-    int_or_ratio,
-)
-
+from .helpers import RotationAction, ScalingAction, TranslationAction, int_or_ratio
 
 logger = logging.getLogger(__name__)
 
@@ -74,12 +62,7 @@ class LossylessImgDataset(LossylessCLFDataset):
     """
 
     def __init__(
-        self,
-        *args,
-        equivalence={},
-        is_augment_val=False,
-        is_normalize=True,
-        **kwargs,
+        self, *args, equivalence={}, is_augment_val=False, is_normalize=True, **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.equivalence = equivalence
@@ -209,11 +192,7 @@ class LossylessImgAnalyticDataset(LossylessImgDataset):
     """
 
     def __init__(
-        self,
-        *args,
-        n_action_per_equiv=8,
-        dist_actions="uniform",
-        **kwargs,
+        self, *args, n_action_per_equiv=8, dist_actions="uniform", **kwargs,
     ):
         self.n_action_per_equiv = n_action_per_equiv
         self.dist_actions = dist_actions
@@ -314,10 +293,7 @@ class LossylessImgAnalyticDataset(LossylessImgDataset):
 class TorchvisionDataModule(LossylessDataModule):
     def get_train_val_dataset(self, **dataset_kwargs):
         dataset = self.Dataset(
-            self.data_dir,
-            train=True,
-            download=False,
-            **self.dataset_kwargs,
+            self.data_dir, train=True, download=False, **self.dataset_kwargs,
         )
 
         n_val = int_or_ratio(self.val_size, len(dataset))
@@ -339,16 +315,17 @@ class TorchvisionDataModule(LossylessDataModule):
 
     def get_test_dataset(self, **dataset_kwargs):
         test = self.Dataset(
-            self.data_dir,
-            train=False,
-            download=False,
-            **self.dataset_kwargs,
+            self.data_dir, train=False, download=False, **dataset_kwargs,
         )
         return test
 
     def prepare_data(self):
         self.Dataset(self.data_dir, train=True, download=True, **self.dataset_kwargs)
         self.Dataset(self.data_dir, train=False, download=True, **self.dataset_kwargs)
+
+    @property
+    def mode(self):
+        return "image"
 
 
 ## Analytic datasets ##
@@ -439,7 +416,7 @@ class Cifar10DataModule(TorchvisionDataModule):
 
 # TODO @karen: modify as desired all those methods
 # TODO add config for galaxy in config/data with good defaults
-class GalaxyDataset(LossylessImgAnalyticDataset):
+class GalaxyDataset(LossylessImgDataset):
     def __init__(
         self,
         root: str,
@@ -652,6 +629,7 @@ class GalaxyDataModule(LossylessDataModule):
     def Dataset(self):
         return GalaxyDataset
 
+
     def get_train_dataset(self, **dataset_kwargs):
         return self.Dataset(
             root=self.data_dir,
@@ -671,6 +649,7 @@ class GalaxyDataModule(LossylessDataModule):
         )
 
     def get_test_dataset(self, **dataset_kwargs):
+
         return self.Dataset(
             root=self.data_dir,
             split="test",
@@ -688,3 +667,7 @@ class GalaxyDataModule(LossylessDataModule):
                 resolution=self.resolution,
                 **self.dataset_kwargs,
             )
+    @property
+    def mode(self):
+        return "image"
+

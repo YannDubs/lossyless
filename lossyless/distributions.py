@@ -1,15 +1,15 @@
+import math
 from functools import partial
+
+import einops
 import torch
 import torch.nn as nn
-from torch.nn.modules.conv import Conv2d
-import torchvision
-import math
-
 import torch.nn.functional as F
-from torch.distributions import Categorical, Independent, Normal, MixtureSameFamily
-import einops
+import torchvision
+from torch.distributions import Categorical, Independent, MixtureSameFamily, Normal
+from torch.nn.modules.conv import Conv2d
 
-from .helpers import weights_init, batch_flatten, batch_unflatten, prod, Delta
+from .helpers import Delta, batch_flatten, batch_unflatten, prod, weights_init
 
 __all__ = ["CondDist", "get_marginalDist"]
 

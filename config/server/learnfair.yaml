@@ -1,6 +1,8 @@
 # @package _global_
 job_id: ${hydra:job.num}_${hydra:job.id} # job num is number in sweep. Id is unique ID like SLURM_JOB_ID
 
+logger:
+  name: tensorboard
 
 hydra:
   launcher:
@@ -17,22 +19,15 @@ hydra:
     # number of nodes to use for the job
     nodes: ${trainer.num_nodes}
     # name of the job
-    name: ${name}
+    name: ${experiment}
 
     # slurm partition to use on the cluster
-    partition: null # scavenge, dev, priority, learnfair
+    partition: learnfair # scavenge, dev, priority, learnfair
     comment: null # you  have to add a comment when usintg the priority partition
     constraint: null # pascal | volta | volta32gb
     exclude: null
+    array_parallelism: 1000
     
     max_num_timeout: 3 # alow resume from checkpointing
     additional_parameters: {} # any other parameters, Eg: {"mail-user": "blublu@fb.com", "mail-type": "BEGIN"}
 
-  run:
-    # unfortunately cannot use hydra: is hydra so need to do everything by hand
-    # i.e. cannot use ${paths.work}
-    dir: /checkpoint/${user}/${now:%Y-%m-%d_%H-%M-%S}
-
-  sweep:
-    dir:  /checkpoint/${user}/${now:%Y-%m-%d_%H-%M-%S}
-    subdir: ${hydra.job.num}_${hydra.job.id}

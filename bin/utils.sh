@@ -2,21 +2,28 @@
 
 add_kwargs=""
 prfx=""
-time="2880" #2 days
+time="1440" # 1 day
 is_plot_only=false
+server=""
+mode=""
+main="main.py"
 
 
 # MODE ?
-while getopts ':s:p:m:' flag; do
+while getopts ':s:p:m:t:v:a:' flag; do
   case "${flag}" in
     s )
-      add_kwargs="${add_kwargs} server=${OPTARG}"
-      echo "${OPTARG} server ..."
-      case "${OPTARG}" in
+      server="${OPTARG}"
+      add_kwargs="${add_kwargs} server=$server"
+      echo "$server server ..."
+      case "$server" in
         learnfair) 
           add_kwargs="${add_kwargs} hydra/launcher=submitit_slurm"
           ;;
         vector) 
+          add_kwargs="${add_kwargs} hydra/launcher=submitit_slurm"
+          ;;
+        qvector) 
           add_kwargs="${add_kwargs} hydra/launcher=submitit_slurm"
           ;;
         local) 
@@ -25,18 +32,32 @@ while getopts ':s:p:m:' flag; do
         esac
       ;;
     m ) 
-      add_kwargs="${add_kwargs} +mode=${OPTARG}"
-      prfx="${OPTARG}_"
+      mode="${OPTARG}"
+      add_kwargs="${add_kwargs} +mode=$mode"
+      prfx="${mode}_"
       time="60"
-      echo "${OPTARG} mode ..."
+      echo "$mode mode ..."
       ;;
-    p ) 
+    v ) 
       is_plot_only=true
       prfx=${OPTARG}
-      echo "Plotting only ..."
+      echo "Visualization/plotting only ..."
+      ;;
+    p ) 
+      main="parallel.py"
+      add_kwargs="${add_kwargs} +parallel=${OPTARG}"
+      echo "Parallel=${OPTARG} ..."
+      ;;
+    t ) 
+      time=${OPTARG}
+      echo "Time ${OPTARG} minutes"
+      ;;
+    a ) 
+      add_kwargs="${add_kwargs} ${OPTARG}"
+      echo "Adding ${OPTARG}"
       ;;
     \? ) 
-      echo "Usage: "$name".sh [-spm]" 
+      echo "Usage: "$name".sh [-stpmva]" 
       exit 1
       ;;
     : )
@@ -45,9 +66,24 @@ while getopts ':s:p:m:' flag; do
   esac
 done
 
-name="$prfx""$name"
 
-results="results/$name"
+if  [[ "$mode" == "dev" || "$mode" == "test" || "$mode" == "debug" || "$mode" == "nano" ]]; then
+  case "$server" in
+    learnfair) 
+      add_kwargs="${add_kwargs} hydra.launcher.partition=dev"
+      ;;
+    vector) 
+      add_kwargs="${add_kwargs} hydra.launcher.partition=interactive hydra.launcher.additional_parameters.qos=nopreemption"
+      ;;
+    qvector) 
+      add_kwargs="${add_kwargs} hydra.launcher.partition=interactive hydra.launcher.additional_parameters.qos=nopreemption"
+      ;;
+  esac
+fi
+
+experiment="${prfx}""$experiment"
+
+results="results/$experiment"
 if [ -d "$results" ]; then
 
   echo -n "$results exist. Should I delete it (y/n) ? "

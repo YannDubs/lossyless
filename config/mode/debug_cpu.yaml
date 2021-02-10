@@ -1,9 +1,13 @@
 # @package _global_
 
-# debug the model 
+# debug the model on cpu
 
-name: debugcpu_${time}
-is_debug: True # enter debug mode
+experiment: debugcpu_${now:%Y-%m-%d_%H-%M-%S}
+timeout: 60
+
+other:
+  is_debug: True # enter debug mode
+  is_quick: True
 
 trainer:
   # DEBUGGING
@@ -12,14 +16,15 @@ trainer:
   fast_dev_run: True
   weights_summary: full # full to print show the entire model 
   profiler: simple # use `simple` or `"advanced"` to find bottleneck
-  max_epochs: 2
   gpus: 0
   precision: 32 # 16 does not work for cpu
+  log_every_n_steps: 10 
 
 logger:
   wandb:
-    tags: debug
+    tags: [debug, quick]
     anonymous: true
+    project: tmp
 
 callbacks:
   additional: [TrainingDataMonitor,ModuleDataMonitor] # if add other callbacks through additional will be replaced

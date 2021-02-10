@@ -1,11 +1,13 @@
-import torch.nn as nn
-import torch
 import math
-from torch.nn import functional as F
+
 import einops
-from .helpers import BASE_LOG, undo_normalization, kl_divergence, prod
+import torch
+import torch.nn as nn
+from torch.nn import functional as F
+
 from .architectures import get_Architecture
 from .distributions import Deterministic, DiagGaussian
+from .helpers import BASE_LOG, kl_divergence, prod, undo_normalization
 
 __all__ = ["get_distortion_estimator"]
 
@@ -179,7 +181,8 @@ class DirectDistortion(nn.Module):
             neg_log_q_ylz, "(z b) ... -> z b", reduction="sum", z=n_z
         )
 
-        logs = dict(H_q_YlZ=neg_log_q_ylz.mean() / math.log(BASE_LOG))
+        # T for auxilary task to distinguish from task Y
+        logs = dict(H_q_TlZ=neg_log_q_ylz.mean() / math.log(BASE_LOG))
 
         other = dict()
         # for plotting

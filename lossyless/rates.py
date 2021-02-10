@@ -1,14 +1,14 @@
-import torch
 import math
+
 import compressai
+import einops
+import torch
 from compressai.entropy_models import GaussianConditional
 from compressai.models.utils import update_registered_buffers
-import einops
-from .helpers import atleast_ndim, BASE_LOG, kl_divergence, weights_init, mean
 
-from .distributions import get_marginalDist
 from .architectures import MLP
-
+from .distributions import get_marginalDist
+from .helpers import BASE_LOG, atleast_ndim, kl_divergence, mean, weights_init
 
 __all__ = ["get_rate_estimator"]
 
@@ -255,12 +255,16 @@ class HRateFactorizedPrior(RateEstimator):
         unexpected_keys,
         error_msgs,
     ):
+
         # Dynamically update the entropy bottleneck buffers related to the CDFs
+
+        policy = "resize"  # resize when loading  (even if already called "update")
         update_registered_buffers(
             self.entropy_bottleneck,
             f"{prefix}entropy_bottleneck",
             ["_quantized_cdf", "_offset", "_cdf_length"],
             state_dict,
+            policy=policy,
         )
 
         super()._load_from_state_dict(
@@ -431,11 +435,13 @@ class HRateHyperprior(RateEstimator):
         error_msgs,
     ):
         # Dynamically update the entropy bottleneck buffers related to the CDFs
+        policy = "resize"  # resize when loading  (even if already called "update")
         update_registered_buffers(
             self.entropy_bottleneck,
             f"{prefix}entropy_bottleneck",
             ["_quantized_cdf", "_offset", "_cdf_length"],
             state_dict,
+            policy=policy,
         )
 
         update_registered_buffers(
@@ -443,6 +449,7 @@ class HRateHyperprior(RateEstimator):
             f"{prefix}gaussian_conditional",
             ["_quantized_cdf", "_offset", "_cdf_length", "scale_table"],
             state_dict,
+            policy=policy,
         )
 
         super()._load_from_state_dict(
