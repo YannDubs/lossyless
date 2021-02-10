@@ -3,7 +3,8 @@ name: galaxy128
 dataset: galaxy
 
 kwargs:
-  resolution: 128
   dataset_kwargs:
+    root: "/checkpoint/karenu/data/"
+    resolution: 128
     equivalence: [x_translation, y_translation]
     is_augment_val: True

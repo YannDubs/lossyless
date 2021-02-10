@@ -10,7 +10,7 @@ def get_datamodule(datamodule):
         return MnistDataModule
     elif datamodule == "fashionmnist":
         return FashionMnistDataModule
-    elif datamodule == "galaxy":
+    elif "galaxy" in datamodule:
         return GalaxyDataModule
     elif datamodule == "banana":
         return BananaDataModule

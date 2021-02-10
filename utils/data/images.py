@@ -425,31 +425,32 @@ class GalaxyDataset(LossylessImgDataset):
         resolution: int = 64,
         *args, **kwargs,
     ):
-        super().__init__(*args, **kwargs)
 
         self.root = root
         data_dir = path.join(root, "galaxyzoo")
         self.resolution = resolution
         if download:
-            self.download(self.root)
+            self.download(data_dir)
             self.preprocess(data_dir)
 
         self.load_data(data_dir, split, resolution)
 
-    def download(self, root):
+        super().__init__(*args, **kwargs)
+
+    def download(self, data_dir):
 
         def unpack_all_zips():
             for f, file in enumerate(
-                glob.glob(path.join(self.data_dir, "*.zip"))):
+                glob.glob(path.join(data_dir, "*.zip"))):
                 with zipfile.ZipFile(file, 'r') as zip_ref:
-                    zip_ref.extractall(self.data_dir)
+                    zip_ref.extractall(data_dir)
                     os.remove(file)
                     print("{} completed. Progress: {}/6".format(file, f))
 
         filename = "galaxy-zoo-the-galaxy-challenge.zip"
 
         # check if data was already downloaded
-        if path.exists(path.join(root,filename)):
+        if path.exists(path.join(self.root,filename)):
             # continue unpacking files just in case this got interrupted or user
             # downloaded files manually. you never know :)
             unpack_all_zips()
@@ -464,12 +465,12 @@ class GalaxyDataset(LossylessImgDataset):
 
         # download the dataset
         bashCommand = "kaggle competitions download -c " \
-                      "galaxy-zoo-the-galaxy-challenge -p {}".format(root)
+                      "galaxy-zoo-the-galaxy-challenge -p {}".format(self.root)
         subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
 
         # unpack the data
-        with zipfile.ZipFile(os.path.join(root,filename), 'r') as zip_ref:
-            zip_ref.extractall(self.data_dir)
+        with zipfile.ZipFile(os.path.join(self.root,filename), 'r') as zip_ref:
+            zip_ref.extractall(self.root)
 
         unpack_all_zips()
 
@@ -549,14 +550,9 @@ class GalaxyDataset(LossylessImgDataset):
 
     def load_data(self, data_dir, split, resolution):
         imgs = np.load(
-            path.join(data_dir, split + "_images_" + int(resolution) + ".npy"))
-        self.images = imgs.astype('float32') / 255.0
+            path.join(data_dir, "{}_images_{}.npy".format(split, resolution)))
+        self.data = imgs.astype('float32') / 255.0
 
-        # load training set mean and std
-        self.mean = np.load(path.join(data_dir, split + "_images_" +
-                                      int(resolution) + "_mean.npy"))
-        self.std = np.load(path.join(data_dir, split + "_images_" +
-                                     int(resolution) + "_std.npy"))
 
         if not split == "test":
             self.targets = np.load(path.join(data_dir, split + "_targets.npy"))
@@ -564,7 +560,7 @@ class GalaxyDataset(LossylessImgDataset):
             # We do not have test targets bc kaggle holds them back. We will
             # later need the image IDs to make a submission file that will be
             # evaluated via the kaggle api.
-            self.ids = np.load(path.joint(data_dir, split + "_ids.npy"))
+            self.ids = np.load(path.join(data_dir, split + "_ids.npy"))
 
 
     @property
@@ -608,7 +604,7 @@ class GalaxyDataset(LossylessImgDataset):
 
     def get_img_target(self, index):
         # change as needed but something like that
-        img = self.images[index]
+        img = self.data[index]
         target = self.targets[index]
 
         # doing this so that it is consistent with all other datasets
@@ -622,49 +618,36 @@ class GalaxyDataset(LossylessImgDataset):
 
 class GalaxyDataModule(LossylessDataModule):
 
-    def __init__(self,resolution: int = 64):
-        self.resolution = resolution
-
     @property
     def Dataset(self):
         return GalaxyDataset
 
 
     def get_train_dataset(self, **dataset_kwargs):
-        return self.Dataset(
-            root=self.data_dir,
-            split="train",
+        return self.Dataset(split="train",
             download=False,
-            resolution=self.resolution,
             **self.dataset_kwargs,
         )
 
     def get_val_dataset(self, **dataset_kwargs):
         return self.Dataset(
-            root=self.data_dir,
             split="valid",
             download=False,
-            resolution=self.resolution,
             **self.dataset_kwargs,
         )
 
     def get_test_dataset(self, **dataset_kwargs):
-
         return self.Dataset(
-            root=self.data_dir,
             split="test",
             download=False,
-            resolution=self.resolution,
             **self.dataset_kwargs,
         )
 
     def prepare_data(self):
-        for split in ["trian", "valid", "test"]:
+        for split in ["train", "valid", "test"]:
             self.Dataset(
-                root=self.data_dir,
                 split=split,
                 download=True,
-                resolution=self.resolution,
                 **self.dataset_kwargs,
             )
     @property

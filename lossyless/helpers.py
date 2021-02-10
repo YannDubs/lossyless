@@ -241,10 +241,10 @@ def get_normalization(Dataset):
     """Return corrrect normalization given dataset class."""
     if "cifar10" in Dataset.__name__.lower():
         return transform_lib.Normalize(mean=MEANS["cifar10"], std=STDS["cifar10"])
-    elif "galaxy64" in Dataset.__name__.lower():
+    elif "galaxy" in Dataset.__name__.lower():
         return transform_lib.Normalize(mean=MEANS["galaxy64"], std=STDS["galaxy64"])
-    elif "galaxy128" in Dataset.__name__.lower():
-        return transform_lib.Normalize(mean=MEANS["galaxy128"],std=STDS["galaxy128"])
+        # todo: differnt means for different resolution
+        # return transform_lib.Normalize(mean=MEANS["galaxy128"],std=STDS["galaxy128"])
     else:
         raise ValueError(f"Uknown mean and std for {Dataset}.")
 
