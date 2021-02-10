@@ -28,11 +28,10 @@ def dict2namespace(d, is_allow_missing=False, all_keys=""):
     """Converts recursively dictionary to namespace."""
     namespace = NamespaceMap(**d)
     for k, v in d.items():
-        all_keys += f"{k}"
-        if v == "???":
-            raise ValueError(f"Missing value for {all_keys}.")
+        if v == "???" and not is_allow_missing:
+            raise ValueError(f"Missing value for {all_keys}.{k}.")
         elif isinstance(v, dict):
-            namespace[k] = dict2namespace(v, all_keys + ".")
+            namespace[k] = dict2namespace(v, f"{all_keys}.{k}")
     return namespace
 
 
@@ -231,11 +230,18 @@ def learning_rate_finder(
     bounds. If `is_argmin` choses the lr that ields the argmin on the plot (usually larger lr), if 
     not selects the one with the most negative derivative (usually smaller lr). 
     """
-    module = copy.deepcopy(module)
+    # ensure not inplace
     trainer = copy.deepcopy(trainer)
 
+    # ans cannot be pickled => don't deepcopy it (it's not going to change because not trained)
+    old_module = module
+    featurizer, module.featurizer = module.featurizer, None
+    module = copy.deepcopy(old_module)
+    module.featurizer = featurizer  # bypass deepcopy
+    old_module.featurizer = featurizer  # put back
+
     min_lr, max_lr = min_max_lr
-    module.hparams.optimizer_predictor.lr = min_lr
+    module.hparams.optimizer_pred.kwargs.lr = min_lr  #! shouldn't be needed
     lr_finder = trainer.tuner.lr_find(
         module, datamodule=datamodule, min_lr=min_lr, max_lr=max_lr
     )
@@ -244,10 +250,8 @@ def learning_rate_finder(
         lr_finder.suggestion = types.MethodType(suggest_min_lr, lr_finder)
 
     fig = lr_finder.plot(suggest=True)
-    try:
+    if module.hparams.logger.is_can_plot_img:
         save_img(module, trainer, fig, "Learning Rate Finder", "")
-    except:
-        pass
 
     new_lr = lr_finder.suggestion()
     log_dict(trainer, dict(suggested_lr=new_lr), True)

@@ -135,7 +135,7 @@ class RateEstimator(torch.nn.Module):
         """
         raise NotImplementedError()
 
-    def real_rate(self, z, is_log=False):
+    def real_rate(self, z, is_return_logs=False):
         """Compute actual number of bits (rate), necessary for encoding z.
 
         Parameters
@@ -143,13 +143,17 @@ class RateEstimator(torch.nn.Module):
         z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
             Representation to compress. Note that there's n_z_dim!
 
+        is_return_logs : bool, optional 
+            Whether to return a dictionnary to log in addition to n_bits.
+
         Returns
         -------
         n_bits : int
             Average bits per image
 
-        log : dict
-            Additional values that can be useful to log. Specifically `decoding_time`, `encoding_time`.
+        if is_return_logs:
+            logs : dict
+                Additional values that can be useful to log. 
         """
         n_z, batch, z_dim = z.shape
         z = einops.rearrange(z, "n_z b d -> (n_z b) d", n_z=n_z)
@@ -157,7 +161,7 @@ class RateEstimator(torch.nn.Module):
         with Timer() as compress_timer:
             all_strings = self.compress(z)
 
-        if is_log:
+        if is_return_logs:
             with Timer() as decompress_timer:
                 _ = self.decompress(all_strings)
 
@@ -165,13 +169,13 @@ class RateEstimator(torch.nn.Module):
         n_bytes = sum(mean([len(s) for s in strings]) for strings in all_strings)
         n_bits = n_bytes * 8
 
-        if is_log:
-            log = dict(
+        if is_return_logs:
+            logs = dict(
                 compress_time=compress_timer.duration / batch,
                 receiver_time=decompress_timer.duration / batch,
                 n_bits=n_bits,
             )
-            return n_bits, log
+            return n_bits, logs
 
         return n_bits
 
@@ -345,7 +349,7 @@ class HRateFactorizedPrior(HRateEstimator):
         logs = dict(H_q_Z=neg_log_q_z.mean() / math.log(BASE_LOG), H_ZlX=0)
 
         if not self.training:
-            n_bits, logs2 = self.real_rate(z, is_log=True)
+            n_bits, logs2 = self.real_rate(z, is_return_logs=True)
             logs.update(logs2)
             logs["n_bits"] = n_bits
 
@@ -459,7 +463,7 @@ class HRateHyperprior(HRateEstimator):
         )
 
         if not self.training:
-            n_bits, logs2 = self.real_rate(z, is_log=True)
+            n_bits, logs2 = self.real_rate(z, is_return_logs=True)
             logs.update(logs2)
             logs["n_bits"] = n_bits
 

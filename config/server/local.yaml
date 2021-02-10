@@ -1,6 +1,6 @@
 # @package _global_
 defaults:
-  - override hydra/launcher=submitit_local
+  - override /hydra/launcher: submitit_local
 
 job_id: ${hydra:job.num}_${hydra:job.id} # job num is number in sweep. Id is unique ID like SLURM_JOB_ID
 

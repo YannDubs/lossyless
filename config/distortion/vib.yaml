@@ -1,12 +1,12 @@
 # @package _global_
 defaults:
-  - base_direct
+  - base_direct@distortion
 
 distortion:
   name: vib # vae that reconstructs the augmented images
   factor_beta: 0.005 # compared to ivae gives importance -- to rate 
   
-data:
+data_feat:
   kwargs:
     dataset_kwargs:
       additional_target:  max_var

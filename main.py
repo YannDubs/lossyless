@@ -3,7 +3,6 @@
 This should be called by `python main.py <conf>` where <conf> sets all configs from the cli, see 
 the file `config/main.yaml` for details about the configs. or use `python main.py -h`.
 """
-
 import copy
 import logging
 from pathlib import Path
@@ -14,6 +13,7 @@ import pandas as pd
 import compressai
 import hydra
 import lossyless
+import omegaconf
 import pl_bolts
 import pytorch_lightning as pl
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
@@ -25,6 +25,7 @@ from lossyless.callbacks import (
 )
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import orderedset
+from omegaconf import OmegaConf
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from utils.data import get_datamodule
@@ -49,15 +50,17 @@ PREDICTOR_RES = "results_predictor.csv"
 @hydra.main(config_name="main", config_path="config")
 def main(cfg_hydra):
     ############## STARTUP ##############
+    logger.info("Stage : Startup")
     begin(cfg_hydra)
 
     ############## COMPRESSOR (i.e. sender) ##############
+    logger.info("Stage : Compressor")
     cfg = set_cfg(cfg_hydra, mode="featurizer")
     datamodule = instantiate_datamodule_(cfg)
     cfg = omegaconf2namespace(cfg)  # ensure real python types (only once cfg are fixed)
 
     if not cfg.featurizer.is_learnable:
-        logger.info(f"Using classical compressor {cfg.featurizer.type} ...")
+        logger.info(f"Using classical compressor {cfg.featurizer.mode} ...")
         compressor = ClassicalCompressor(hparams=cfg)
         comp_trainer = get_trainer(cfg, compressor, is_featurizer=True,)
         placeholder_fit(comp_trainer, compressor, datamodule)
@@ -86,7 +89,12 @@ def main(cfg_hydra):
             ckpt_path=cfg.evaluation.featurizer.ckpt_path,
         )
 
+    if cfg.is_only_feat:
+        logger.info("Stage : Shutdown after featurizer")
+        return finalize(cfg, modules=[compressor], trainers=[comp_trainer])
+
     ############## COMMUNICATION (compress and decompress the datamodule) ##############
+    logger.info("Stage : Communication")
     if cfg.featurizer.is_on_the_fly:
         # this will perform compression on the fly
         #! one issue is that if using data augmentations you will augment before the featurizer
@@ -100,7 +108,8 @@ def main(cfg_hydra):
         pre_featurizer = compressor
 
     ############## DOWNSTREAM PREDICTOR (i.e. receiver) ##############
-    cfg = set_cfg(cfg, mode="predictor")
+    logger.info("Stage : Predictor")
+    cfg = set_cfg(cfg_hydra, mode="predictor")
     datamodule = instantiate_datamodule_(cfg, pre_featurizer=pre_featurizer)
     cfg = omegaconf2namespace(cfg)  # ensure real python types (only once cfg are fixed)
 
@@ -130,10 +139,10 @@ def main(cfg_hydra):
         )
 
     ############## SHUTDOWN ##############
-    finalize(
+    logger.info("Stage : Shutdown")
+    return finalize(
         cfg, modules=[compressor, predictor], trainers=[comp_trainer, pred_trainer]
     )
-    logger.info("Finished.")
 
 
 def begin(cfg):
@@ -148,34 +157,44 @@ def begin(cfg):
     if cfg.rate.range_coder is not None:
         compressai.set_entropy_coder(cfg.rate.range_coder)
 
-    logger.info(f"Running {cfg.long_name} from {cfg.paths.work}.")
+    logger.info(f"Workdir : {cfg.paths.work}.")
+
+    if len(cfg.data_pred) == 0:
+        # by default same data for pred and feat
+        cfg.data_pred = cfg.data_feat
 
 
 def set_cfg(cfg, mode):
     """Set the configurations for a specific mode."""
     cfg = copy.deepcopy(cfg)  # not inplace
 
-    if mode == "featurizer":
-        cfg.stage = "feat"
-        cfg.long_name = cfg.long_name_feat
+    with omegaconf.open_dict(cfg):
+        if mode == "featurizer":
 
-        cfg.data.update(cfg.datafeat)
-        cfg.trainer.update(cfg.update_trainer_feat)
-        cfg.checkpoint.update(cfg.checkpoint_feat)
+            cfg.stage = "feat"
+            cfg.long_name = cfg.long_name_feat
 
-    elif mode == "predictor":
-        cfg.stage = "pred"
-        cfg.long_name = cfg.long_name_ored
+            cfg.data = OmegaConf.merge(cfg.data, cfg.data_feat)
+            cfg.trainer = OmegaConf.merge(cfg.trainer, cfg.update_trainer_feat)
+            cfg.checkpoint = OmegaConf.merge(cfg.checkpoint, cfg.checkpoint_feat)
 
-        cfg.data.update(cfg.datapred)
-        cfg.trainer.update(cfg.update_trainer_pred)
-        cfg.checkpoint.update(cfg.checkpoint_pred)
+            logger.info(f"Name : {cfg.long_name}.")
 
-        # only need target
-        cfg.data.kwargs.dataset_kwargs.additional_target = None
+        elif mode == "predictor":
+            cfg.stage = "pred"
+            cfg.long_name = cfg.long_name_pred
 
-    else:
-        raise ValueError(f"Unkown mode={mode}.")
+            cfg.data = OmegaConf.merge(cfg.data, cfg.data_pred)
+            cfg.trainer = OmegaConf.merge(cfg.trainer, cfg.update_trainer_pred)
+            cfg.checkpoint = OmegaConf.merge(cfg.checkpoint, cfg.checkpoint_pred)
+
+            # only need target
+            cfg.data.kwargs.dataset_kwargs.additional_target = None
+
+            logger.info(f"Name : {cfg.long_name}.")
+
+        else:
+            raise ValueError(f"Unkown mode={mode}.")
 
     # make sure all paths exist
     for _, path in cfg.paths.items():
@@ -259,7 +278,7 @@ def get_callbacks(cfg, is_featurizer):
                         MaxinvDistributionPlot(),
                     ]
 
-    callbacks += [ModelCheckpoint(**cfg.checkpoint_feat.kwargs)]
+    callbacks += [ModelCheckpoint(**cfg.checkpoint.kwargs)]
 
     for name in cfg.callbacks.additional:
         cllbck_kwargs = cfg.callbacks.get(name, {})
@@ -272,15 +291,20 @@ def get_callbacks(cfg, is_featurizer):
 
 def get_logger(cfg, module):
     """Return coorect logger."""
+
+    kwargs = cfg.logger.kwargs
+    # useful for different modes (e.g. wandb_kwargs)
+    kwargs.update(cfg.logger.get(f"{cfg.logger.name}_kwargs", {}))
+
     if cfg.logger.name == "csv":
-        logger = CSVLogger(**cfg.logger.kwargs)
+        logger = CSVLogger(**kwargs)
 
     elif cfg.logger.name == "wandb":
         try:
-            logger = WandbLogger(**cfg.logger.kwargs)
+            logger = WandbLogger(**kwargs)
         except Exception:
             cfg.logger.wandb.offline = True
-            logger = WandbLogger(**cfg.logger.kwargs)
+            logger = WandbLogger(**kwargs)
 
         if cfg.trainer.track_grad_norm == 2:
             # use wandb rather than lightning gradients
@@ -292,7 +316,7 @@ def get_logger(cfg, module):
             )
 
     elif cfg.logger.name == "tensorboard":
-        logger = TensorBoardLogger(**cfg.logger.kwargs)
+        logger = TensorBoardLogger(**kwargs)
 
     elif cfg.logger.name is None:
         logger = False
@@ -305,11 +329,9 @@ def get_logger(cfg, module):
 
 def get_trainer(cfg, module, is_featurizer):
     """Instantiate trainer."""
-    # if is_placeholder:
-    #     return pl.Trainer()
 
     # Resume training ?
-    last_chckpnt = Path(cfg.callbacks.ModelCheckpoint.dirpath) / "last.ckpt"
+    last_chckpnt = Path(cfg.checkpoint.kwargs.dirpath) / "last.ckpt"
     if last_chckpnt.exists():
         cfg.trainer.resume_from_checkpoint = str(last_chckpnt)
 
@@ -405,20 +427,18 @@ def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
 
 def initialize_predictor_(module, datamodule, trainer, cfg):
     """Additional steps needed for intitalization of the predictor + logging."""
-    if module.hparams.optimizer_predictor.is_lr_find:
-        old_lr = module.hparams.optimizer_predictor.lr
+    if module.hparams.optimizer_pred.is_lr_find:
+        old_lr = module.hparams.optimizer_pred.kwargs.lr
         new_lr = learning_rate_finder(module, datamodule, trainer)
         if old_lr is None:
-            module.hparams.optimizer_predictor.lr = new_lr
+            module.hparams.optimizer_pred.kwargs.lr = new_lr
             logger.info(f"Using lr={new_lr} for the predictor.")
         else:
-            module.hparams.optimizer_predictor.lr = old_lr
+            module.hparams.optimizer_pred.kwargs.lr = old_lr
 
 
 def finalize(cfg, modules, trainers):
     """Finalizes the script."""
-
-    logging.shutdown()
 
     plt.close("all")
 
@@ -427,6 +447,11 @@ def finalize(cfg, modules, trainers):
 
         if wandb.run is not None:
             wandb.run.finish()  # finish the run if still on
+
+    logger.info("Finished.")
+    logging.shutdown()
+
+    return 0
 
 
 if __name__ == "__main__":

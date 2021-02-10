@@ -1,5 +1,4 @@
-rate:
-  name: ???
-  range_coder: null
-  factor_beta : 1 # factor that multiplies beta 
-  kwargs: {}
+name: ???
+range_coder: null
+factor_beta : 1 # factor that multiplies beta 
+kwargs: {}

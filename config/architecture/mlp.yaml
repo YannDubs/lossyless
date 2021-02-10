@@ -1,4 +1,3 @@
-# @package _group_
 name: mlp
 arch: mlp 
 arch_kwargs:

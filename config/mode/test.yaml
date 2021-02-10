@@ -14,7 +14,7 @@ trainer:
   log_every_n_steps: 20
 
 logger:
-  wandb:
+  wandb_kwargs: 
     tags: [test, quick]
     anonymous: true
     project: tmp

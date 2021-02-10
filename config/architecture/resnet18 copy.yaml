@@ -1,4 +1,3 @@
-# @package _group_
 name: resnet50
 arch: resnet
 arch_kwargs:

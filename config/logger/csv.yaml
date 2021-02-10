@@ -1,4 +1,4 @@
 defaults:
-  base
+  - base
   
 name: csv

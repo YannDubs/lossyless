@@ -1,5 +1,4 @@
-# @package _group_
-name: resnet18
+name: resnet50
 arch: resnet
 arch_kwargs:
-  base: resnet18
+  base: resnet50

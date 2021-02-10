@@ -1,12 +1,12 @@
 # @package _global_
 defaults:
-  - base_direct
+  - base_direct@distortion
 
 distortion:
   name: ivae # VAE reconstructing unaugmented data
   factor_beta: 1 # we use this as standard
   
-data:
+data_feat:
   kwargs:
     dataset_kwargs:
       additional_target:  "representative"

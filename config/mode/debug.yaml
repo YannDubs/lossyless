@@ -1,4 +1,6 @@
 # @package _global_
+defaults:
+  - override /logger: none
 
 # debug the model 
 
@@ -12,25 +14,20 @@ other:
 trainer:
   # DEBUGGING
   track_grad_norm: 2 # use 2 to track L2 norms of grad
-  #overfit_batches: 0.01 # use 0.01 to make sure you can overfit 1% of training data => training works
   fast_dev_run: True
   weights_summary: full # full to print show the entire model 
   profiler: simple # use `simple` or `"advanced"` to find bottleneck
-  log_every_n_steps: 10 
-
-logger:
-  wandb:
-    tags: [debug, quick]
-    anonymous: true
-    project: tmp
 
 callbacks:
-  additional: ["GPUStatsMonitor","TrainingDataMonitor","ModuleDataMonitor","LearningRateMonitor"] # if add other callbacks through additional will be replaced
+  additional: ["GPUStatsMonitor","LearningRateMonitor"] # if add other callbacks through additional will be replaced
 
-  TrainingDataMonitor:
-    log_every_n_steps: 100
+evaluation:
+  featurizer:
+    ckpt_path: null
+    is_evaluate: ${featurizer.is_train}
+  predictor:
+    ckpt_path: null
+    is_evaluate: ${predictor.is_train}
 
-  ModuleDataMonitor:
-    log_every_n_steps: 100
-    submodules: ["p_ZlX.mapper"]
-  
+optimizer_pred:
+  is_lr_find: false

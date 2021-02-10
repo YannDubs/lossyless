@@ -179,7 +179,7 @@ class ClassicalCompressor(pl.LightningModule):
         x = self.unormalizer(x)  # temporary unormalize for compression
 
         out, x_hat = self.compressor.batch_run(
-            x, return_rec=True, return_metrics=is_return_out,
+            x, return_rec=True, return_metrics=is_return_out
         )
 
         x_hat = self.normalizer(x_hat)  # reapply normalization

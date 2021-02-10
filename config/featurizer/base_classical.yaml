@@ -1,6 +1,6 @@
 # @package _global_
 defaults:
-  base
+  - base@featurizer
 
 featurizer:
   is_learnable: False 

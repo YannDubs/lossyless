@@ -1,5 +1,5 @@
 defaults:
-  base
+  - base
   
 name: MI_unitgaussian
 kwargs:

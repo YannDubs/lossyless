@@ -53,7 +53,7 @@ class LearnableCompressor(pl.LightningModule):
             cfg_rate.name,
             z_dim=self.hparams.encoder.z_dim,
             p_ZlX=self.p_ZlX,
-            n_z_samples=self.hparams.loss.n_z_samples,
+            n_z_samples=self.hparams.featurizer.loss.n_z_samples,
             **cfg_rate.kwargs,
         )
 
@@ -127,8 +127,9 @@ class LearnableCompressor(pl.LightningModule):
         return out
 
     def step(self, batch):
+
         x, (_, aux_target) = batch
-        n_z = self.hparams.loss.n_z_samples
+        n_z = self.hparams.featurizer.loss.n_z_samples
 
         with Timer() as encoder_timer:
             # batch shape: [batch_size] ; event shape: [z_dim]
@@ -151,10 +152,13 @@ class LearnableCompressor(pl.LightningModule):
         logs.update(d_logs)
         logs.update(dict(zmin=z.min(), zmax=z.max(), zmean=z.mean()))
         if "n_bits" in logs:
-            batch_size, channel, height, width = x.shape
-            logs["bpp"] = logs["n_bits"] / (height * width)
+            batch_size = x.size(0)
             logs["encoder_time"] = encoder_timer.duration / batch_size
             logs["sender_time"] = logs["encoder_time"] + logs["compress_time"]
+
+            if self.hparams.data.mode == "image":
+                _, __, height, width = x.shape
+                logs["bpp"] = logs["n_bits"] / (height * width)
 
         # any additional information that can be useful (dict)
         other.update(r_other)
@@ -167,7 +171,9 @@ class LearnableCompressor(pl.LightningModule):
     def loss(self, rates, distortions):
         n_z = rates.size(0)
         cfg = self.hparams
-        beta = cfg.loss.beta * cfg.rate.factor_beta * cfg.distortion.factor_beta
+        beta = (
+            cfg.featurizer.loss.beta * cfg.rate.factor_beta * cfg.distortion.factor_beta
+        )
 
         # loose_loss for plotting. shape: []
         loose_loss = (distortions + beta * rates).mean()
@@ -219,6 +225,7 @@ class LearnableCompressor(pl.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+
         # TODO for some reason validation step for wandb logging after resetting is not correct
         loss, logs, _ = self.step(batch)
         _, online_logs = self.online_evaluator(batch, self)
@@ -265,8 +272,8 @@ class LearnableCompressor(pl.LightningModule):
 
         # COMPRESSOR OPTIMIZER
         append_optimizer_scheduler_(
-            self.hparams.optimizer_compressor,
-            self.hparams.scheduler_compressor,
+            self.hparams.optimizer_feat,
+            self.hparams.scheduler_feat,
             self.parameters(),
             optimizers,
             schedulers,

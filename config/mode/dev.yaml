@@ -23,7 +23,7 @@ data:
     val_batch_size: 128
 
 logger:
-  wandb:
+  wandb_kwargs: 
     tags: [dev, quick]
     anonymous: true
     project: tmp

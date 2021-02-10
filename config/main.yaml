@@ -1,34 +1,33 @@
 defaults:
 
   # GENERAL #
-  - hydra/job_logging: colorlog
-  - hydra/hydra_logging: colorlog
-
   - _self_
   - user
   
   - logger: wandb
-  - server: local  
+  - server: none
 
   # FEATURIZER #
+  - data@data_feat: mnist
+  - architecture@encoder: resnet
+  - checkpoint@checkpoint_feat: bestValLoss # NB : will not be able to use Val loss for vib because validation is meaningless for distortion
+  - optimizer@optimizer_feat: adam1e-3
+  - scheduler@scheduler_feat: expdecay
+  - optimizer@optimizer_coder: adam3e-3
+  - scheduler@scheduler_coder: expdecay
   - featurizer: neural_rec
   - distortion: ivae
   - rate: H_factorized
-  - data@datafeat: mnist
-  - architecture@featurizer: resnet
-  - checkpoint@checkpoint_feat: bestValLoss # NB : will not be able to use Val loss for vib because validation is meaningless for distortion
-  - optimizer@optimizer_compressor: adam1e-3
-  - scheduler@scheduler_compressor: expdecay
-  - optimizer@optimizer_coder: adam3e-3
-  - scheduler@scheduler_coder: expdecay
 
   # PREDICTOR #
-  - architecture@predictor: resnet18
-  - data@datapred: mnist
   - architecture@predictor: resnet18
   - checkpoint@checkpoint_pred: bestValLoss 
   - optimizer@optimizer_pred: adam1e-3
   - scheduler@scheduler_pred: expdecay
+
+  # OVERIDES #
+  - override hydra/job_logging: colorlog
+  - override hydra/hydra_logging: colorlog
 
 
 ########## GENERAL ##########
@@ -37,11 +36,11 @@ job_id: ??? # unique identifier
 seed: 123
 timeout: 1440 # 24 hours
 time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is not when job runs
-long_name_feat: exp_${experiment}/datafeat_${datafeat.name}/feat_${featurizer.name}/dist_${distortion.name}/enc_${encoder.name}/rate_${rate.name}/optfeat_${optimizer_compressor.name}/schedfeat_${scheduler_featurizer.name}/zdim_${encoder.z_dim}/zs_${loss.n_z_samples}/beta_${loss.beta}/seed_${seed}/addfeat_{other.add_feat}
-long_name_pred: ${long_name_feat}/datapred_${datapred.name}/optpred_${optimizer_predictor.name}/schedpred_${scheduler_predictor.name}/addpred_{other.add_pred}
+long_name_feat: exp_${experiment}/datafeat_${data_feat.name}/feat_${featurizer.name}/dist_${distortion.name}/enc_${encoder.name}/rate_${rate.name}/optfeat_${optimizer_feat.name}/schedfeat_${scheduler_feat.name}/zdim_${encoder.z_dim}/zs_${featurizer.loss.n_z_samples}/beta_${featurizer.loss.beta}/seed_${seed}/addfeat_${other.add_feat}
+long_name_pred: ${long_name_feat}/datapred_${data_pred.name}/optpred_${optimizer_pred.name}/schedpred_${scheduler_pred.name}/addpred_${other.add_pred}
+is_only_feat: false # don't run any prediction
 
-paths:
-  # the best practice is not to modify those paths but to simlink them to the places you want
+paths: #! the best practice is not to modify those paths but to simlink them to the places you want
   base_dir: ${hydra:runtime.cwd} 
   data: ${paths.base_dir}/data
   work: ${hydra.runtime.cwd}/outputs/${now:%Y-%m-%d_%H-%M-%S} # unfortunately cannot use hydra: in hydra so need to do everything by hand i.e. cannot use ${paths.base_dir}/outputs/{time}
@@ -62,8 +61,8 @@ other: # some meta information that can be useful for internal stuff (usually di
 ### STAGE SPECIFIC ###
 stage: ??? 
 long_name: ???
-data: {}
 checkpoint: {}
+data: {}
 
 ### RUNNING ###
 evaluation:
@@ -106,7 +105,7 @@ trainer:
 
 ########## FEATURIZER ##########
 ### DATA ###
-datafeat: {}
+data_feat: {}
 
 ### MODEL ###
 encoder:
@@ -117,9 +116,10 @@ encoder:
   fam_kwargs: {}
 
 ### OPTIMIZER ###
-optimizer_compressor: 
-  is_lars: false # whether to use LARS optimizer, useful for large batches.
-scheduler_compressor: {}
+optimizer_feat: 
+  kwargs:
+    is_lars: false # whether to use LARS optimizer, useful for large batches.
+scheduler_feat: {}
 
 optimizer_coder: {}
 scheduler_coder: {}
@@ -132,7 +132,7 @@ update_trainer_feat: {}
 
 ########## PREDICTOR ##########
 ### DATA ###
-datapred: {}
+data_pred: {}
 
 ### MODEL ###
 predictor:
@@ -142,9 +142,9 @@ predictor:
   arch_kwargs: {}
 
 ### OPTIMIZER ###
-optimizer_predictor: 
+optimizer_pred: 
   is_lr_find: True # whether to automatically look for best lr (only set the sugggested value if lr is None, if not just plots)
-scheduler_predictor: {}
+scheduler_pred: {}
 
 ### RUNNING ###
 checkpoint_pred: {}

@@ -1,0 +1,6 @@
+name: multistep
+modes: ["MultiStepLR"] # list of scheduler to use
+kwargs:
+  # all kwargs
+  MultiStepLR:
+    milestones: ???

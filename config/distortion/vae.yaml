@@ -1,12 +1,12 @@
 # @package _global_
 defaults:
-  - base_direct
+  - base_direct@distortion
 
 distortion:
   name: vae # vae that reconstructs the augmented images
   factor_beta: 0.5 # distortion is always much larger but you prefer having similar distortion
   
-data:
+data_feat:
   kwargs:
     dataset_kwargs:
       additional_target:  input

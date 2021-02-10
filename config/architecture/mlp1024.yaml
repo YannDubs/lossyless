@@ -1,5 +1,4 @@
-# @package _group_
-name: mlp
+name: mlp1024
 arch: mlp 
 arch_kwargs:
   hid_dim: 1024

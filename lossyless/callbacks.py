@@ -261,8 +261,9 @@ class CodebookPlot(Callback):
         # Find the unique set of latents for these inputs. Converts integer indexes
         # on the infinite lattice to scalar indexes into a codebook (which is only
         # valid for this set of inputs).
-        z_hat = to_numpy(z_hat)
-        _, i, idcs = np.unique(z_hat, return_index=True, return_inverse=True, axis=0)
+        _, i, idcs = np.unique(
+            to_numpy(z_hat), return_index=True, return_inverse=True, axis=0
+        )
 
         # - log q(z). shape: [batch_shape]
         rates = -torch.log(q_z).sum(-1) / math.log(BASE_LOG)

@@ -32,7 +32,7 @@ class Predictor(pl.LightningModule):
         )
 
     @auto_move_data  # move data on correct device for inference
-    def forward(self, x, is_logits=True):
+    def forward(self, x, is_logits=True, is_return_logs=False):
         """Perform prediction for `x`.
 
         Parameters
@@ -44,9 +44,16 @@ class Predictor(pl.LightningModule):
             Whether to return the logits instead of classes probablity in case you are using using
             classification.
 
+        is_return_logs : bool, optional 
+            Whether to return a dictionnary to log in addition to Y-pred.
+
         Returns
         -------
         Y_pred : torch.Tensor of shape=[batch_size, *target_shape]
+
+        if is_return_logs:
+            logs : dict
+                Dictionary of values to log.
         """
         with torch.no_grad():
             # shape: [batch_size,  *featurizer.out_shape]
@@ -59,9 +66,16 @@ class Predictor(pl.LightningModule):
             Y_pred = self.predictor(features)
 
         if not is_logits and self.is_clf:
-            return Y_pred.softmax(-1)
+            out = Y_pred.softmax(-1)
+        else:
+            out = Y_pred
 
-        return Y_pred
+        if is_return_logs:
+            batch_size = Y_pred.size(0)
+            logs = dict(inference_time=inference_timer.duration / batch_size)
+            return out, logs
+
+        return out
 
     def step(self, batch):
         x, y = batch
@@ -109,8 +123,8 @@ class Predictor(pl.LightningModule):
         optimizers, schedulers = [], []
 
         append_optimizer_scheduler_(
-            self.hparams.optimizer_predictor,
-            self.hparams.scheduler_predictor,
+            self.hparams.optimizer_pred,
+            self.hparams.scheduler_pred,
             self.parameters(),
             optimizers,
             schedulers,
@@ -179,7 +193,7 @@ class OnlineEvaluator(torch.nn.Module):
 
         with torch.no_grad():
             # Shape: [batch, z_dim]
-            z = encoder(x)
+            z = encoder(x, is_features=True)
 
         z = z.detach()
 

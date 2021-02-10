@@ -1,6 +1,6 @@
 defaults:
-  - hydra/job_logging: colorlog
-  - hydra/hydra_logging: colorlog
+  - override hydra/job_logging: colorlog
+  - override hydra/hydra_logging: colorlog
 
 experiment: ???
 agg_mode: [summarize_metrics] # summarize_RD_curves, plot_all_RD_curves, plot_invariance_RD_curve, plot_scatter_lines, plot_superpose
@@ -9,6 +9,7 @@ col_val_subset : {}
 collect_data:
   # name, pattern to find it
   results: "results/${experiment}/**/results_compression.csv"
+  results: "results/${experiment}/**/results_predictor.csv"
 
 kwargs:
   base_dir: ${hydra:runtime.cwd}

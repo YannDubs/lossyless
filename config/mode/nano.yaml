@@ -11,7 +11,7 @@ trainer:
   max_epochs: 2
 
 logger:
-  wandb:
+  wandb_kwargs: 
     tags: [nano, quick]
     anonymous: true
     project: tmp

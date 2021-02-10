@@ -28,12 +28,12 @@ class Timer:
 
     def __enter__(self):
         """Start a new timer as a context manager"""
-        self.start = time.start()
+        self.start = time.time()
         return self
 
     def __exit__(self, *args):
         """Stop the context manager timer"""
-        self.end = time.stop()
+        self.end = time.time()
         self.duration = self.end - self.start
 
 
@@ -448,13 +448,19 @@ def get_lr_scheduler(optimizer, mode, epochs=None, decay_factor=None, **kwargs):
         return Scheduler(optimizer, **kwargs)
 
 
-def get_optimizer(parameters, mode, is_lars=False, kwargs={}):
+def get_optimizer(parameters, mode, is_lars=False, **kwargs):
     """Return an inistantiated optimizer.
 
     Parameters
     ----------
     optimizer : {"gdn"}U{any torch.optim optimizer}
         Optimizer to use.mode
+
+    is_lars : bool, optional
+        Whether to use a LARS optimizer which can improve when using large batch sizes.
+
+    kwargs : 
+        Additional arguments to the optimzier.
     """
     Optimizer = getattr(torch.optim, mode)
     optimizer = Optimizer(parameters, **kwargs)
@@ -467,7 +473,7 @@ def append_optimizer_scheduler_(
     hparams_opt, hparams_sch, parameters, optimizers, schedulers
 ):
     """Return the correct optimzier and scheduler."""
-    optimizer = get_optimizer(parameters, **hparams_opt)
+    optimizer = get_optimizer(parameters, hparams_opt.mode, **hparams_opt.kwargs)
     optimizers += [optimizer]
 
     for mode in hparams_sch.modes:

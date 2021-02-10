@@ -1,4 +1,4 @@
 defaults:
-  base_H
+  - base_H
 
 name: H_factorized

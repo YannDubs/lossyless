@@ -17,15 +17,15 @@ from .helpers import (
 __all__ = ["get_distortion_estimator"]
 
 
-def get_distortion_estimator(name, p_ZlX, **kwargs):
-    if name == "direct":
+def get_distortion_estimator(mode, p_ZlX, **kwargs):
+    if mode == "direct":
         return DirectDistortion(**kwargs)
 
-    elif name == "contrastive":
+    elif mode == "contrastive":
         return ContrastiveDistortion(p_ZlX=p_ZlX, **kwargs)
 
     else:
-        raise ValueError(f"Unkown loss={name}.")
+        raise ValueError(f"Unkown disotrtion.mode={mode}.")
 
 
 class DirectDistortion(nn.Module):
@@ -73,6 +73,7 @@ class DirectDistortion(nn.Module):
         is_classification=True,
         n_classes_multilabel=None,
         is_sum_over_tasks=False,
+        name=None,  # in case you are directly using cfg of architecture. This is a placeholder
     ):
         super().__init__()
         self.dataset = dataset
