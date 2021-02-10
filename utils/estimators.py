@@ -190,7 +190,7 @@ def predict(trainer, dataloader):
     with torch.no_grad():
         for _, batch in enumerate(dataloader):
             x, target = batch
-            pred = model(x)
+            pred = model(x, is_features=True)
             preds.append(to_numpy(pred))
             targets.append(target)
 

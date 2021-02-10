@@ -12,19 +12,20 @@ source `dirname $0`/../utils.sh
 kwargs="
 experiment=$experiment 
 +mode=dev
-logger.name=false
+logger=none
 callbacks.additional=[]
+architecture@encoder=mlp
+architecture@predictor=mlp
+distortion=ivae
+rate=H_hyper
+data@data_feat=cifar10
+featurizer=neural_feat
 timeout=$time
 $add_kwargs
 "
 
 # every arguments that you are sweeping over
-kwargs_multi="
-encoder=mlp
-distortion=ivae
-rate=H_hyper
-data=mnist
-" 
+kwargs_multi="" 
 
 if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in  ""
@@ -35,4 +36,3 @@ if [ "$is_plot_only" = false ] ; then
   done
 fi
 
-#TODO plotting pipeline

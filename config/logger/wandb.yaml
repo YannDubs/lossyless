@@ -4,7 +4,7 @@ defaults:
 name: wandb
 is_can_plot_img: true
 kwargs:
-  project: lossyless
+  project: lossyless-final
   entity: ${wandb_entity}
   group: ${experiment}
   offline: false # Run offline (data can be streamed later to wandb servers).

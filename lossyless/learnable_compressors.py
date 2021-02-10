@@ -221,7 +221,7 @@ class LearnableCompressor(pl.LightningModule):
             loss = self.rate_estimator.aux_loss()
             logs = dict(coder_loss=loss)
 
-        self.log_dict({f"train/feat_{k}": v for k, v in logs.items()})
+        self.log_dict({f"train/feat/{k}": v for k, v in logs.items()})
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -231,7 +231,7 @@ class LearnableCompressor(pl.LightningModule):
         _, online_logs = self.online_evaluator(batch, self)
         logs.update(online_logs)
         self.log_dict(
-            {f"val/feat_{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"val/feat/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
         )
         return loss
 
@@ -240,7 +240,7 @@ class LearnableCompressor(pl.LightningModule):
         _, online_logs = self.online_evaluator(batch, self)
         logs.update(online_logs)
         self.log_dict(
-            {f"test/feat_{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"test/feat/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
         )
         return loss
 

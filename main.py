@@ -87,6 +87,7 @@ def main(cfg_hydra):
             COMPRESSOR_RES,
             is_est_entropies(cfg),
             ckpt_path=cfg.evaluation.featurizer.ckpt_path,
+            is_featurizer=True,
         )
 
     if cfg.is_only_feat:
@@ -125,7 +126,7 @@ def main(cfg_hydra):
     else:
         logger.info("Load pretrained predictor ...")
         predictor = load_pretrained(cfg, Predictor, PREDICTOR_CKPNT)
-        pred_trainer = get_trainer(cfg, predictor, is_featurizer=True)
+        pred_trainer = get_trainer(cfg, predictor, is_featurizer=False)
 
     if cfg.evaluation.predictor.is_evaluate:
         logger.info("Evaluate predictor ...")
@@ -136,6 +137,7 @@ def main(cfg_hydra):
             PREDICTOR_RES,
             False,
             ckpt_path=cfg.evaluation.predictor.ckpt_path,
+            is_featurizer=False,
         )
 
     ############## SHUTDOWN ##############
@@ -377,15 +379,23 @@ def is_est_entropies(cfg):
     return cfg.evaluation.is_est_entropies
 
 
-def evaluate(trainer, datamodule, cfg, file, is_est_entropies=False, ckpt_path="best"):
+def evaluate(
+    trainer,
+    datamodule,
+    cfg,
+    file,
+    is_est_entropies=False,
+    ckpt_path="best",
+    is_featurizer=True,
+):
     """
     Evaluate the trainer by loging all the metrics from the training and test set from the best model. 
     Can also compute sample estimates of soem entropies, which should be better estimates than the 
-    lower bounds used during training.
+    lower bounds used during training. Only estimate entropies if `is_featurizer`.
     """
     # test on test
     test_res = trainer.test(ckpt_path=ckpt_path)[0]
-    if is_est_entropies:
+    if is_est_entropies and is_featurizer:
         append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
     log_dict(trainer, test_res, is_param=False)
 
@@ -394,7 +404,7 @@ def evaluate(trainer, datamodule, cfg, file, is_est_entropies=False, ckpt_path="
         test_dataloaders=datamodule.train_dataloader(), ckpt_path=ckpt_path
     )[0]
     train_res = replace_keys(train_res, "test", "testtrain")
-    if cfg.evaluation.is_est_entropies:
+    if cfg.evaluation.is_est_entropies and is_featurizer:
         # ? this can be slow on all training set, is it necessary ?
         append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=False)
     log_dict(trainer, train_res, is_param=False)
@@ -420,9 +430,9 @@ def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
         is_discrete_Y=is_discrete_Y,
     )
     prfx = "test" if is_test else "testtrain"
-    results[f"{prfx}/H_MlZ"] = H_MlZ
-    results[f"{prfx}/H_YlZ"] = H_YlZ
-    results[f"{prfx}/H_Z"] = H_Z
+    results[f"{prfx}/feat/H_MlZ"] = H_MlZ
+    results[f"{prfx}/feat/H_YlZ"] = H_YlZ
+    results[f"{prfx}/feat/H_Z"] = H_Z
 
 
 def initialize_predictor_(module, datamodule, trainer, cfg):

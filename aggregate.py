@@ -16,6 +16,7 @@ import seaborn as sns
 
 import hydra
 from lossyless.helpers import BASE_LOG
+from main import COMPRESSOR_RES
 from omegaconf import OmegaConf
 from utils.helpers import StrFormatter, omegaconf2namespace
 from utils.visualizations.helpers import kwargs_log_scale, plot_config
@@ -66,6 +67,7 @@ def main_cli(cfg):
 
 
 def main(cfg):
+
     begin(cfg)
 
     # make sure you are using primitive types from now on because omegaconf does not always work
@@ -75,7 +77,8 @@ def main(cfg):
 
     logger.info(f"Recolting the data ..")
     for name, pattern in cfg.collect_data.items():
-        aggregator.collect_data(pattern=pattern, table_name=name)
+        if pattern is not None:
+            aggregator.collect_data(pattern=pattern, table_name=name)
 
     aggregator.subset(cfg.col_val_subset)
 
@@ -118,6 +121,33 @@ def get_default_args(func):
     }
 
 
+def data_getter(fn):
+    """Get the correct data."""
+    dflt_kwargs = get_default_args(fn)
+
+    @functools.wraps(fn)
+    def helper(
+        self, data=dflt_kwargs["data"], filename=dflt_kwargs["filename"], **kwargs
+    ):
+        if data is None:
+            # if None run all tables
+            return [
+                helper(self, data=k, filename=filename, **kwargs)
+                for k in self.tables.keys()
+            ]
+
+        if isinstance(data, str):
+            # cannot use format because might be other other patterns (format cannot do partial format)
+            filename = filename.replace("{table}", data)
+            data = self.tables[data]
+
+        data = data.copy()
+
+        return fn(self, data=data, filename=filename, **kwargs)
+
+    return helper
+
+
 def table_summarizer(fn):
     """Get the data and save the summarized output to a csv if needed.."""
     dflt_kwargs = get_default_args(fn)
@@ -126,9 +156,6 @@ def table_summarizer(fn):
     def helper(
         self, data=dflt_kwargs["data"], filename=dflt_kwargs["filename"], **kwargs
     ):
-        if isinstance(data, str):
-            data = self.tables[data]
-        data = data.copy()
 
         summary = fn(self, data=data, **kwargs)
 
@@ -147,8 +174,8 @@ def folder_split(fn):
     @functools.wraps(fn)
     def helper(
         self,
-        data,
         *args,
+        data=dflt_kwargs["data"],
         folder_col=dflt_kwargs["folder_col"],
         filename=dflt_kwargs["filename"],
         **kwargs,
@@ -159,7 +186,7 @@ def folder_split(fn):
 
         if folder_col is None:
             processed_filename = self.save_dir / f"{self.prfx}{filename}"
-            return fn(self, data, *args, filename=processed_filename, **kwargs)
+            return fn(self, *args, data=data, filename=processed_filename, **kwargs)
 
         else:
             out = []
@@ -175,8 +202,8 @@ def folder_split(fn):
                 out.append(
                     fn(
                         self,
-                        curr_data.set_index(data.index.names),
                         *args,
+                        data=curr_data.set_index(data.index.names),
                         filename=processed_filename,
                         **kwargs,
                     )
@@ -197,10 +224,10 @@ def single_plot(fn):
     @functools.wraps(fn)
     def helper(
         self,
-        data,
         x,
         y,
         *args,
+        data=dflt_kwargs["data"],
         folder_col=dflt_kwargs["folder_col"],
         filename=dflt_kwargs["filename"],
         cols_vary_only=dflt_kwargs["cols_vary_only"],
@@ -235,10 +262,6 @@ def single_plot(fn):
         kwargs["x"] = x
         kwargs["y"] = y
 
-        if isinstance(data, str):
-            data = self.tables[data]
-        data = data.copy()
-
         assert_sns_vary_only_param(data, kwargs, cols_vary_only)
 
         data = aggregate(data, cols_to_agg, aggregates)
@@ -247,7 +270,7 @@ def single_plot(fn):
         used_plot_config = dict(self.plot_config_kwargs, **plot_config_kwargs)
 
         with plot_config(**used_plot_config):
-            sns_plot = fn(self, pretty_data, *args, **pretty_kwargs)
+            sns_plot = fn(self, *args, data=pretty_data, **pretty_kwargs)
 
         for ax in sns_plot.axes.flat:
             plt.setp(ax.texts, text="")
@@ -329,7 +352,12 @@ class Aggregator:
 
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
-    def collect_data(self, pattern="results/**/*.csv", table_name="results"):
+    def collect_data(
+        self,
+        pattern=f"results/**/{COMPRESSOR_RES}",
+        table_name="featurizer",
+        params_to_rm=["jid"],
+    ):
         """Collect all the data.
 
         Notes
@@ -347,6 +375,9 @@ class Aggregator:
 
         table_name : str, optional
             Name of the table under which to save the loaded data.
+
+        params_to_rm : list of str, optional   
+            Params to remove.
         """
         paths = glob.glob(str(self.base_dir / pattern), recursive=True)
         if len(paths) == 0:
@@ -363,13 +394,16 @@ class Aggregator:
             # make dict of params
             params = path_to_params(path_clean)
 
+            for p in params_to_rm:
+                params.pop(p)
+
             # looks like : DataFrame(param1:...,param2:..., param3:...)
             df_params = pd.DataFrame.from_dict(params, orient="index").T
             # looks like : dict(train={metric1:..., metric2:...}, test={metric1:..., metric2:...})
             dicts = pd.read_csv(path, index_col=0).to_dict()
             # flattens dicts and make dataframe :
-            # DataFrame(train_metric1:...,train_metric2:..., test_metric1:..., test_metric2:...)
-            df_metrics = pd.json_normalize(dicts, sep="_")
+            # DataFrame(train/metric1:...,train/metric2:..., test/metric1:..., test/metric2:...)
+            df_metrics = pd.json_normalize(dicts, sep="/")
 
             results.append(pd.concat([df_params, df_metrics], axis=1))
 
@@ -417,14 +451,15 @@ class Aggregator:
                 if self.tables[k].empty:
                     logger.info(f"Empty table after filtering {col}={val}")
 
+    @data_getter
     def plot_all_RD_curves(
         self,
-        data="results",
-        rate_cols=["test_rate"],
-        distortion_cols=["test_distortion", "test_online_loss"],
+        data=None,
+        rate_cols=["test/feat/rate"],
+        distortion_cols=["test/feat/distortion", "test/feat/online_loss"],
         logbase_x=None,
-        cols_to_agg=["s"],
-        filename="all_RD_curves",
+        cols_to_agg=["seed"],
+        filename="all_RD_curves_{table}",
         **kwargs,
     ):
         """Main function for plotting different Rate distortion plots.
@@ -432,7 +467,7 @@ class Aggregator:
         Parameters
         ----------
         data : pd.DataFrame or str
-            Dataframe to use for plotting. If str will use one of self.tables.
+            Dataframe to use for plotting. If str will use one of self.tables. If `None` runs all tables.
 
         rate_cols : list of str
             List of columns that can be considered as rates and for which we should generate RD curves.
@@ -450,19 +485,15 @@ class Aggregator:
         kwargs :
             Additional arguments to `plot_scatter_lines`.
         """
-        if isinstance(data, str):
-            data = self.tables[data]
-        data = data.copy()
-
         data = merge_rate_distortions(data, rate_cols, distortion_cols)
 
         is_single_col = len(distortion_cols) == 1
         is_single_row = len(rate_cols) == 1
 
         return self.plot_scatter_lines(
-            data,
-            y="rate_mean",
-            x="distortion_mean",
+            data=data,
+            y="rate_val_mean",
+            x="distortion_val_mean",
             kind="line",
             logbase_x=logbase_x,
             row=None if is_single_row else "rate_type",
@@ -478,13 +509,14 @@ class Aggregator:
 
     def plot_invariance_RD_curve(
         self,
-        col_dist_param="d",
+        col_dist_param="dist",
         noninvariant="vae",
-        rate_col="train_rate",
-        upper_distortion="train_distortion",
-        desirable_distortion="train_online_loss",
+        rate_col="test/feat/rate",
+        upper_distortion="test/feat/distortion",
+        desirable_distortion="test/feat/online_loss",
         logbase_x=None,
-        cols_to_agg=["s"],
+        cols_to_agg=["seed"],
+        filename="invariance_RD_curve",
         **kwargs,
     ):
         """Plot a specific rate distortion curve which where the distortion is the invaraince
@@ -506,7 +538,7 @@ class Aggregator:
         kwargs :
             Additional arguments to `plot_scatter_lines`.
         """
-        results = self.tables["results"]
+        results = self.tables["featurizer"]
         results = merge_rate_distortions(
             results, [rate_col], [upper_distortion, desirable_distortion]
         )
@@ -525,9 +557,9 @@ class Aggregator:
         results = tmp.set_index(results.index.names)
 
         return self.plot_scatter_lines(
-            results,
-            y="rate_mean",
-            x="distortion_mean",
+            data=results,
+            y="rate_val_mean",
+            x="distortion_val_mean",
             kind="line",
             hue=col_dist_param,
             logbase_x=logbase_x,
@@ -536,29 +568,32 @@ class Aggregator:
             is_y_errorbar=True,
             sharey=False,
             sharex=False,
+            filename=filename,
             **kwargs,
         )
 
+    @data_getter
     @table_summarizer
     def summarize_RD_curves(
         self,
-        data="results",
-        rate_cols=["train_rate"],
-        distortion_cols=["train_distortion", "train_online_loss"],
-        cols_to_agg=["s"],
-        cols_to_sweep=["b"],
-        mse_cols=["train_distortion", "train_online_loss"],
-        compare_cols=["d"],
+        data=None,
+        rate_cols=["test/feat/rate"],
+        distortion_cols=["test/feat/distortion", "test/feat/online_loss"],
+        cols_to_agg=["seed"],
+        cols_to_sweep=["beta"],
+        mse_cols=["test/feat/distortion", "test/feat/online_loss"],
+        compare_cols=["dist"],
         epsilon_close_distortion=0.01,
-        filename="summarized_RD_curves",
+        filename="summarized_RD_curves_{table}",
     ):
-        """Summarize RD curves by a table: area under th RD curve, average rate for (nearly)
+        """Summarize RD curves by a table: area under the RD curve, average rate for (nearly)
         lossless prediction, ...
 
         Parameters
         ----------
         data : pd.DataFrame or str, optional
-            Dataframe to summarize. If str will use one of self.tables.
+            Dataframe to summarize. If str will use one of self.tables. If `None` uses all data
+                in self.tables.
 
         rate_cols : list of str, optional
             List of columns that can be considered as rates and for which we should generate RD curves.
@@ -591,7 +626,8 @@ class Aggregator:
             in terms of prediction to the best one.
 
         filename : str, optional
-            Name of the file for saving to summarized RD curves.
+            Name of the file for saving to summarized RD curves. Can interpolate {table} if from 
+            self.tables.
         """
         # to be meaningfull, both the disortion and the rate columns should be in bits / erntropies (also as approximately linar the
         # trapezoidal rule should be a very good approximation of integral)
@@ -619,7 +655,7 @@ class Aggregator:
         # compute the avg rate for each model to have distortion than best for All model
         dropped = data_toagg.reset_index(level=compare_cols)
         mindist_all = dropped.groupby(dropped.index.names).min()[
-            "distortion"
+            "distortion_val"
         ]  # table of all minimum distortions
         rate_mindist_all = data_toagg.groupby(data_toagg.index.names).apply(
             apply_rate_mindistortion,
@@ -632,20 +668,22 @@ class Aggregator:
         summary = pd.concat([aurd, rate_mindist_cur, rate_mindist_all], axis=1)
         return summary
 
+    @data_getter
     @table_summarizer
     def summarize_metrics(
         self,
-        data="results",
-        cols_to_agg=["s"],
+        data=None,
+        cols_to_agg=["seed"],
         aggregates=["mean", "sem"],
-        filename="summarized_metrics",
+        filename="summarized_metrics_{table}",
     ):
         """Aggregate all the metrics and save them.
 
         Parameters
         ----------
         data : pd.DataFrame or str, optional
-                Dataframe to summarize. If str will use one of self.tables.
+                Dataframe to summarize. If str will use one of self.tables. If `None` uses all data
+                in self.tables.
 
         cols_to_agg : list of str
             List of columns over which to aggregate. E.g. `["seed"]`.
@@ -654,26 +692,24 @@ class Aggregator:
             List of functions to use for aggregation. The aggregated columns will be called `{col}_{aggregate}`.
 
         filename : str, optional
-                Name of the file for saving the metrics.
+                Name of the file for saving the metrics. Can interpolate {table} if from self.tables.
         """
         return aggregate(data, cols_to_agg, aggregates)
 
+    @data_getter
     def plot_superpose(
         self,
-        data,
         x,
         to_superpose,
         value_name,
-        filename="superposed_{value_name}",
+        data=None,
+        filename="{table}_superposed_{value_name}",
         **kwargs,
     ):
         """Plot a single line figure with multiple superposed lineplots.
 
         Parameters
         ----------
-        data : pd.DataFrame or str
-            Dataframe used for plotting. If str will use one of self.tables.
-
         x : str
             Column name of x axis.
 
@@ -684,16 +720,15 @@ class Aggregator:
         value_name : str
             Name of the yaxis.
 
+        data : pd.DataFrame or str, optional
+            Dataframe used for plotting. If str will use one of self.tables. If `None` runs all tables.
+
         filename : str, optional
             Name of the figure when saving. Can use {value_name} for interpolation.
 
         kwargs :
             Additional arguments to `plot_scatter_lines`.
         """
-        if isinstance(data, str):
-            data = self.tables[data]
-        data = data.copy()
-
         renamer = to_superpose
         key_to_plot = to_superpose.keys()
 
@@ -709,21 +744,22 @@ class Aggregator:
         kwargs["hue"] = "mode"
 
         return self.plot_scatter_lines(
-            data,
+            data=data,
             x=x,
             y=value_name,
             filename=filename.format(value_name=value_name),
             **kwargs,
         )
 
+    @data_getter
     @folder_split
     @single_plot
     def plot_scatter_lines(
         self,
-        data,
         x,
         y,
-        filename="lines_{y}_vs_{x}",
+        data=None,
+        filename="{table}_lines_{y}_vs_{x}",
         mode="relplot",
         folder_col=None,
         logbase_x=1,
@@ -748,16 +784,16 @@ class Aggregator:
 
         Parameters
         ----------
-        data : pd.DataFrame or str
-            Dataframe used for plotting. If str will use one of self.tables.
-
         x : str
             Column name of x axis.
 
         y : str
             Column name for the y axis.
 
-        filename : str or Path
+        data : pd.DataFrame or str, optional
+            Dataframe used for plotting. If str will use one of self.tables. If `None` runs all tables.
+
+        filename : str or Path, optional
             Path to the file to which to save the results to. Will start at `base_dir`.
             Can interpolate {x} and {y}.
 
@@ -985,34 +1021,36 @@ def set_log_scale(data, basex, basey, **kwargs):
 
 
 def merge_rate_distortions(results, rate_cols, distortion_cols):
-    """Adds a `distortion_type` and `rate_type` index by melting over `distortion_cols` and `rate_cols`
-    respectively. The values columns are resepectively `distortion`and `rate`."""
+    """
+    Adds a `distortion_type` and `rate_type` index by melting over `distortion_cols` and `rate_cols`
+    respectively. The values columns are resepectively `distortion_val`and `rate_val`.
+    """
     results = results.melt(
         id_vars=rate_cols,
         value_vars=distortion_cols,
         ignore_index=False,
         var_name="distortion_type",
-        value_name="distortion",
+        value_name="distortion_val",
     ).set_index(["distortion_type"], append=True)
 
     results = results.melt(
-        id_vars="distortion",
+        id_vars="distortion_val",
         value_vars=rate_cols,
         ignore_index=False,
         var_name="rate_type",
-        value_name="rate",
+        value_name="rate_val",
     ).set_index(["rate_type"], append=True)
     return results
 
 
 def apply_area_under_RD(df):
     """Compute the area under the rate distortion curve using trapezoidal rule."""
-    df = df.sort_values(by="distortion")
-    return sklearn.metrics.auc(df["distortion"], df["rate"])
+    df = df.sort_values(by="distortion_val")
+    return sklearn.metrics.auc(df["distortion_val"], df["rate_val"])
 
 
 def apply_rate_mindistortion(
-    df, epsilon=0.01, min_distortion_df=None, to_drop=["d"], name="mindistortion"
+    df, epsilon=0.01, min_distortion_df=None, to_drop=["dist"], name="mindistortion"
 ):
     """
     Compute the rate for (delta) close to lossless prediction. `name` is name of added column. `min_distortion_df`
@@ -1022,18 +1060,18 @@ def apply_rate_mindistortion(
     over ALL models but best over CURRENT models.
     """
     if min_distortion_df is None:
-        min_distortion = df["distortion"].min()
+        min_distortion = df["distortion_val"].min()
     else:
         current_idcs = df.reset_index(level=to_drop).index.unique()
         assert len(current_idcs) == 1
         min_distortion = min_distortion_df.loc[current_idcs[0]]
 
     threshold = min_distortion + epsilon
-    df = df[df["distortion"] <= threshold]
+    df = df[df["distortion_val"] <= threshold]
     # returning series in apply can be very slow
     return pd.Series(
-        [df["rate"].mean(), df["rate"].sem(), threshold],
-        index=[f"rate_{name}_mean", f"rate_{name}_sem", f"{name}_threshold"],
+        [df["rate_val"].mean(), df["rate_val"].sem(), threshold],
+        index=[f"rate_val_{name}_mean", f"rate_val_{name}_sem", f"{name}_threshold"],
     )
 
 

@@ -8,12 +8,12 @@ col_val_subset : {}
 
 collect_data:
   # name, pattern to find it
-  results: "results/${experiment}/**/results_compression.csv"
-  results: "results/${experiment}/**/results_predictor.csv"
+  featurizer: "results/exp_${experiment}/**/results_compressor.csv"
+  predictor: "results/exp_${experiment}/**/results_predictor.csv"
 
 kwargs:
   base_dir: ${hydra:runtime.cwd}
-  save_dir: results/${experiment}/
+  save_dir: results/exp_${experiment}/
   prfx: ""
   dpi: 300
   pretty_renamer: {}

@@ -101,20 +101,20 @@ class Predictor(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
-        self.log_dict({f"train/pred_{k}": v for k, v in logs.items()})
+        self.log_dict({f"train/pred/{k}": v for k, v in logs.items()})
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
         self.log_dict(
-            {f"val/pred_{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"val/pred/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
         )
         return loss
 
     def test_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
         self.log_dict(
-            {f"test/pred_{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"test/pred/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
         )
         return loss
 
