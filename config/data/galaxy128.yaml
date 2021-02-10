@@ -1,0 +1,9 @@
+# @package _group_
+name: galaxy128
+dataset: galaxy
+
+kwargs:
+  resolution: 128
+  dataset_kwargs:
+    equivalence: [x_translation, y_translation]
+    is_augment_val: True

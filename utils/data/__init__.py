@@ -1,7 +1,6 @@
 from .distributions import *
 from .images import *
 
-
 def get_datamodule(datamodule):
     """Return the correct uninstantiated datamodule."""
     datamodule = datamodule.lower()

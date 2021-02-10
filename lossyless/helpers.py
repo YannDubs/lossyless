@@ -226,10 +226,14 @@ def kl_divergence(p, q, z_samples=None, is_lower_var=False, is_reduce=True):
     return kl_pq
 
 
-# TODO add galaxy
-MEANS = dict(imagenet=[0.485, 0.456, 0.406], cifar10=[0.4914009, 0.48215896, 0.4465308])
-STDS = dict(
-    imagenet=[0.229, 0.224, 0.225], cifar10=[0.24703279, 0.24348423, 0.26158753]
+MEANS = dict( imagenet=[0.485, 0.456, 0.406],
+              cifar10=[0.4914009, 0.48215896, 0.4465308],
+              galaxy64=[0.03341029, 0.04443058, 0.05051352],
+              galaxy128=[0.03294565, 0.04387402, 0.04995899])
+STDS = dict(imagenet=[0.229, 0.224, 0.225],
+            cifar10=[0.24703279, 0.24348423, 0.26158753],
+            galaxy64=[0.06985303, 0.07943781, 0.09557958],
+            galaxy128=[0.07004886, 0.07964786, 0.09574898],
 )
 
 
@@ -237,7 +241,10 @@ def get_normalization(Dataset):
     """Return corrrect normalization given dataset class."""
     if "cifar10" in Dataset.__name__.lower():
         return transform_lib.Normalize(mean=MEANS["cifar10"], std=STDS["cifar10"])
-    # TODO add galaxy
+    elif "galaxy64" in Dataset.__name__.lower():
+        return transform_lib.Normalize(mean=MEANS["galaxy64"], std=STDS["galaxy64"])
+    elif "galaxy128" in Dataset.__name__.lower():
+        return transform_lib.Normalize(mean=MEANS["galaxy128"],std=STDS["galaxy128"])
     else:
         raise ValueError(f"Uknown mean and std for {Dataset}.")
 
