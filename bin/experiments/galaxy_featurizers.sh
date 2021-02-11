@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-experiment="galaxy_RD"
+experiment="galaxy_featurizers"
 notes=" "
 
 # parses special mode for running the script
@@ -8,23 +8,29 @@ source `dirname $0`/../utils.sh
 
 # define all the arguments modified or added to `conf`. If they are added use `+`
 kwargs="
-data=galaxy64
-experiment=$experiment
-timeout=$time
-encoder=resnet
-rate=MI_unitgaussian
-evaluation.is_est_entropies=True
+is_only_feat=False
 trainer.max_epochs=200
+data@data_feat=galaxy64
+architecture@encoder=resnet18
+architecture@predictor=resnet18
+evaluation.is_est_entropies=True
+experiment=$experiment 
+timeout=$time
 $add_kwargs
 "
 
 # every arguments that you are sweeping over
 kwargs_multi="
-distortion=vae
-loss.beta=0.01,0.1,1.
+featurizer=ivae_hfac_b01,ivae_hfac_b1,ivae_hfac_b10,vae_hfac_b0.01,vae_hfac_b01,vae_hfac_b1,vae_hfac_b10,none,webp++,webp--
 seed=1,2,3
 "
-# ivib,ivae,ince,vae,nce,vib,taskvib
+
+
+kwargs_multi="
+featurizer=ivae_hfac_b01vae_hfac_b0.01,none,webp++
+seed=1
+trainer.max_epochs=2
+"
 
 
 if [ "$is_plot_only" = false ] ; then

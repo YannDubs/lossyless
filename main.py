@@ -98,6 +98,7 @@ def main(cfg_hydra):
     if cfg.is_only_feat:
         logger.info("Stage : Shutdown after featurizer")
         return finalize(cfg, modules=[compressor], trainers=[comp_trainer])
+    del datamodule  # not used anymore and can be large
 
     ############## COMMUNICATION (compress and decompress the datamodule) ##############
     logger.info("Stage : Communication")

@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - neural_rec@featurizer # needs @ because you are working in _global_
+  - override /rate: H_factorized
+  - override /distortion: ivae
+
+featurizer:
+  name: ivae_hfac_b10
+  loss:
+    beta: 10

@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 
-experiment="mnist_RD_compare_distortions"
-notes="
-**Goal**: comparing the variational bounds of distortions
-"
+experiment="galaxy_RD"
+notes=" "
 
 # parses special mode for running the script
 source `dirname $0`/../utils.sh
@@ -12,24 +10,29 @@ source `dirname $0`/../utils.sh
 kwargs="
 experiment=$experiment 
 timeout=$time
-encoder=cnn
-rate=H_factorized
-data=analytic_mnist
+data@data_feat=galaxy64
+architecture@encoder=resnet18
+is_only_feat=True
+featurizer=neural_rec
+rate=MI_unitgaussian
 evaluation.is_est_entropies=True
-trainer.max_epochs=100
+trainer.max_epochs=200
 $add_kwargs
 "
-# encoder=resnet
-# trainer.max_epochs=200
 
 # every arguments that you are sweeping over
 kwargs_multi="
-distortion=ivae,ince,ivib
-loss.beta=0.01,0.03,0.1,0.3,1,10,100
+distortion=vae
+loss.beta=0.01,0.1,1.
+seed=1,2,3
+"
+# ivib,ivae,ince,vae,nce,vib,taskvib
+
+kwargs_multi="
+distortion=vae
+loss.beta=0.01,0.1,1.,10
 seed=1
-" 
-# loss.beta=0.01,0.03,0.1,0.3,1,3,10,30,100
-# seed=1,2,3
+"
 
 if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in  ""
@@ -38,8 +41,6 @@ if [ "$is_plot_only" = false ] ; then
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
 
     sleep 3
-    
+
   done
 fi
-
-#TODO plotting pipeline
