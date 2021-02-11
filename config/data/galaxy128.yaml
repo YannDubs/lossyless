@@ -1,10 +1,9 @@
-# @package _group_
+defaults:
+  - base_galaxy
+
 name: galaxy128
-dataset: galaxy
+dataset: galaxy128 # actually this is all galaxy dataset (we are using single dataset) but adding 128 so that can use different normalization if needed
 
 kwargs:
   dataset_kwargs:
-    root: "/checkpoint/karenu/data/"
     resolution: 128
-    equivalence: [x_translation, y_translation]
-    is_augment_val: True

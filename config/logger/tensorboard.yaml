@@ -1,0 +1,5 @@
+defaults:
+  - base
+  
+name: tensorboard
+is_can_plot_img: True

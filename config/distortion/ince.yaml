@@ -1,18 +1,5 @@
-# @package _global_
-distortion:
-  name: ince # usual (invariant) NCE: try to classify augmented image
-  mode: contrastive
-  factor_beta: 0.01 # compared to ivae gives importance ++ to rate so decrease it (value taken empirically)
-  kwargs:
-    temperature: 0.1
-    is_symmetric: true
-    weight: ${data.neg_factor}
-  
-data:
-  kwargs:
-    batch_size: 256 # better results with large batch sizes for estimating MI (like 1024 but then you need LARS)
-    dataset_kwargs:
-      additional_target: equiv_x
+defaults:
+  - base_contrastive
 
-optimizer:
-  is_lars: false # true is uesull if have to use large batch sizes (but currently bug)
+name: ince # usual (invariant) NCE: try to classify augmented image
+factor_beta: 0.01 # compared to ivae gives importance ++ to rate so decrease it (value taken empirically)

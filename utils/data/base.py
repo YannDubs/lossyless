@@ -25,35 +25,38 @@ class LossylessDataset(abc.ABC):
         `"representative"` is a representative of the equivalence class (always the same).
         `"equiv_x"` is some random equivalent x. `"max_inv"` is the
         maximal invariant. `"max_var"` should be similar to maximal invariant but it should not be
-        invariant, e.g. if the maximal invariant is the unaugmented index then the `max_var` is the
-        augmented index (his ensure that the same losses can be used as with `max_inv`.
-        "target" uses agin the target (i.e. duplicate).
+        invariant. "target" uses agin the target (i.e. duplicate).
 
     equivalence : str or set of str, optional
         Equivalence relationship with respect to which to be invariant. Depends on the dataset.
         `None` means no equivalence.
+
+    is_normalize : bool, optional
+        Whether to normalize the data.
 
     seed : int, optional
         Pseudo random seed.
     """
 
     def __init__(
-        self, *args, additional_target=None, equivalence=None, seed=123, **kwargs,
+        self,
+        *args,
+        additional_target=None,
+        equivalence=None,
+        is_normalize=False,
+        seed=123,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
         self.additional_target = additional_target
         self.equivalence = equivalence
         self.seed = seed
+        self.is_normalize = is_normalize
 
     @abc.abstractmethod
     def get_x_target_Mx(self, index):
         """Return the correct example, target, and maximal invariant."""
-        ...
-
-    @abc.abstractmethod
-    def sample_equivalence_action(self):
-        """Sample a function that brings any x to an equivalent x', e.g. group action."""
         ...
 
     @abc.abstractmethod
@@ -62,9 +65,16 @@ class LossylessDataset(abc.ABC):
         ...
 
     @abc.abstractmethod
+    def get_equiv_x(self, x, Mx):
+        """Return some other random element from same equivalence class."""
+        ...
+
     def get_max_var(self, x, Mx):
         """Return some element which is maximal but non invariant, and is similar form to `max_inv`."""
-        ...
+        # by default not possible
+        raise NotImplementedError(
+            f"`max_var` not implemented for {type(self).__name__}"
+        )
 
     @property
     @abc.abstractmethod
@@ -87,16 +97,17 @@ class LossylessDataset(abc.ABC):
     def __getitem__(self, index):
         x, target, Mx = self.get_x_target_Mx(index)
 
-        targets = [target]
-        targets += self.toadd_target(self.additional_target, x, target, Mx)
+        if self.additional_target is None:
+            targets = target
+        else:
+            targets = [target]
+            targets += self.toadd_target(self.additional_target, x, target, Mx)
 
         return x, targets
 
     def toadd_target(self, additional_target, x, target, Mx):
 
-        if additional_target is None:
-            to_add = [[]]  # just so that all the code is the same
-        elif additional_target == "input":
+        if additional_target == "input":
             to_add = [x]
         elif additional_target == "representative":
             # representative element from same equivalence class
@@ -117,13 +128,6 @@ class LossylessDataset(abc.ABC):
             raise ValueError(f"Unkown additional_target={additional_target}")
 
         return to_add
-
-    def get_equiv_x(self, x, Mx):
-        """Return some other random element from same equivalence class."""
-
-        rep = self.get_representative(Mx)
-        action = self.sample_equivalence_action()
-        return action(rep)
 
     def get_is_clf(self):
         """Return `is_clf` for the target and aux_target."""
@@ -316,11 +320,6 @@ class LossylessDataModule(LightningDataModule):
         self.target_shape, self.aux_shape = dataset.get_shapes()
         self.shape = dataset.shapes_x_t_Mx["input"]
         self.additional_target = dataset.additional_target
-
-        # TODO clean max_var for multi label multi clf
-        # save real shape of `max_var` if you had to flatten it for batching.
-        if self.additional_target == "max_var" and hasattr(dataset, "shape_max_var"):
-            self.shape_max_var = dataset.shape_max_var
 
     def setup(self, stage=None):
         """Prepare the datasets for the current stage."""

@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - base@parallel
+  
+optimizer:
+  lr: [1]
+
+parallel:
+  key: "optimizer.lr"
+  to_sweep: [1]

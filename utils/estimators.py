@@ -97,7 +97,9 @@ def discrete_entropy(x, base=2, is_plugin=False, **kwargs):
     try:
         import ndd
     except ImportError:
-        logger.warn("To compute discrete entropies you need to install `ndd`.")
+        logger.exception(
+            "To compute discrete entropies you need to install `ndd`. Returning -inf."
+        )
         return -np.inf
 
     return float(ndd.entropy(counts, **kwargs) / math.log(base))
@@ -190,7 +192,7 @@ def predict(trainer, dataloader):
     with torch.no_grad():
         for _, batch in enumerate(dataloader):
             x, target = batch
-            pred = model(x)
+            pred = model(x, is_features=True)
             preds.append(to_numpy(pred))
             targets.append(target)
 
@@ -213,20 +215,11 @@ def predict(trainer, dataloader):
     return preds, targets
 
 
-def estimate_entropies(
-    trainer, datamodule, is_test=True, is_discrete_M=True, is_discrete_Y=True
-):
+def estimate_entropies(trainer, dataloader, is_discrete_M=True, is_discrete_Y=True):
     """Estimate the invariance distortion H[M(X)|Z] (upper bound on bayes risk) and current bayes risk 
     H[Y|Z] on train or test set. This should only be used if Z is discretized, i.e. using H bottleneck. 
     Trainer.model should be a CompressionModule.
     """
-    # get the max invariant from the dataset
-    dkwargs = {"additional_target": "max_inv"}
-    if is_test:
-        dataloader = datamodule.test_dataloader(dataset_kwargs=dkwargs)
-    else:
-        dataloader = datamodule.train_dataloader(dataset_kwargs=dkwargs)
-
     z_samples, (y_samples, Mx_samples) = predict(trainer, dataloader)
 
     z_samples = at_least_ndim(z_samples, 2, is_prefix_padded=False)

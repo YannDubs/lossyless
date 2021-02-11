@@ -1,0 +1,12 @@
+defaults:
+  - base
+  
+dataset: banana
+
+kwargs:
+  val_size: 100000
+  batch_size: 8192
+  val_batch_size: 16384
+  dataset_kwargs:
+    length: 1024000
+    is_normalize: False

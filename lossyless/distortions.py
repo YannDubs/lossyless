@@ -7,38 +7,26 @@ from torch.nn import functional as F
 
 from .architectures import get_Architecture
 from .distributions import Deterministic, DiagGaussian
-from .helpers import BASE_LOG, kl_divergence, prod, undo_normalization
+from .helpers import (
+    BASE_LOG,
+    UnNormalizer,
+    is_colored_img,
+    kl_divergence,
+    mse_or_crossentropy_loss,
+)
 
 __all__ = ["get_distortion_estimator"]
 
 
-def get_distortion_estimator(name, p_ZlX, **kwargs):
-    if name == "direct":
+def get_distortion_estimator(mode, p_ZlX, **kwargs):
+    if mode == "direct":
         return DirectDistortion(**kwargs)
 
-    elif name == "contrastive":
+    elif mode == "contrastive":
         return ContrastiveDistortion(p_ZlX=p_ZlX, **kwargs)
 
     else:
-        raise ValueError(f"Unkown loss={name}.")
-
-
-def mse_or_crossentropy_loss(Y_hat, target, is_classification, is_sum_over_tasks=False):
-    """Compute the cross entropy for multilabel clf tasks or MSE for regression"""
-
-    if is_classification:
-        loss = F.cross_entropy(Y_hat, target.long(), reduction="none")
-    else:
-        loss = F.mse_loss(Y_hat, target, reduction="none")
-
-    if not is_sum_over_tasks:
-        n_tasks = prod(Y_hat[0, 0, ...].shape)
-        loss = loss / n_tasks  # takes an average over tasks
-
-    batch_size = loss.size(0)
-    loss = loss.view(batch_size, -1).sum(keepdim=True, dim=-1)
-
-    return loss
+        raise ValueError(f"Unkown disotrtion.mode={mode}.")
 
 
 class DirectDistortion(nn.Module):
@@ -74,6 +62,14 @@ class DirectDistortion(nn.Module):
 
     is_sum_over_tasks : bool, optional
         Whether to sum all task loss rather than average.
+
+    is_normalized : bool, optional
+        Whether the data is normalized. This is important to know whether needs to be unormalized
+        when comparing in case you are reconstructing the input. Currently only works for colored
+        images.
+
+    data_mode : {"image","distribution"}, optional      
+        Mode of the data input.
     """
 
     def __init__(
@@ -86,11 +82,14 @@ class DirectDistortion(nn.Module):
         is_classification=True,
         n_classes_multilabel=None,
         is_sum_over_tasks=False,
+        is_normalized=True,
+        data_mode="image",
+        name=None,  # in case you are directly using cfg of architecture. This is a placeholder
     ):
         super().__init__()
         self.dataset = dataset
         self.is_classification = is_classification
-        self.is_img_out = (not isinstance(y_shape, int)) and (len(y_shape) == 3)
+        self.is_img_out = data_mode == "image"
 
         if arch is None:
             arch = "cnn" if self.is_img_out else "mlp"
@@ -98,6 +97,15 @@ class DirectDistortion(nn.Module):
         self.q_YlZ = Decoder(z_dim, y_shape)
         self.n_classes_multilabel = n_classes_multilabel
         self.is_sum_over_tasks = is_sum_over_tasks
+        self.is_normalized = is_normalized
+
+        if self.is_normalized:
+            if self.is_img_out:
+                self.unnormalizer = UnNormalizer(self.dataset)
+            else:
+                raise NotImplementedError(
+                    "Can curently only deal with normalized data if it's an image."
+                )
 
     def forward(self, z_hat, aux_target, _):
         """Compute the distortion.
@@ -136,22 +144,25 @@ class DirectDistortion(nn.Module):
         # is an actual conditional distribution (categorical if cross entropy, and gaussian for mse),
         # but this might be less understandable for usual deep learning + less numberically stable
         if self.is_img_out:
-            # Currently only looks at number of channels not is_classification. Might need to change
-            if aux_target.shape[-3] == 1:
+            if is_colored_img(aux_target):
+                if self.is_normalized:
+                    # compare in unormalized space
+                    aux_target = self.unnormalizer(aux_target)
+
+                # output is linear but data is in 0,1 => for a better comparison put in [-,1]
+                Y_hat = torch.sigmoid(Y_hat)
+
+                # color image => uses gaussian distribution
+                neg_log_q_ylz = F.mse_loss(Y_hat, aux_target, reduction="none")
+            else:
                 # black white image => uses categorical distribution, with logits for stability
                 neg_log_q_ylz = F.binary_cross_entropy_with_logits(
                     Y_hat, aux_target, reduction="none"
                 )
-            elif aux_target.shape[-3] == 3:
-                # this is just to ensure that images are in [0,1] and compared in unormalized space
-                # black white doesn't need because uses logits
-                Y_hat, aux_target = undo_normalization(Y_hat, aux_target, self.dataset)
-                # color image => uses gaussian distribution
-                neg_log_q_ylz = F.mse_loss(Y_hat, aux_target, reduction="none")
-            else:
-                raise ValueError(
-                    f"shape={aux_target.shape} does not seem to come from an image"
-                )
+
+                # but for saving you still want the image in [0,1]
+                Y_hat = torch.sigmoid(Y_hat)
+
         elif self.n_classes_multilabel:
             assert self.is_classification
             cum_cls = 0
@@ -185,7 +196,7 @@ class DirectDistortion(nn.Module):
         logs = dict(H_q_TlZ=neg_log_q_ylz.mean() / math.log(BASE_LOG))
 
         other = dict()
-        # for plotting
+        # for plotting (note that they are already unormalized)
         other["Y_hat"] = Y_hat[0].detach().cpu()
         other["Y"] = aux_target[0].detach().cpu()
 
@@ -327,7 +338,7 @@ class ContrastiveDistortion(nn.Module):
         hat_H_m = math.log(self.weight * n_classes)
         hat_H_mlz = F.cross_entropy(logits, pos_idx, reduction="mean")
 
-        logs = dict(I_zm=(hat_H_m - hat_H_mlz) / math.log(BASE_LOG))
+        logs = dict(I_q_zm=(hat_H_m - hat_H_mlz) / math.log(BASE_LOG))
         other = dict()
 
         return hat_H_mlz, logs, other

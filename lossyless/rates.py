@@ -1,4 +1,5 @@
 import math
+import time
 
 import compressai
 import einops
@@ -8,7 +9,15 @@ from compressai.models.utils import update_registered_buffers
 
 from .architectures import MLP
 from .distributions import get_marginalDist
-from .helpers import BASE_LOG, atleast_ndim, kl_divergence, mean, weights_init
+from .helpers import (
+    BASE_LOG,
+    Timer,
+    atleast_ndim,
+    kl_divergence,
+    mean,
+    orderedset,
+    weights_init,
+)
 
 __all__ = ["get_rate_estimator"]
 
@@ -56,19 +65,17 @@ class EntropyBottleneck(compressai.entropy_models.EntropyBottleneck):
 
 
 ### BASE ###
-class RateEstimator(compressai.models.CompressionModel):
+class RateEstimator(torch.nn.Module):
     """Base class for a coder, i.e. a model that perform entropy/MI coding."""
 
     is_can_compress = False  # wether can compress
 
     def __init__(self):
-        # directly call nn.Module because you don't want to call the constructor of `CompressionModel`
-        torch.nn.Module.__init__(self)
+        super().__init__()
 
     def reset_parameters(self):
         weights_init(self)
 
-    # returning the loss is necessary to work with `EntropyBottleneck`
     def forward(self, z, p_Zlx):
         """Performs the approx compression and returns loss.
 
@@ -128,24 +135,78 @@ class RateEstimator(compressai.models.CompressionModel):
         """
         raise NotImplementedError()
 
-    def real_rate(self, z):
+    def real_rate(self, z, is_return_logs=False):
         """Compute actual number of bits (rate), necessary for encoding z.
 
         Parameters
         ----------
         z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
             Representation to compress. Note that there's n_z_dim!
+
+        is_return_logs : bool, optional 
+            Whether to return a dictionnary to log in addition to n_bits.
+
+        Returns
+        -------
+        n_bits : int
+            Average bits per image
+
+        if is_return_logs:
+            logs : dict
+                Additional values that can be useful to log. 
         """
-        z = einops.rearrange(z, "n_z b d -> (n_z b) d", n_z=z.size(0))
-        all_strings = self.compress(z)
+        n_z, batch, z_dim = z.shape
+        z = einops.rearrange(z, "n_z b d -> (n_z b) d", n_z=n_z)
+
+        with Timer() as compress_timer:
+            all_strings = self.compress(z)
+
+        if is_return_logs:
+            with Timer() as decompress_timer:
+                _ = self.decompress(all_strings)
+
         # sum over all latents (for hierachical). mean over batch and n_z.
         n_bytes = sum(mean([len(s) for s in strings]) for strings in all_strings)
-        return n_bytes * 8  # bits
+        n_bits = n_bytes * 8
+
+        if is_return_logs:
+            logs = dict(
+                compress_time=compress_timer.duration / batch,
+                receiver_time=decompress_timer.duration / batch,
+                n_bits=n_bits,
+            )
+            return n_bits, logs
+
+        return n_bits
+
+    def update(self, force):
+        """Updates the entropy model values. Needs to be called once after training to be able to 
+        later perform the evaluation with an actual entropy coder.
+        
+        Parameters
+        ----------
+        force : bool, optional
+            Overwrite previous values.
+        """
+        raise NotImplementedError()
+
+    def aux_loss(self, force):
+        """Auxilary loss for the rate estimator / coders. This will be called separately from main loss."""
+        raise NotImplementedError()
+
+    def parameters(self):
+        """Returns an iterator over the model parameters that should be trained by main optimizer."""
+        raise NotImplementedError()
+
+    def aux_parameters(self):
+        """	
+        Returns an iterator over the model parameters that should be trained by auxilary optimizer.
+        These are all the parameters of the prior.
+        """
+        raise NotImplementedError()
 
 
 ### MUTUAL INFORMATION CODERS. Min I[X,Z] ###
-
-
 class MIRate(RateEstimator):
     """
     Model that codes using the (approximate) mutual information I[Z,X].
@@ -188,14 +249,71 @@ class MIRate(RateEstimator):
 
         return z_hat, kl, logs, other
 
+    def parameters(self):
+        # all params
+        for m in self.children():
+            for p in m.parameters():
+                yield p
+
+    def aux_parameters(self):
+        return iter(())  # no parameters
+
 
 ### ENTROPY CODERS. Min H[Z] ###
 # all of the following assume that `p_Zlx` should be deterministic here (i.e. Delta distribution).
 # minor differences from and credits to them https://github.com/InterDigitalInc/CompressAI/blob/edd62b822186d81903c4a53c3f9b0806e9d7f388/compressai/models/priors.py
 # a little messy for reshaping as compressai assumes 4D image as inputs (but we compress 2D vectors)
+class HRateEstimator(RateEstimator):
+    """Base class for a coder, i.e. a model that perform entropy/MI coding."""
+
+    update = compressai.models.CompressionModel.update
+    aux_loss = compressai.models.CompressionModel.aux_loss
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+
+        # Dynamically update the entropy bottleneck buffers related to the CDFs
+
+        policy = "resize"  # resize when loading  (even if already called "update")
+        update_registered_buffers(
+            self.entropy_bottleneck,
+            f"{prefix}entropy_bottleneck",
+            ["_quantized_cdf", "_offset", "_cdf_length"],
+            state_dict,
+            policy=policy,
+        )
+
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
+
+    def parameters(self):
+        return orderedset(
+            p for n, p in self.named_parameters() if not n.endswith(".quantiles")
+        )
+
+    def aux_parameters(self):
+        # all parameters of the CDF
+        return orderedset(
+            p for n, p in self.named_parameters() if n.endswith(".quantiles")
+        )
 
 
-class HRateFactorizedPrior(RateEstimator):
+class HRateFactorizedPrior(HRateEstimator):
     """
     Model that codes using the (approximate) entropy H[Z]. Factorized prior in [1].
 
@@ -231,7 +349,9 @@ class HRateFactorizedPrior(RateEstimator):
         logs = dict(H_q_Z=neg_log_q_z.mean() / math.log(BASE_LOG), H_ZlX=0)
 
         if not self.training:
-            logs["n_bits"] = self.real_rate(z)
+            n_bits, logs2 = self.real_rate(z, is_return_logs=True)
+            logs.update(logs2)
+            logs["n_bits"] = n_bits
 
         other = dict()
 
@@ -244,38 +364,6 @@ class HRateFactorizedPrior(RateEstimator):
     def decompress(self, all_strings):
         assert isinstance(all_strings, list) and len(all_strings) == 1
         return self.entropy_bottleneck.decompress(all_strings[0])
-
-    def _load_from_state_dict(
-        self,
-        state_dict,
-        prefix,
-        local_metadata,
-        strict,
-        missing_keys,
-        unexpected_keys,
-        error_msgs,
-    ):
-
-        # Dynamically update the entropy bottleneck buffers related to the CDFs
-
-        policy = "resize"  # resize when loading  (even if already called "update")
-        update_registered_buffers(
-            self.entropy_bottleneck,
-            f"{prefix}entropy_bottleneck",
-            ["_quantized_cdf", "_offset", "_cdf_length"],
-            state_dict,
-            policy=policy,
-        )
-
-        super()._load_from_state_dict(
-            state_dict,
-            prefix,
-            local_metadata,
-            strict,
-            missing_keys,
-            unexpected_keys,
-            error_msgs,
-        )
 
     @classmethod
     def from_state_dict(cls, state_dict):
@@ -290,7 +378,7 @@ def get_scale_table(min=0.11, max=256, levels=64):
     return torch.exp(torch.linspace(math.log(min), math.log(max), levels))
 
 
-class HRateHyperprior(RateEstimator):
+class HRateHyperprior(HRateEstimator):
     """
     Model that codes using the (approximate) entropy H[Z]. Scale hyperprior in [1].
 
@@ -375,7 +463,9 @@ class HRateHyperprior(RateEstimator):
         )
 
         if not self.training:
-            logs["n_bits"] = self.real_rate(z)
+            n_bits, logs2 = self.real_rate(z, is_return_logs=True)
+            logs.update(logs2)
+            logs["n_bits"] = n_bits
 
         other = dict()
 
@@ -436,13 +526,6 @@ class HRateHyperprior(RateEstimator):
     ):
         # Dynamically update the entropy bottleneck buffers related to the CDFs
         policy = "resize"  # resize when loading  (even if already called "update")
-        update_registered_buffers(
-            self.entropy_bottleneck,
-            f"{prefix}entropy_bottleneck",
-            ["_quantized_cdf", "_offset", "_cdf_length"],
-            state_dict,
-            policy=policy,
-        )
 
         update_registered_buffers(
             self.gaussian_conditional,

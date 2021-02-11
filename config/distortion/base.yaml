@@ -1,0 +1,4 @@
+name: ???
+mode: ???
+factor_beta : 1 # factor that multiplies beta 
+kwargs: {}

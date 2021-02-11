@@ -1,0 +1,16 @@
+name: expdecay
+modes: [expdecay, ReduceLROnPlateau] # list of scheduler to use
+kwargs:
+  # all kwargs
+  expdecay:
+    decay_factor: 100 # by how much to reduce lr during training
+    epochs: ${trainer.max_epochs}
+
+  ReduceLROnPlateau:
+    mode: min 
+    factor: 0.2  # factor by wich to reduce lr
+    patience: 10  # number of epochs with no improvement after which learning rate will be reduce
+    threshold: 0.0001 # threshold to be considered "better"
+    threshold_mode: rel # relative threshold instead of avsolute
+    verbose: True
+    min_lr: 1e-7 # minimum learning reate

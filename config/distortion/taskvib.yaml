@@ -1,18 +1,12 @@
 # @package _global_
+defaults:
+  - base_direct@distortion
+
 distortion:
   name: taskvib # vib predicting labels
-  mode: direct
   factor_beta: 0.5
-  kwargs: 
-    z_dim: ${encoder.z_dim}
-    y_shape: ${data.aux_shape}
-    is_classification: ${data.aux_is_clf}
-    dataset: ${data.dataset}
-    arch: null
-    arch_kwargs:
-      complexity: 2
-
-data:
+  
+data_feat:
   kwargs:
     dataset_kwargs:
-      additional_target: target
+      additional_target:  target

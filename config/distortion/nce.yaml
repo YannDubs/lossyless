@@ -1,19 +1,7 @@
-# @package _global_
-distortion:
-  name: ince # non-invariant NCE: try to classify unaugmented image. Need to be careful: theoretically you should also have augmented images as negatives
-  mode: contrastive
-  factor_beta: 0.005 # compared to ivae gives importance ++ to rate so decrease it (value taken empirically)
-  kwargs:
-    temperature: 0.1
-    is_symmetric: true
-    weight: ${data.neg_factor}
-    is_invariant: false # ensure that non invariant representations
+defaults:
+  - base_contrastive
   
-data:
-  kwargs:
-    batch_size: 256 # better results with large batch sizes for estimating MI (like 1024 but then you need LARS)
-    dataset_kwargs:
-      additional_target: equiv_x #! this is a trick to get `equiiv_x` as negatives. but the real positives will be the input itsel (because is_invariant=False)
-
-optimizer:
-  is_lars: false # true is uesull if have to use large batch sizes (but currently bug)
+name: nce # non-invariant NCE: try to classify unaugmented image. Need to be careful: theoretically you should also have augmented images as negatives
+factor_beta: 0.005 # compared to ivae gives importance ++ to rate so decrease it (value taken empirically)
+kwargs:
+  is_invariant: false # ensure that non invariant representations

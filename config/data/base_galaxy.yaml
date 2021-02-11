@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - base@data
+
+data:
+  kwargs:
+    dataset_kwargs:
+      equivalence: [x_translation, y_translation]
+      is_normalize: True # TODO: test if better (I dont' think it will)
+
+evaluation:
+  # evaluate on validation set because you don't have access to test set
+  # TODO add prediction step at the end so that can upload to kaggle
+  is_eval_on_test: False  

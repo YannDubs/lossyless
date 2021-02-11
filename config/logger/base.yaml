@@ -1,0 +1,5 @@
+name: ???
+is_can_plot_img: False
+kwargs:
+  save_dir: ${paths.logs}
+  name: ${job_id}

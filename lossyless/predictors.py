@@ -1,8 +1,136 @@
+import pytorch_lightning as pl
 import torch
+from pytorch_lightning.core.decorators import auto_move_data
 from pytorch_lightning.metrics.functional import accuracy
 
-from .architectures import FlattenMLP
+from .architectures import FlattenMLP, get_Architecture
 from .distortions import mse_or_crossentropy_loss
+from .helpers import Timer, append_optimizer_scheduler_
+
+__all__ = ["Predictor", "OnlineEvaluator"]
+
+
+class Predictor(pl.LightningModule):
+    """Main network for downstream prediction."""
+
+    def __init__(self, hparams, featurizer=None):
+        super().__init__()
+        self.save_hyperparameters(hparams)
+        self.is_clf = self.hparams.data.target_is_clf
+
+        if featurizer is not None:
+            self.featurizer = featurizer
+            self.featurizer.freeze()
+            self.featurizer.eval()
+        else:
+            self.featurizer = torch.nn.Identity()
+
+        cfg_pred = self.hparams.predictor
+        Architecture = get_Architecture(cfg_pred.arch, **cfg_pred.arch_kwargs)
+        self.predictor = Architecture(
+            featurizer.out_shape, self.hparams.data.target_shape
+        )
+
+    @auto_move_data  # move data on correct device for inference
+    def forward(self, x, is_logits=True, is_return_logs=False):
+        """Perform prediction for `x`.
+
+        Parameters
+        ----------
+        x : torch.Tensor of shape=[batch_size, *data.shape]
+            Data to represent.
+
+        is_logit : bool, optional
+            Whether to return the logits instead of classes probablity in case you are using using
+            classification.
+
+        is_return_logs : bool, optional 
+            Whether to return a dictionnary to log in addition to Y-pred.
+
+        Returns
+        -------
+        Y_pred : torch.Tensor of shape=[batch_size, *target_shape]
+
+        if is_return_logs:
+            logs : dict
+                Dictionary of values to log.
+        """
+        with torch.no_grad():
+            # shape: [batch_size,  *featurizer.out_shape]
+            features = self.featurizer(x)  # can be z_hat or x_hat
+
+        features = features.detach()  # shouldn't be needed
+
+        with Timer() as inference_timer:
+            # shape: [batch_size,  *target_shape]
+            Y_pred = self.predictor(features)
+
+        if not is_logits and self.is_clf:
+            out = Y_pred.softmax(-1)
+        else:
+            out = Y_pred
+
+        if is_return_logs:
+            batch_size = Y_pred.size(0)
+            logs = dict(inference_time=inference_timer.duration / batch_size)
+            return out, logs
+
+        return out
+
+    def step(self, batch):
+        x, y = batch
+
+        # shape: [batch_size,  *target_shape]
+        Y_hat = self(x)
+
+        # Shape: [batch, 1]
+        loss = self.loss(Y_hat, y)
+
+        # Shape: []
+        loss = loss.mean()
+
+        logs = dict(loss=loss)
+        if self.is_clf:
+            logs["acc"] = accuracy(Y_hat.argmax(dim=-1), y)
+
+        return loss, logs
+
+    def loss(self, Y_hat, y):
+        """Compute the MSE or cross entropy loss."""
+        return mse_or_crossentropy_loss(Y_hat, y, self.is_clf)
+
+    def training_step(self, batch, batch_idx):
+        loss, logs = self.step(batch)
+        self.log_dict({f"train/pred/{k}": v for k, v in logs.items()})
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        loss, logs = self.step(batch)
+        self.log_dict(
+            {f"val/pred/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+        )
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        loss, logs = self.step(batch)
+        self.log_dict(
+            {f"test/pred/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+        )
+        return loss
+
+    def configure_optimizers(self):
+
+        optimizers, schedulers = [], []
+
+        append_optimizer_scheduler_(
+            self.hparams.optimizer_pred,
+            self.hparams.scheduler_pred,
+            self.parameters(),
+            optimizers,
+            schedulers,
+        )
+
+        return optimizers, schedulers
 
 
 class OnlineEvaluator(torch.nn.Module):
@@ -65,12 +193,13 @@ class OnlineEvaluator(torch.nn.Module):
 
         with torch.no_grad():
             # Shape: [batch, z_dim]
-            z = encoder(x)
+            z = encoder(x, is_features=True)
 
         z = z.detach()
 
-        # Shape: [batch, *Y_shape]
-        Y_hat = self.model(z)
+        with Timer() as inference_timer:
+            # Shape: [batch, *Y_shape]
+            Y_hat = self.model(z)
 
         # Shape: [batch, 1]
         loss = mse_or_crossentropy_loss(Y_hat, y, self.is_classification)
@@ -78,7 +207,7 @@ class OnlineEvaluator(torch.nn.Module):
         # Shape: []
         loss = loss.mean()
 
-        logs = dict(online_loss=loss)
+        logs = dict(online_loss=loss, inference_time=inference_timer.duration)
         if self.is_classification:
             logs["online_acc"] = accuracy(Y_hat.argmax(dim=-1), y)
 

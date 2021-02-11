@@ -1,4 +1,6 @@
-# @package _group_
+defaults:
+  - base
+
 name: mnist
 dataset: mnist
 
@@ -6,6 +8,6 @@ kwargs:
   # make sure you use entire training set
   val_size: 0.05
   dataset_kwargs:
-    equivalence: [x_translation, y_translation]
+    equivalence: [x_translation, y_translation,rotation,scale] # don't use color changin because black and white
     is_augment_val: True
-
+    is_normalize: False

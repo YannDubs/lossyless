@@ -1,18 +1,17 @@
 import abc
+import glob
 import logging
+import math
 import os
-from os import path
 import subprocess
 import zipfile
-import glob
+from os import path
+
 import numpy as np
-import math
-import scipy
-import cv2
 import pandas as pd
-from PIL import Image
+
 import torch
-from lossyless.helpers import BASE_LOG, get_normalization
+from lossyless.helpers import BASE_LOG, Normalizer, check_import
 from torch.utils.data import random_split
 from torchvision import transforms as transform_lib
 from torchvision.datasets import CIFAR10, MNIST, FashionMNIST
@@ -25,7 +24,12 @@ from torchvision.transforms import (
 from utils.estimators import discrete_entropy
 
 from .base import LossylessCLFDataset, LossylessDataModule
-from .helpers import RotationAction, ScalingAction, TranslationAction, int_or_ratio
+from .helpers import int_or_ratio
+
+try:
+    import cv2  # only used for galaxy so skip if not needed
+except ImportError:
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -64,60 +68,67 @@ class LossylessImgDataset(LossylessCLFDataset):
     def __init__(
         self, *args, equivalence={}, is_augment_val=False, is_normalize=True, **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, is_normalize=is_normalize, **kwargs)
         self.equivalence = equivalence
         self.is_augment_val = is_augment_val
-        self.is_normalize = is_normalize
 
-        self.base_tranform = self.get_base_transform()  # base transform
-        self.aug_transform = self.get_aug_transform()  # real augmentation
+        self.base_tranform = self.get_base_transform()
+        self.PIL_augment, self.tensor_augment = self.get_curr_augmentations()
+
+    @property
+    @abc.abstractmethod
+    def is_train(self):
+        """Whether considering training split."""
+        ...
 
     @abc.abstractmethod
     def get_img_target(self, index):
         """Return the unaugmented image (in PIL format) and target."""
         ...
 
+    @property
+    @abc.abstractmethod
+    def dataset_name(self):
+        """Name of the dataset."""
+        ...
+
     def get_x_target_Mx(self, index):
         """Return the correct example, target, and maximal invariant."""
         img, target = self.get_img_target(index)
+        img = self.PIL_augment(img)
         img = self.base_tranform(img)
-        img = self.aug_transform(img)
-        return img, target, index
+        img = self.tensor_augment(img)
+        max_inv = index
+        return img, target, max_inv
 
     @property
     def augmentations(self):
-        shape = self.shapes_x_t_Mx["input"]
-        return {
-            "rotation": RandomRotation(60),
-            "y_translation": RandomAffine(0, translate=(0, shape[2])),
-            "x_translation": RandomAffine(0, translate=(shape[1], 0)),
-            "scale": RandomAffine(0, scale=(0.8, 1.2)),
-            "color": ColorJitter(
-                brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
-            ),
-            "erasing": RandomErasing(value=0.5),
-        }
+        """
+        Return a dictortionary of dictionaries containing all possible augmentations of interest.
+        first dictionary say which kind of data they act on.
+        """
+        return dict(
+            PIL={
+                "rotation": RandomRotation(60),
+                "y_translation": RandomAffine(0, translate=(0, 0.1)),
+                "x_translation": RandomAffine(0, translate=(0.1, 0)),
+                "scale": RandomAffine(0, scale=(0.8, 1.2)),
+                "color": ColorJitter(
+                    brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
+                ),
+            },
+            tensor={"erasing": RandomErasing(value=0.5),},
+        )
 
-    def sample_equivalence_action(self):
-        trnsfs = []
-
-        for equiv in self.equivalence:
-            if equiv in self.augmentations:
-                trnsfs += [self.augmentations[equiv]]
-            else:
-                raise ValueError(f"Unkown `equivalence={equiv}`.")
-
-        return transform_lib.Compose(trnsfs)
+    def get_equiv_x(self, x, index):
+        # to load equivalent image can load a same index (transformations will be different)
+        img, _, __ = self.get_x_target_Mx(index)
+        return img
 
     def get_representative(self, index):
         notaug_img, _ = self.get_img_target(index)
         notaug_img = self.base_tranform(notaug_img)
         return notaug_img
-
-    def get_max_var(self, x, Mx):
-        raise NotImplementedError(
-            "`max_var` can only be used imsges that are from `LossylessImgAnalyticDataset`,"
-        )
 
     @property
     def entropies(self):
@@ -143,17 +154,32 @@ class LossylessImgDataset(LossylessCLFDataset):
 
         if self.is_normalize and self.is_color:
             # only normalize colored images
-            trnsfs += [get_normalization(type(self))]
+            # raise if can't normalize because you specifrically gave `is_normalize`
+            trnsfs += [Normalizer(self.dataset_name, is_raise=True)]
 
         return transform_lib.Compose(trnsfs)
 
-    def get_aug_transform(self):
-        """Return the augmentations transorms."""
+    def get_augmentations(self):
+        """Return the augmentations transorms (tuple for PIL and tensor)."""
+        PIL_augment, tensor_augment = [], []
+        for equiv in self.equivalence:
+            if equiv in self.augmentations["PIL"]:
+                PIL_augment += [self.augmentations["PIL"][equiv]]
+            elif equiv in self.augmentations["tensor"]:
+                tensor_augment += [self.augmentations["tensor"][equiv]]
+            else:
+                raise ValueError(f"Unkown `equivalence={equiv}`.")
 
-        if self.is_augment_val or self.train:
-            return self.sample_equivalence_action()
+        return transform_lib.Compose(PIL_augment), transform_lib.Compose(tensor_augment)
+
+    def get_curr_augmentations(self):
+        """Return the current augmentations transorms (tuple for PIL and tensor)."""
+        if self.is_augment_val or self.is_train:
+            PIL_augment, tensor_augment = self.get_augmentations()
+            return PIL_augment, tensor_augment
         else:
-            return transform_lib.Compose([])  # identity
+            identity = transform_lib.Compose([])
+            return identity, identity
 
     def __len__(self):
         return len(self.data)
@@ -173,127 +199,12 @@ class LossylessImgDataset(LossylessCLFDataset):
         return dict(max_inv=(len(self),))
 
 
-class LossylessImgAnalyticDataset(LossylessImgDataset):
-    """Base class for image datasets with action entropies that can be computed analytically.
-
-    Parameters
-    -----------
-    equivalence : set of {"rotation","y_translation","x_translation","scale"}, optional
-        List of equivalence relationship with respect to which to be invariant.
-
-    n_action_per_equiv : int, optional
-        Number of actions for each equivalence. Typically 4 or 8.
-
-    dist_actions : {"uniform","bell"}, optional
-        Distribution to use for all actions. "bell" is a symmetric beta binomial distribution.
-
-    kwargs:
-        Additional arguments to `LossylessCLFDataset` and `LossylessDataset` and `LossylessImgDataset`.
-    """
-
-    def __init__(
-        self, *args, n_action_per_equiv=8, dist_actions="uniform", **kwargs,
-    ):
-        self.n_action_per_equiv = n_action_per_equiv
-        self.dist_actions = dist_actions
-
-        if self.dist_actions == "uniform":
-            self.rv_A = scipy.stats.randint(0, self.n_action_per_equiv)
-        elif self.dist_actions == "bell":
-            b = 100  # larger means more peaky (less variance)
-            self.rv_A = scipy.stats.betabinom(self.n_action_per_equiv - 1, b, b)
-        else:
-            raise ValueError(
-                f"Unkown `dist_actions={dist_actions}` should be `uniform` or `bell`."
-            )
-
-        super().__init__(*args, **kwargs)
-
-    @property
-    def augmentations(self):
-        shape = self.shapes_x_t_Mx["input"]
-        return {
-            "rotation": RotationAction(self.rv_A, max_angle=60),
-            "y_translation": TranslationAction(
-                self.rv_A, dim=1, max_trnslt=shape[1] // 8
-            ),
-            "x_translation": TranslationAction(
-                self.rv_A, dim=0, max_trnslt=shape[2] // 8
-            ),
-            "scale": ScalingAction(self.rv_A, max_scale=1.2),
-        }
-
-    @property
-    def entropies(self):
-        if hasattr(self, "_entropies"):
-            return self._entropies  # if precomputed
-
-        entropies = {}
-
-        entropies["H[Y]"] = discrete_entropy(self.targets, base=BASE_LOG)
-        # Marginal entropy can only be computed on training set by treating dataset as the real uniform rv
-        entropies["train H[M(X)]"] = math.log(len(self), BASE_LOG)
-
-        # Data augmentation are applied independently so H[X|M(X)]=\sum_i H[A_i] = k * H[A]
-        # where A_i is the r.v. for sampling the ith action, which is the same for each action A_i = A_j
-        entropies["H[X|M(X)]"] = len(self.equivalence) * self.rv_A.entropy()
-        entropies["H[X|M(X)]"] /= math.log(BASE_LOG)
-
-        entropies["train H[M(X)]"] = math.log(len(self), BASE_LOG)
-        entropies["train H[X]"] = entropies["train H[M(X)]"] + entropies["H[X|M(X)]"]
-
-        self._entropies = entropies
-        return entropies
-
-    # TODO clean max_var for multi label multi clf
-    def get_max_var(self, x, Mx):
-        # the max_var for analytic transforms Mx and the indices of the transform you sampled
-        # e.g. if you rotate and translate it will be multilabel prediction of the rotation index
-        # and translation index IN ADDITION to the Mx => ensure that it is classification
-        # like for the maximal invariant but not invariant anymore => can use VIB loss
-        max_var = [Mx]
-        for trnsf in self.aug_transform.transforms:
-            # all analytic transforms store the last index they sampled
-            max_var.append(trnsf.i)
-
-        # we would want a list of targets, where the first element is max_inv, then other elements
-        # are the indices of the transformation that you sampled. But that cannot be put in a batch
-        # as Mx does not usually have same size as `self.n_action_per_equiv`. So we flatten everything
-        # and will be unflattened when computing the loss
-        return torch.as_tensor(max_var)
-
-    @property
-    def shapes_x_t_Mx(self):
-        shapes = super().shapes_x_t_Mx
-
-        if self.additional_target == "max_var":
-            # flattened max var (see `get_max_var`)
-            shapes["max_var"] = (sum(self.shape_max_var),)
-
-        return shapes
-
-    @property
-    def shape_max_var(self):
-        """Actual number of elements for each prediction task when `additional_target=max_var`."""
-        shapes = super().shapes_x_t_Mx
-        mx_shape = shapes["max_inv"]
-
-        if len(mx_shape) > 1:
-            raise NotImplementedError(
-                f"Can only work with vector max_inv when using max_var, but shape={mx_shape}."
-            )
-
-        mv_shape = list(mx_shape) + [self.n_action_per_equiv] * len(self.equivalence)
-        return tuple(mv_shape)
-
-
 ### Torchvision Models ###
-
 # Base class for data module for torchvision models.
 class TorchvisionDataModule(LossylessDataModule):
     def get_train_val_dataset(self, **dataset_kwargs):
         dataset = self.Dataset(
-            self.data_dir, train=True, download=False, **self.dataset_kwargs,
+            self.data_dir, train=True, download=False, **dataset_kwargs,
         )
 
         n_val = int_or_ratio(self.val_size, len(dataset))
@@ -302,6 +213,7 @@ class TorchvisionDataModule(LossylessDataModule):
             [len(dataset) - n_val, n_val],
             generator=torch.Generator().manual_seed(self.seed),
         )
+        valid.train = False
 
         return train, valid
 
@@ -328,9 +240,8 @@ class TorchvisionDataModule(LossylessDataModule):
         return "image"
 
 
-## Analytic datasets ##
 # MNIST #
-class MnistDataset(LossylessImgAnalyticDataset, MNIST):
+class MnistDataset(LossylessImgDataset, MNIST):
     FOLDER = "MNIST"
 
     # avoid duplicates by saving once at "MNIST" rather than at multiple  __class__.__name__
@@ -353,6 +264,14 @@ class MnistDataset(LossylessImgAnalyticDataset, MNIST):
         img, target = MNIST.__getitem__(self, index)
         return img, target
 
+    @property
+    def is_train(self):
+        return self.train
+
+    @property
+    def dataset_name(self):
+        return "MNIST"
+
 
 class MnistDataModule(TorchvisionDataModule):
     @property
@@ -361,7 +280,7 @@ class MnistDataModule(TorchvisionDataModule):
 
 
 # Fasion MNIST #
-class FashionMnistDataset(LossylessImgAnalyticDataset, FashionMNIST):
+class FashionMnistDataset(LossylessImgDataset, FashionMNIST):
     FOLDER = "FashionMNIST"
 
     def get_img_target(self, index):
@@ -375,6 +294,14 @@ class FashionMnistDataset(LossylessImgAnalyticDataset, FashionMNIST):
         shapes["target"] = (10,)
         return shapes
 
+    @property
+    def is_train(self):
+        return self.train
+
+    @property
+    def dataset_name(self):
+        return "FashionMNIST"
+
     processed_folder = MnistDataset.processed_folder
     raw_folder = MnistDataset.raw_folder
 
@@ -386,7 +313,7 @@ class FashionMnistDataModule(TorchvisionDataModule):
 
 
 # Cifar10 #
-class Cifar10Dataset(LossylessImgAnalyticDataset, CIFAR10):
+class Cifar10Dataset(LossylessImgDataset, CIFAR10):
     @property
     def shapes_x_t_Mx(self):
         shapes = super(Cifar10Dataset, self).shapes_x_t_Mx
@@ -398,6 +325,14 @@ class Cifar10Dataset(LossylessImgAnalyticDataset, CIFAR10):
         img, target = CIFAR10.__getitem__(self, index)
         return img, target
 
+    @property
+    def is_train(self):
+        return self.train
+
+    @property
+    def dataset_name(self):
+        return "CIFAR10"
+
 
 class Cifar10DataModule(TorchvisionDataModule):
     @property
@@ -405,31 +340,30 @@ class Cifar10DataModule(TorchvisionDataModule):
         return Cifar10Dataset
 
 
-## Non Analytic datasets ##
-
 # Imagenet #
 # TODO
 
-### Torchvision Models ###
+### Non Torchvision Models ###
 
 # Galaxy Zoo #
-
-# TODO @karen: modify as desired all those methods
-# TODO add config for galaxy in config/data with good defaults
 class GalaxyDataset(LossylessImgDataset):
     def __init__(
         self,
         root: str,
+        *args,
         split: str = "train",
         download: bool = True,
         resolution: int = 64,
-        *args, **kwargs,
+        **kwargs,
     ):
+        # TODO check if need to normalize (if not add is_normalize=False in cfg) because very low std
+        check_import("cv2", "GalaxyDataset")
 
         self.root = root
+        self.split = split
         data_dir = path.join(root, "galaxyzoo")
         self.resolution = resolution
-        if download:
+        if download and not self.is_exist_data(data_dir):
             self.download(data_dir)
             self.preprocess(data_dir)
 
@@ -437,20 +371,24 @@ class GalaxyDataset(LossylessImgDataset):
 
         super().__init__(*args, **kwargs)
 
-    def download(self, data_dir):
+    def is_exist_data(self, data_dir):
+        # check if we already preprocessed and downloaded the data
+        # this is a hacky check, we just check if the last file that this
+        # routine yields exists
+        return path.exists(path.join(data_dir, "test_images_128.npy"))
 
+    def download(self, data_dir):
         def unpack_all_zips():
-            for f, file in enumerate(
-                glob.glob(path.join(data_dir, "*.zip"))):
-                with zipfile.ZipFile(file, 'r') as zip_ref:
+            for f, file in enumerate(glob.glob(path.join(data_dir, "*.zip"))):
+                with zipfile.ZipFile(file, "r") as zip_ref:
                     zip_ref.extractall(data_dir)
                     os.remove(file)
-                    print("{} completed. Progress: {}/6".format(file, f))
+                    logger.info("{} completed. Progress: {}/6".format(file, f))
 
         filename = "galaxy-zoo-the-galaxy-challenge.zip"
 
         # check if data was already downloaded
-        if path.exists(path.join(self.root,filename)):
+        if path.exists(path.join(self.root, filename)):
             # continue unpacking files just in case this got interrupted or user
             # downloaded files manually. you never know :)
             unpack_all_zips()
@@ -459,27 +397,38 @@ class GalaxyDataset(LossylessImgDataset):
         try:
             import kaggle
         except Exception as e:
-            print(e)
-            print("The download of the Galaxy dataset failed. Make sure you "
-                  "followed the steps in https://github.com/Kaggle/kaggle-api.")
+            logger.critical(
+                "Cannot import Kaggle which is needed for GalaxyDataset. Make sure you "
+                "followed the steps in https://github.com/Kaggle/kaggle-api."
+            )
+            raise e
+
+        logger.info("Downloading Galaxy ...")
 
         # download the dataset
-        bashCommand = "kaggle competitions download -c " \
-                      "galaxy-zoo-the-galaxy-challenge -p {}".format(self.root)
-        subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
+        bashCommand = (
+            "kaggle competitions download -c "
+            "galaxy-zoo-the-galaxy-challenge -p {}".format(self.root)
+        )
+        process = subprocess.Popen(
+            bashCommand.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        )
+        out = process.communicate()[0].decode("utf-8")
+        is_error = process.returncode != 0
+        if is_error:
+            logging.critical(
+                f"{bashCommand} failed with outputs: {out}. \n "
+                "Hint: don't forget to accept competition rules at "
+                "https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/rules. "
+            )
 
         # unpack the data
-        with zipfile.ZipFile(os.path.join(self.root,filename), 'r') as zip_ref:
-            zip_ref.extractall(self.root)
+        with zipfile.ZipFile(os.path.join(self.root, filename), "r") as zip_ref:
+            zip_ref.extractall(data_dir)
 
         unpack_all_zips()
 
     def preprocess(self, data_dir):
-        # check if we already preprocessed the data
-        # this is a hacky check, we just check if the last file that this
-        # routine yields exists
-        if path.exists(path.join(data_dir, "test_images_128.npy")):
-            return
 
         # SAVE IMAGE IDs
         def get_image_ids(image_dir):
@@ -489,14 +438,15 @@ class GalaxyDataset(LossylessImgDataset):
 
         # test set
         test_ids, test_paths = get_image_ids("images_test_rev1/*.jpg")
-        np.save(path.join(data_dir,"test_ids"), test_ids)
+        np.save(path.join(data_dir, "test_ids"), test_ids)
 
         # train and valid set
         ids, paths = get_image_ids("images_training_rev1/*.jpg")
         # make fixed train / valid split
         num_valid = len(ids) // 10
-        assert num_valid == 6157, "Validation set is not the right size. " \
-                                  "Oeef. That is not good."
+        assert num_valid == 6157, (
+            "Validation set is not the right size. " "Oeef. That is not good."
+        )
         valid_ids, valid_paths = ids[:num_valid], paths[:num_valid]
         train_ids, train_paths = ids[num_valid:], paths[num_valid:]
         np.save(path.join(data_dir, "valid_ids"), valid_ids)
@@ -507,8 +457,9 @@ class GalaxyDataset(LossylessImgDataset):
 
         for split, ids in [("train", train_ids), ("valid", valid_ids)]:
             targets = [
-                df.loc[df['GalaxyID'] == id].values[:, 1:].astype('float32') for
-                id in ids]
+                df.loc[df["GalaxyID"] == id].values[:, 1:].astype("float32")
+                for id in ids
+            ]
             np.save(path.join(data_dir, split + "_targets"), np.array(targets))
 
         # PRE-PROCESSING IMAGES
@@ -519,40 +470,44 @@ class GalaxyDataset(LossylessImgDataset):
 
         def get_image(path, out_shape):
             x = cv2.imread(path)
-            x = x[x1:x1 + CROP_SIZE[0], y1:y1 + CROP_SIZE[1]]
+            x = x[x1 : x1 + CROP_SIZE[0], y1 : y1 + CROP_SIZE[1]]
             x = cv2.resize(x, dsize=out_shape, interpolation=cv2.INTER_LINEAR)
-            x = np.transpose(x,(2,0,1))
+            x = np.transpose(x, (2, 0, 1))
             return x
 
-        for out_shape in [(64,64),(128,128)]:
+        for out_shape in [(64, 64), (128, 128)]:
             res = str(out_shape[0])
 
-            for (split, raw_paths) in [("train", train_paths),
-                                       ("valid", valid_paths),
-                                       ("test", test_paths)]:
+            for (split, raw_paths) in [
+                ("train", train_paths),
+                ("valid", valid_paths),
+                ("test", test_paths),
+            ]:
                 preprocessed_images = []
                 for i, p in enumerate(raw_paths):
-                    print("Processed {}/{} images in {} split with resolution "
-                          "{}x{}.".format(i, len(raw_paths), split, res, res))
+                    logger.info(
+                        "Processed {}/{} images in {} split with resolution "
+                        "{}x{}.".format(i, len(raw_paths), split, res, res)
+                    )
                     preprocessed_images.append(get_image(p, out_shape))
 
                 out = np.array(preprocessed_images)
                 out_path = split + "_images_" + res
                 np.save(path.join(data_dir, out_path), out)
                 if split == "train":
-                    out = out.astype('float32') / 255.0
-                    mean = np.mean(out, axis=(0,2,3))
+                    out = out.astype("float32") / 255.0
+                    mean = np.mean(out, axis=(0, 2, 3))
                     np.save(path.join(data_dir, out_path + "_mean"), mean)
-                    std = np.std(out, axis=(0,2,3))
+                    std = np.std(out, axis=(0, 2, 3))
                     np.save(path.join(data_dir, out_path + "_std"), std)
 
-        print("Galaxy data successfully pre-processed.")
+        logger.info("Galaxy data successfully pre-processed.")
 
     def load_data(self, data_dir, split, resolution):
         imgs = np.load(
-            path.join(data_dir, "{}_images_{}.npy".format(split, resolution)))
-        self.data = imgs.astype('float32') / 255.0
-
+            path.join(data_dir, "{}_images_{}.npy".format(split, resolution))
+        )
+        self.data = imgs.astype("float32") / 255.0
 
         if not split == "test":
             self.targets = np.load(path.join(data_dir, split + "_targets.npy"))
@@ -562,26 +517,26 @@ class GalaxyDataset(LossylessImgDataset):
             # evaluated via the kaggle api.
             self.ids = np.load(path.join(data_dir, split + "_ids.npy"))
 
-
     @property
     def augmentations(self):
-        shape = self.shapes_x_t_Mx["input"]
-        return {
-            "rotation": RandomRotation(360),
-            "y_translation": RandomAffine(0, translate=(0, shape[2])),
-            "x_translation": RandomAffine(0, translate=(shape[1], 0)),
-            "scale": RandomAffine(0, scale=(0.8, 1.2)),
-            "color": ColorJitter(
-                brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
-            ),
-            "erasing": RandomErasing(value=0.5),
-        }
+        return dict(
+            PIL={
+                "rotation": RandomRotation(360),
+                "y_translation": RandomAffine(0, translate=(0, 0.25)),
+                "x_translation": RandomAffine(0, translate=(0.25, 0)),
+                "scale": RandomAffine(0, scale=(0.8, 1.2)),
+                "color": ColorJitter(
+                    brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
+                ),
+            },
+            tensor={"erasing": RandomErasing(value=0.5),},
+        )
 
     @property
     def is_clf_x_t_Mx(self):
         is_clf = super(GalaxyDataset, self).is_clf_x_t_Mx
         # input should be true is using log loss for reconstruction (typically MNIST) and False if MSE (typically colored images)
-        is_clf["input"] = True
+        is_clf["input"] = False
         # target should be True if log loss (ie classification) and False if MSE (ie regression)
         is_clf["target"] = False
         return is_clf
@@ -609,48 +564,48 @@ class GalaxyDataset(LossylessImgDataset):
 
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
-        img = Image.fromarray(img)
+        # equivalent: Image.fromarray((img.transpose(1,2,0)*255).astype(np.uint8))
+        img = transform_lib.functional.to_pil_image(torch.from_numpy(img), None)
 
         # don't apply transformation yet, it's done for you
 
         return img, target
 
+    @property
+    def is_train(self):
+        return self.split == "train"
+
+    @property
+    def dataset_name(self):
+        return f"galaxy{self.resolution}"
+
 
 class GalaxyDataModule(LossylessDataModule):
-
     @property
     def Dataset(self):
         return GalaxyDataset
 
-
     def get_train_dataset(self, **dataset_kwargs):
-        return self.Dataset(split="train",
-            download=False,
-            **self.dataset_kwargs,
+        return self.Dataset(
+            self.data_dir, split="train", download=False, **dataset_kwargs,
         )
 
     def get_val_dataset(self, **dataset_kwargs):
         return self.Dataset(
-            split="valid",
-            download=False,
-            **self.dataset_kwargs,
+            self.data_dir, split="valid", download=False, **dataset_kwargs,
         )
 
     def get_test_dataset(self, **dataset_kwargs):
         return self.Dataset(
-            split="test",
-            download=False,
-            **self.dataset_kwargs,
+            self.data_dir, split="test", download=False, **dataset_kwargs,
         )
 
     def prepare_data(self):
         for split in ["train", "valid", "test"]:
             self.Dataset(
-                split=split,
-                download=True,
-                **self.dataset_kwargs,
+                self.data_dir, split=split, download=True, **self.dataset_kwargs,
             )
+
     @property
     def mode(self):
         return "image"
-

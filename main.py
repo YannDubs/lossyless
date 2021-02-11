@@ -3,9 +3,11 @@
 This should be called by `python main.py <conf>` where <conf> sets all configs from the cli, see 
 the file `config/main.yaml` for details about the configs. or use `python main.py -h`.
 """
+import copy
 import logging
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import pandas as pd
 
 import compressai
@@ -14,64 +16,141 @@ import lossyless
 import omegaconf
 import pl_bolts
 import pytorch_lightning as pl
-from lossyless import CompressionModule
+from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
 from lossyless.callbacks import (
-    WandbCodebookPlot,
-    WandbLatentDimInterpolator,
-    WandbMaxinvDistributionPlot,
-    WandbReconstructImages,
+    CodebookPlot,
+    LatentDimInterpolator,
+    MaxinvDistributionPlot,
+    ReconstructImages,
 )
 from lossyless.distributions import MarginalVamp
-from lossyless.helpers import orderedset
+from lossyless.helpers import check_import, orderedset
+from omegaconf import OmegaConf
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
 from utils.helpers import (
-    create_folders,
+    get_latest_match,
     getattr_from_oneof,
+    learning_rate_finder,
     log_dict,
     omegaconf2namespace,
     replace_keys,
     set_debug,
 )
 
+try:
+    import wandb
+except ImportError:
+    pass
+
 logger = logging.getLogger(__name__)
-RES_COMPRESS_FILENAME = "results_compression.csv"
+COMPRESSOR_CKPNT = "best_compressor.ckpt"
+PREDICTOR_CKPNT = "best_predictor.ckpt"
+COMPRESSOR_RES = "results_compressor.csv"
+PREDICTOR_RES = "results_predictor.csv"
 
 
 @hydra.main(config_name="main", config_path="config")
-def main(cfg):
-    begin(cfg)
+def main(cfg_hydra):
+    ############## STARTUP ##############
+    logger.info("Stage : Startup")
+    begin(cfg_hydra)
 
-    # DATA
-    datamodule = instantiate_datamodule(cfg)
+    ############## COMPRESSOR (i.e. sender) ##############
+    logger.info("Stage : Compressor")
+    cfg = set_cfg(cfg_hydra, mode="featurizer")
+    datamodule = instantiate_datamodule_(cfg)
+    cfg = omegaconf2namespace(cfg)  # ensure real python types (only once cfg are fixed)
 
-    # make sure you are using primitive types from now on because omegaconf does not always work
-    cfg = omegaconf2namespace(cfg)
+    if not cfg.featurizer.is_learnable:
+        logger.info(f"Using classical compressor {cfg.featurizer.mode} ...")
+        compressor = ClassicalCompressor(hparams=cfg)
+        comp_trainer = get_trainer(cfg, compressor, is_featurizer=True,)
+        placeholder_fit(comp_trainer, compressor, datamodule)
 
-    # COMPRESSION
-    compression_module = CompressionModule(hparams=cfg)
+    elif cfg.featurizer.is_train:
+        compressor = LearnableCompressor(hparams=cfg)
+        comp_trainer = get_trainer(cfg, compressor, is_featurizer=True)
+        initialize_compressor_(compressor, datamodule, comp_trainer, cfg)
 
-    trainer = get_trainer(cfg, compression_module, is_compressor=True)
+        logger.info("Train compressor ...")
+        comp_trainer.fit(compressor, datamodule=datamodule)
+        save_pretrained(cfg, comp_trainer, COMPRESSOR_CKPNT)
+    else:
+        logger.info("Load pretrained compressor ...")
+        compressor = load_pretrained(cfg, LearnableCompressor, COMPRESSOR_CKPNT)
+        comp_trainer = get_trainer(cfg, compressor, is_featurizer=True)
 
-    # some of the module compononets might needs data or trainer for initialization
-    initialize_(compression_module, datamodule, trainer, cfg)
+    if cfg.evaluation.featurizer.is_evaluate:
+        logger.info("Evaluate compressor ...")
+        evaluate(
+            comp_trainer,
+            datamodule,
+            cfg,
+            COMPRESSOR_RES,
+            is_est_entropies(cfg),
+            ckpt_path=cfg.evaluation.featurizer.ckpt_path,
+            is_featurizer=True,
+        )
 
-    logger.info("Train compressor ...")
-    trainer.fit(compression_module, datamodule=datamodule)
-    logger.info("Evaluate compressor ...")
-    evaluate_compression(trainer, datamodule, cfg)
+    if cfg.is_only_feat:
+        logger.info("Stage : Shutdown after featurizer")
+        return finalize(cfg, modules=[compressor], trainers=[comp_trainer])
+    del datamodule  # not used anymore and can be large
 
-    # # PREDICTION
-    # TODO should reuse the train/test dataset that were already represented as Z in `evaluate_compression`
-    # prediction_module = PredictionModule(hparams=cfg, representer=compression_module)
-    # logger.info("TRAIN / EVALUATE downstream classification.")
-    # trainer.fit(prediction_module, datamodule=datamodule)
-    # evaluate_prediction(trainer, datamodule, cfg)
+    ############## COMMUNICATION (compress and decompress the datamodule) ##############
+    logger.info("Stage : Communication")
+    if cfg.featurizer.is_on_the_fly:
+        # this will perform compression on the fly
+        #! one issue is that if using data augmentations you will augment before the featurizer
+        # which is less realisitic (normalization is dealt with correctly though)
+        onfly_featurizer = compressor
+        pre_featurizer = None
+    else:
+        # compressing once the dataset is more realistic (and quicker) but requires
+        # more memory as the compressed dataset will be saved to file
+        onfly_featurizer = None
+        pre_featurizer = compressor
 
-    finalize(cfg, trainer, compression_module)
-    logger.info("Finished.")
+    ############## DOWNSTREAM PREDICTOR (i.e. receiver) ##############
+    logger.info("Stage : Predictor")
+    cfg = set_cfg(cfg_hydra, mode="predictor")
+    datamodule = instantiate_datamodule_(cfg, pre_featurizer=pre_featurizer)
+    cfg = omegaconf2namespace(cfg)  # ensure real python types (only once cfg are fixed)
+
+    if cfg.predictor.is_train:
+        predictor = Predictor(hparams=cfg, featurizer=onfly_featurizer)
+        pred_trainer = get_trainer(cfg, predictor, is_featurizer=False)
+        initialize_predictor_(predictor, datamodule, pred_trainer, cfg)
+
+        logger.info("Train predictor ...")
+        pred_trainer.fit(predictor, datamodule=datamodule)
+        save_pretrained(cfg, pred_trainer, PREDICTOR_CKPNT)
+
+    else:
+        logger.info("Load pretrained predictor ...")
+        predictor = load_pretrained(cfg, Predictor, PREDICTOR_CKPNT)
+        pred_trainer = get_trainer(cfg, predictor, is_featurizer=False)
+
+    if cfg.evaluation.predictor.is_evaluate:
+        logger.info("Evaluate predictor ...")
+        evaluate(
+            pred_trainer,
+            datamodule,
+            cfg,
+            PREDICTOR_RES,
+            False,
+            ckpt_path=cfg.evaluation.predictor.ckpt_path,
+            is_featurizer=False,
+        )
+
+    ############## SHUTDOWN ##############
+    logger.info("Stage : Shutdown")
+    return finalize(
+        cfg, modules=[compressor, predictor], trainers=[comp_trainer, pred_trainer]
+    )
 
 
 def begin(cfg):
@@ -80,25 +159,67 @@ def begin(cfg):
         set_debug(cfg)
 
     pl.seed_everything(cfg.seed)
+
     cfg.paths.work = str(Path.cwd())
-    create_folders(
-        cfg.paths.base_dir,
-        [
-            f"{cfg.paths.results}",
-            f"{cfg.paths.pretrained}",
-            f"{cfg.paths.logs}",
-            f"{cfg.paths.chckpnt}",
-        ],
-    )
 
     if cfg.rate.range_coder is not None:
         compressai.set_entropy_coder(cfg.rate.range_coder)
 
-    logger.info(f"Running {cfg.long_name} from {cfg.paths.work}.")
+    logger.info(f"Workdir : {cfg.paths.work}.")
+
+    if len(cfg.data_pred) == 0:
+        # by default same data for pred and feat
+        cfg.data_pred = cfg.data_feat
 
 
-def instantiate_datamodule(cfg):
+def set_cfg(cfg, mode):
+    """Set the configurations for a specific mode."""
+    cfg = copy.deepcopy(cfg)  # not inplace
+
+    with omegaconf.open_dict(cfg):
+        if mode == "featurizer":
+
+            cfg.stage = "feat"
+            cfg.long_name = cfg.long_name_feat
+
+            cfg.data = OmegaConf.merge(cfg.data, cfg.data_feat)
+            cfg.trainer = OmegaConf.merge(cfg.trainer, cfg.update_trainer_feat)
+            cfg.checkpoint = OmegaConf.merge(cfg.checkpoint, cfg.checkpoint_feat)
+
+            logger.info(f"Name : {cfg.long_name}.")
+
+        elif mode == "predictor":
+            cfg.stage = "pred"
+            cfg.long_name = cfg.long_name_pred
+
+            cfg.data = OmegaConf.merge(cfg.data, cfg.data_pred)
+            cfg.trainer = OmegaConf.merge(cfg.trainer, cfg.update_trainer_pred)
+            cfg.checkpoint = OmegaConf.merge(cfg.checkpoint, cfg.checkpoint_pred)
+
+            # only need target
+            cfg.data.kwargs.dataset_kwargs.additional_target = None
+
+            logger.info(f"Name : {cfg.long_name}.")
+
+        else:
+            raise ValueError(f"Unkown mode={mode}.")
+
+    # make sure all paths exist
+    for _, path in cfg.paths.items():
+        if isinstance(path, str):
+            Path(path).mkdir(parents=True, exist_ok=True)
+
+    Path(cfg.paths.pretrained.save).mkdir(parents=True, exist_ok=True)
+
+    return cfg
+
+
+def instantiate_datamodule_(cfg, pre_featurizer=None):
     """Instantiate dataset."""
+
+    if pre_featurizer is not None:
+        pass  # TODO (probabby give to datamodule)
+
     cfgd = cfg.data
     datamodule = get_datamodule(cfgd.dataset)(**cfgd.kwargs)
     datamodule.prepare_data()
@@ -112,21 +233,11 @@ def instantiate_datamodule(cfg):
     cfgd.mode = datamodule.mode
     cfgd.neg_factor = cfgd.length / (2 * cfgd.kwargs.batch_size - 1)
 
-    # TODO clean max_var for multi label multi clf
-    # save real shape of `max_var` if you had to flatten it for batching.
-    with omegaconf.open_dict(cfg):
-        if hasattr(datamodule, "shape_max_var"):
-            cfg.distortion.kwargs.n_classes_multilabel = datamodule.shape_max_var
-            # max_var is such that all tasks are independent are should sum over them
-            cfg.distortion.kwargs.is_sum_over_tasks = True
-
     return datamodule
 
 
-def initialize_(module, datamodule, trainer, cfg):
-    """Uses the data module to set some of the model's param + logging."""
-
-    # TODO auto lr finder
+def initialize_compressor_(module, datamodule, trainer, cfg):
+    """Additional steps needed for intitalization of the compressor + logging."""
 
     # marginal vampprior
     rate_est = module.rate_estimator
@@ -152,25 +263,30 @@ def initialize_(module, datamodule, trainer, cfg):
     log_dict(trainer, entropies, is_param=True)
 
 
-def get_callbacks(cfg, is_compressor):
+def get_callbacks(cfg, is_featurizer):
     """Return list of callbacks."""
     callbacks = []
 
-    if is_compressor:
+    if is_featurizer:
         additional_target = cfg.data.kwargs.dataset_kwargs.additional_target
         is_reconstruct = additional_target in ["representative", "input"]
-        if cfg.logger.name == "wandb" and is_reconstruct:
-            if cfg.data.mode == "image":
+        can_estimate_Mx = ["representative", "input", "max_var", "max_inv"]
+        if cfg.logger.is_can_plot_img:
+            if cfg.data.mode == "image" and is_reconstruct:
                 callbacks += [
-                    WandbLatentDimInterpolator(cfg.encoder.z_dim),
-                    WandbReconstructImages(),
+                    LatentDimInterpolator(cfg.encoder.z_dim),
+                    ReconstructImages(),
                 ]
             elif cfg.data.mode == "distribution":
-                callbacks += [WandbCodebookPlot(), WandbMaxinvDistributionPlot()]
+                callbacks += [
+                    CodebookPlot(is_plot_codebook=is_reconstruct),
+                ]
+                if additional_target in can_estimate_Mx:
+                    callbacks += [
+                        MaxinvDistributionPlot(),
+                    ]
 
-    curr = "compressor" if is_compressor else "predictor"
-    ckwargs = cfg.callbacks[f"ModelCheckpoint_{curr}"]
-    callbacks += [ModelCheckpoint(**ckwargs)]
+    callbacks += [ModelCheckpoint(**cfg.checkpoint.kwargs)]
 
     for name in cfg.callbacks.additional:
         cllbck_kwargs = cfg.callbacks.get(name, {})
@@ -181,31 +297,37 @@ def get_callbacks(cfg, is_compressor):
     return callbacks
 
 
-def get_logger(cfg, module):
+def get_logger(cfg, module, is_featurizer):
     """Return coorect logger."""
+
+    kwargs = cfg.logger.kwargs
+    # useful for different modes (e.g. wandb_kwargs)
+    kwargs.update(cfg.logger.get(f"{cfg.logger.name}_kwargs", {}))
+
     if cfg.logger.name == "csv":
-        logger = CSVLogger(**cfg.logger.csv)
+        logger = CSVLogger(**kwargs)
 
     elif cfg.logger.name == "wandb":
+        check_import("wandb", "WandbLogger")
+
         try:
-            logger = WandbLogger(**cfg.logger.wandb)
+            logger = WandbLogger(**kwargs)
         except Exception:
             cfg.logger.wandb.offline = True
-            logger = WandbLogger(**cfg.logger.wandb)
+            logger = WandbLogger(**kwargs)
 
         if cfg.trainer.track_grad_norm == 2:
             # use wandb rather than lightning gradients
             cfg.trainer.track_grad_norm = -1
+            to_watch = module.p_ZlX.mapper if is_featurizer else module.predictor
             logger.watch(
-                module.p_ZlX.mapper,
-                log="gradients",
-                log_freq=cfg.trainer.log_every_n_steps * 10,
+                to_watch, log="gradients", log_freq=cfg.trainer.log_every_n_steps * 10,
             )
 
     elif cfg.logger.name == "tensorboard":
-        logger = TensorBoardLogger(**cfg.logger.tensorboard)
+        logger = TensorBoardLogger(**kwargs)
 
-    elif cfg.logger.name == False:
+    elif cfg.logger.name is None:
         logger = False
 
     else:
@@ -214,19 +336,17 @@ def get_logger(cfg, module):
     return logger
 
 
-def get_trainer(cfg, module, is_compressor):
+def get_trainer(cfg, module, is_featurizer):
     """Instantiate trainer."""
 
     # Resume training ?
-    curr = "compressor" if is_compressor else "predictor"
-    ckwargs = cfg.callbacks[f"ModelCheckpoint_{curr}"]
-    last_chckpnt = Path(ckwargs.dirpath) / "last.ckpt"
+    last_chckpnt = Path(cfg.checkpoint.kwargs.dirpath) / "last.ckpt"
     if last_chckpnt.exists():
-        cfg.trainer.resume_from_checkpoint = last_chckpnt
+        cfg.trainer.resume_from_checkpoint = str(last_chckpnt)
 
     trainer = pl.Trainer(
-        logger=get_logger(cfg, module),
-        callbacks=get_callbacks(cfg, is_compressor),
+        logger=get_logger(cfg, module, is_featurizer),
+        callbacks=get_callbacks(cfg, is_featurizer),
         checkpoint_callback=True,
         **cfg.trainer,
     )
@@ -234,27 +354,70 @@ def get_trainer(cfg, module, is_compressor):
     return trainer
 
 
-def evaluate_compression(trainer, datamodule, cfg):
-    """
-    Evaluate the compression / representation learning by loging all the metrics from the training 
-    and test set from the best bodel. Also computes samples estimates of H_Mlz, H_Ylz which will 
-    probably be better estimates than the lower bounds used during training.
-    """
+def placeholder_fit(trainer, module, datamodule):
+    """Necessary setup of trainer before testing if you don't fit it."""
+    trainer.train_loop.setup_fit(module, None, None, datamodule)
+    trainer.model = module
+
+
+def save_pretrained(cfg, trainer, file):
+    """Send best checkpoint for compressor to main directory."""
+    dest_path = Path(cfg.paths.pretrained.save)
+    dest_path.mkdir(parents=True, exist_ok=True)
+    trainer.save_checkpoint(dest_path / file, weights_only=True)
+
+
+def load_pretrained(cfg, Module, file):
+    """Load the best checkpoint from the latest run that has the same name as current run."""
+    save_path = Path(cfg.paths.pretrained.load)
+    # select the latest checkpoint matching the path
+    chckpnt = get_latest_match(save_path / file)
+
+    loaded_module = Module.load_from_checkpoint(chckpnt)
+
+    return loaded_module
+
+
+def is_est_entropies(cfg):
     # entropy estimation when Z is stochastic will not be good
     if cfg.evaluation.is_est_entropies and cfg.encoder.fam != "deterministic":
-        logger.warn("Turning off `is_est_entropies` because stochastic Z.")
-        cfg.evaluation.is_est_entropies = False
+        logger.warning("Turning off `is_est_entropies` because stochastic Z.")
+        return False
+    return cfg.evaluation.is_est_entropies
 
-    # test on test
-    test_res = trainer.test()[0]
-    if cfg.evaluation.is_est_entropies:
+
+def evaluate(
+    trainer,
+    datamodule,
+    cfg,
+    file,
+    is_est_entropies=False,
+    ckpt_path="best",
+    is_featurizer=True,
+):
+    """
+    Evaluate the trainer by loging all the metrics from the training and test set from the best model. 
+    Can also compute sample estimates of soem entropies, which should be better estimates than the 
+    lower bounds used during training. Only estimate entropies if `is_featurizer`.
+    """
+    # Evaluation
+    if cfg.evaluation.is_eval_on_test:
+        test_dataloaders = datamodule.test_dataloader()
+    else:
+        # testing on validation (needed if don't have access to test set)
+        test_dataloaders = datamodule.val_dataloader()
+
+    test_res = trainer.test(test_dataloaders=test_dataloaders, ckpt_path=ckpt_path)[0]
+    if is_est_entropies and is_featurizer:
         append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
     log_dict(trainer, test_res, is_param=False)
 
-    # test on train
-    train_res = trainer.test(test_dataloaders=datamodule.train_dataloader())[0]
+    # Evaluation on train
+    train_res = trainer.test(
+        test_dataloaders=datamodule.train_dataloader(), ckpt_path=ckpt_path
+    )[0]
     train_res = replace_keys(train_res, "test", "testtrain")
-    if cfg.evaluation.is_est_entropies:
+    if cfg.evaluation.is_est_entropies and is_featurizer:
         # ? this can be slow on all training set, is it necessary ?
         append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=False)
     log_dict(trainer, train_res, is_param=False)
@@ -262,43 +425,66 @@ def evaluate_compression(trainer, datamodule, cfg):
     # save results
     train_res = replace_keys(train_res, "testtrain/", "")
     test_res = replace_keys(test_res, "test/", "")
-    results = pd.DataFrame.from_dict(dict(train=train_res, test=cfg.data.target_is_clf))
-    path = Path(cfg.paths.results) / RES_COMPRESS_FILENAME
+    results = pd.DataFrame.from_dict(dict(train=train_res, test=test_res))
+    path = Path(cfg.paths.results) / file
     results.to_csv(path, header=True, index=True)
-    logger.info(f"Logging compressor results to {path}.")
+    logger.info(f"Logging results to {path}.")
 
 
 def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
     """Append entropy estimates to the results."""
     is_discrete_Y = cfg.data.target_is_clf
     is_discrete_M = datamodule.dataset.is_clf_x_t_Mx["max_inv"]
+
+    # get the max invariant from the dataset
+    dkwargs = {"additional_target": "max_inv"}
+    if is_test:
+        if cfg.evaluation.is_eval_on_test:
+            dataloader = datamodule.test_dataloader(dataset_kwargs=dkwargs)
+        else:
+            # testing on validation (needed if don't have access to test set)
+            dataloader = datamodule.val_dataloader(dataset_kwargs=dkwargs)
+    else:
+        dataloader = datamodule.train_dataloader(dataset_kwargs=dkwargs)
+
     H_MlZ, H_YlZ, H_Z = estimate_entropies(
-        trainer,
-        datamodule,
-        is_test=is_test,
-        is_discrete_M=is_discrete_M,
-        is_discrete_Y=is_discrete_Y,
+        trainer, dataloader, is_discrete_M=is_discrete_M, is_discrete_Y=is_discrete_Y,
     )
     prfx = "test" if is_test else "testtrain"
-    results[f"{prfx}/H_MlZ"] = H_MlZ
-    results[f"{prfx}/H_YlZ"] = H_YlZ
-    results[f"{prfx}/H_Z"] = H_Z
+    results[f"{prfx}/feat/H_MlZ"] = H_MlZ
+    results[f"{prfx}/feat/H_YlZ"] = H_YlZ
+    results[f"{prfx}/feat/H_Z"] = H_Z
 
 
-def finalize(cfg, trainer, compression_module):
+def initialize_predictor_(module, datamodule, trainer, cfg):
+    """Additional steps needed for intitalization of the predictor + logging."""
+    if module.hparams.optimizer_pred.is_lr_find:
+        old_lr = module.hparams.optimizer_pred.kwargs.lr
+        new_lr = learning_rate_finder(module, datamodule, trainer)
+
+        if (old_lr is None) and (new_lr is None):
+            raise ValueError(f"Couldn't find new lr and no old lr given.")
+
+        if old_lr is None and (new_lr is not None):
+            module.hparams.optimizer_pred.kwargs.lr = new_lr
+            logger.info(f"Using lr={new_lr} for the predictor.")
+        else:
+            module.hparams.optimizer_pred.kwargs.lr = old_lr
+
+
+def finalize(cfg, modules, trainers):
     """Finalizes the script."""
-    # logging.shutdown()
+
+    plt.close("all")
 
     if cfg.logger.name == "wandb":
-        import wandb
-
         if wandb.run is not None:
             wandb.run.finish()  # finish the run if still on
 
-    # send best checkpoint(s) to main directory
-    dest_path = Path(cfg.paths.pretrained)
-    dest_path.mkdir(parents=True, exist_ok=True)
-    trainer.save_checkpoint(dest_path / "best.ckpt", weights_only=True)
+    logger.info("Finished.")
+    logging.shutdown()
+
+    return 0
 
 
 if __name__ == "__main__":

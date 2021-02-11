@@ -1,4 +1,6 @@
-# @package _group_
+defaults:
+  - base_MI
+  
 name: MI_vamp
 kwargs:
   prior_fam: vamp

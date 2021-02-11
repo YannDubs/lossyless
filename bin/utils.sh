@@ -16,27 +16,22 @@ while getopts ':s:p:m:t:v:a:' flag; do
       server="${OPTARG}"
       add_kwargs="${add_kwargs} server=$server"
       echo "$server server ..."
-      case "$server" in
-        learnfair) 
-          add_kwargs="${add_kwargs} hydra/launcher=submitit_slurm"
-          ;;
-        vector) 
-          add_kwargs="${add_kwargs} hydra/launcher=submitit_slurm"
-          ;;
-        qvector) 
-          add_kwargs="${add_kwargs} hydra/launcher=submitit_slurm"
-          ;;
-        local) 
-          add_kwargs="${add_kwargs} hydra/launcher=submitit_local"
-          ;;
-        esac
       ;;
     m ) 
       mode="${OPTARG}"
       add_kwargs="${add_kwargs} +mode=$mode"
-      prfx="${mode}_"
-      time="60"
       echo "$mode mode ..."
+
+      if  [[ "$mode" != "cpu" ]]; then
+        prfx="${mode}_"
+        time="60"
+      fi
+
+      # overwrite max_epochs with the one from the mode
+      if  [[ "$mode" == "dev" || "$mode" == "nano" ]]; then
+        add_kwargs="${add_kwargs} trainer.max_epochs=2"
+      fi
+      
       ;;
     v ) 
       is_plot_only=true
@@ -83,7 +78,7 @@ fi
 
 experiment="${prfx}""$experiment"
 
-results="results/$experiment"
+results="results/exp_$experiment"
 if [ -d "$results" ]; then
 
   echo -n "$results exist. Should I delete it (y/n) ? "

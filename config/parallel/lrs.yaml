@@ -1,18 +1,11 @@
 # @package _global_
+defaults:
+  - base@parallel
 
-optimizer:
-  lr: [0.003,0.001,0.0003]
+optimizer_feat:
+  kwargs:
+    lr: [0.003,0.001,0.0003]
 
 parallel:
-  key: "optimizer.lr"
+  key: "optimizer_feat.kwargs.lr"
   to_sweep: [0.003,0.001,0.0003]
-
-  # the rest should really be in a default file for `parallel`
-  override_dirname: ${hydra:job.override_dirname}
-  main_script: ${hydra:runtime.cwd}/main.py
-
-hydra:
-  job:
-    config:
-      override_dirname:
-        item_sep: ' '

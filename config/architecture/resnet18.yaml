@@ -1,0 +1,4 @@
+name: resnet18
+arch: resnet
+arch_kwargs:
+  base: resnet18

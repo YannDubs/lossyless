@@ -1,0 +1,12 @@
+defaults:
+  - base
+  
+name: wandb
+is_can_plot_img: true
+kwargs:
+  project: lossyless-final
+  entity: ${wandb_entity}
+  group: ${experiment}
+  offline: false # Run offline (data can be streamed later to wandb servers).
+  reinit: False # ensure that same wandb after preemption
+  id: ${job_id}

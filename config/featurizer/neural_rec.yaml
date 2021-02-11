@@ -1,0 +1,6 @@
+defaults:
+  - base_neural
+
+# neural compressor that uses x_hat for predicition
+
+name: neural_rec

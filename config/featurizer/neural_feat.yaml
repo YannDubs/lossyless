@@ -1,0 +1,7 @@
+defaults:
+  - base_neural
+
+# neural compressor that uses z_hat for predicition
+
+name: neural_feat
+is_features: True # uses z_hat (rather than x_hat) for predictions

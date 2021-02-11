@@ -3,23 +3,22 @@ import math
 
 import pytorch_lightning as pl
 import torch
-from pl_bolts.optimizers.lars_scheduling import LARSWrapper
 from pytorch_lightning.core.decorators import auto_move_data
 
 from .architectures import get_Architecture
 from .distortions import get_distortion_estimator
 from .distributions import CondDist
-from .helpers import BASE_LOG, get_lr_scheduler, orderedset
+from .helpers import BASE_LOG, Timer, append_optimizer_scheduler_, orderedset
 from .predictors import OnlineEvaluator
 from .rates import get_rate_estimator
 
-__all__ = ["CompressionModule"]
+__all__ = ["LearnableCompressor"]
 
 logger = logging.getLogger(__name__)
 
 
-class CompressionModule(pl.LightningModule):
-    """Main network for compression."""
+class LearnableCompressor(pl.LightningModule):
+    """Main network for learning a neural compression."""
 
     def __init__(self, hparams):
         super().__init__()
@@ -29,6 +28,12 @@ class CompressionModule(pl.LightningModule):
         self.rate_estimator = self.get_rate_estimator()
         self.distortion_estimator = self.get_distortion_estimator()
         self.online_evaluator = self.get_online_evaluator()
+
+        # governs how the compressor acts when calling it directly
+        self.is_features = self.hparams.featurizer.is_features
+        self.out_shape = (
+            self.hparams.encoder.z_dim if self.is_features else self.hparams.data.shape
+        )
 
     def get_encoder(self):
         """Return encoder: a mapping to a torch.Distribution (conditional distribution)."""
@@ -48,7 +53,7 @@ class CompressionModule(pl.LightningModule):
             cfg_rate.name,
             z_dim=self.hparams.encoder.z_dim,
             p_ZlX=self.p_ZlX,
-            n_z_samples=self.hparams.loss.n_z_samples,
+            n_z_samples=self.hparams.featurizer.loss.n_z_samples,
             **cfg_rate.kwargs,
         )
 
@@ -73,24 +78,35 @@ class CompressionModule(pl.LightningModule):
         )
 
     @auto_move_data  # move data on correct device for inference
-    def forward(
-        self, x, is_compress=False,
-    ):
+    def forward(self, x, is_compress=False, is_features=None):
         """Represents the data `x`.
 
         Parameters
         ----------
-        X : torch.Tensor of shape=[batch_size, *data.shape]
+        x : torch.Tensor of shape=[batch_size, *data.shape]
             Data to represent.
 
         is_compress : bool, optional
-            Whether to return the compressed representation.
+            Whether to perform actual compression. If not will simply apply the discretization as 
+            if we had compressed.
+
+        is_features : bool or None, optional
+            Whether to return the features / codes / representation or the reconstructed example.
+            Recontructed image only works for distortions that predict reconctructions (e.g. VAE),
+            If `None` uses the default from `hparams`.
 
         Returns
         -------
-        z : torch.Tensor of shape=[batch_size, z_dim]
-            Represented data.
+        if is_features:
+            z : torch.Tensor of shape=[batch_size, z_dim]
+                Represented data.
+        else:
+            X_hat : torch.Tensor of shape=[batch_size,  *data.shape]
+                Reconstructed data.
         """
+        if is_features is None:
+            is_features = self.is_features
+
         p_Zlx = self.p_ZlX(x)
         z = p_Zlx.rsample([1])
 
@@ -102,15 +118,22 @@ class CompressionModule(pl.LightningModule):
             z_hat, *_ = self.rate_estimator(z, p_Zlx)
             z_hat = z_hat.squeeze(0)
 
-        return z_hat
+        if is_features:
+            out = z_hat
+        else:
+            x_hat = self.distortion_estimator.q_YlZ(z_hat)
+            out = x_hat
+
+        return out
 
     def step(self, batch):
-        cfgl = self.hparams.loss
-        x, (_, aux_target) = batch
-        n_z = cfgl.n_z_samples
 
-        # batch shape: [batch_size] ; event shape: [z_dim]
-        p_Zlx = self.p_ZlX(x)
+        x, (_, aux_target) = batch
+        n_z = self.hparams.featurizer.loss.n_z_samples
+
+        with Timer() as encoder_timer:
+            # batch shape: [batch_size] ; event shape: [z_dim]
+            p_Zlx = self.p_ZlX(x)
 
         # shape: [n_z, batch_size, z_dim]
         z = p_Zlx.rsample([n_z])
@@ -128,10 +151,19 @@ class CompressionModule(pl.LightningModule):
         logs.update(r_logs)
         logs.update(d_logs)
         logs.update(dict(zmin=z.min(), zmax=z.max(), zmean=z.mean()))
+        if "n_bits" in logs:
+            batch_size = x.size(0)
+            logs["encoder_time"] = encoder_timer.duration / batch_size
+            logs["sender_time"] = logs["encoder_time"] + logs["compress_time"]
+
+            if self.hparams.data.mode == "image":
+                _, __, height, width = x.shape
+                logs["bpp"] = logs["n_bits"] / (height * width)
 
         # any additional information that can be useful (dict)
         other.update(r_other)
         other.update(d_other)
+        other["X"] = x[0].detach().cpu()
         other.update(dict(z=z.detach()))
 
         return loss, logs, other
@@ -139,7 +171,9 @@ class CompressionModule(pl.LightningModule):
     def loss(self, rates, distortions):
         n_z = rates.size(0)
         cfg = self.hparams
-        beta = cfg.loss.beta * cfg.rate.factor_beta * cfg.distortion.factor_beta
+        beta = (
+            cfg.featurizer.loss.beta * cfg.rate.factor_beta * cfg.distortion.factor_beta
+        )
 
         # loose_loss for plotting. shape: []
         loose_loss = (distortions + beta * rates).mean()
@@ -163,6 +197,8 @@ class CompressionModule(pl.LightningModule):
             rate=rate / math.log(BASE_LOG),
             distortion=distortion / math.log(BASE_LOG),
         )
+        # if both are entropies this will say how good the model is
+        logs["ratedist"] = logs["rate"] + logs["distortion"]
         other = dict()
 
         return loss, logs, other
@@ -187,16 +223,17 @@ class CompressionModule(pl.LightningModule):
             loss = self.rate_estimator.aux_loss()
             logs = dict(coder_loss=loss)
 
-        self.log_dict({f"train/{k}": v for k, v in logs.items()})
+        self.log_dict({f"train/feat/{k}": v for k, v in logs.items()})
         return loss
 
     def validation_step(self, batch, batch_idx):
+
         # TODO for some reason validation step for wandb logging after resetting is not correct
         loss, logs, _ = self.step(batch)
         _, online_logs = self.online_evaluator(batch, self)
         logs.update(online_logs)
         self.log_dict(
-            {f"val/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"val/feat/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
         )
         return loss
 
@@ -205,7 +242,7 @@ class CompressionModule(pl.LightningModule):
         _, online_logs = self.online_evaluator(batch, self)
         logs.update(online_logs)
         self.log_dict(
-            {f"test/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"test/feat/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
         )
         return loss
 
@@ -229,27 +266,20 @@ class CompressionModule(pl.LightningModule):
 
     def configure_optimizers(self):
 
+        optimizers, schedulers = [], []
+
         aux_parameters = orderedset(self.rate_estimator.aux_parameters())
         online_parameters = orderedset(self.online_evaluator.aux_parameters())
         is_optimize_coder = len(aux_parameters) > 0
-        epochs = self.hparams.trainer.max_epochs
 
-        optimizers = []
-        schedulers = []
-
-        # MODEL OPTIMIZER
-        cfgo = self.hparams.optimizer
-
-        optimizer = torch.optim.Adam(
-            self.parameters(), lr=cfgo.lr, weight_decay=cfgo.weight_decay
+        # COMPRESSOR OPTIMIZER
+        append_optimizer_scheduler_(
+            self.hparams.optimizer_feat,
+            self.hparams.scheduler_feat,
+            self.parameters(),
+            optimizers,
+            schedulers,
         )
-        if cfgo.is_lars:
-            optimizer = LARSWrapper(optimizer)
-        optimizers += [optimizer]
-
-        scheduler = get_lr_scheduler(optimizer, epochs=epochs, **cfgo.scheduler)
-        if scheduler is not None:
-            schedulers += [scheduler]
 
         # ONLINE EVALUATOR
         # do not use scheduler for online eval because input (representation) is changing
@@ -258,14 +288,12 @@ class CompressionModule(pl.LightningModule):
 
         # CODER OPTIMIZER
         if is_optimize_coder:
-            cfgoc = self.hparams.optimizer_coder
-            optimizer_coder = torch.optim.Adam(aux_parameters, lr=cfgoc.lr)
-            optimizers += [optimizer_coder]
-
-            scheduler = get_lr_scheduler(
-                optimizer_coder, epochs=epochs, **cfgoc.scheduler,
+            append_optimizer_scheduler_(
+                self.hparams.optimizer_coder,
+                self.hparams.scheduler_coder,
+                aux_parameters,
+                optimizers,
+                schedulers,
             )
-            if scheduler is not None:
-                schedulers += [scheduler]
 
         return optimizers, schedulers

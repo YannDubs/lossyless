@@ -1,0 +1,6 @@
+defaults:
+  - base_classical
+
+name: png
+mode: png
+quality: 90

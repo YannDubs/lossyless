@@ -1,20 +1,10 @@
 # @package _global_
-
-# this is just for the name of the first file:
-# @package _global_
+defaults:
+  - base@parallel
+  
 distortion:
   name: [ivae,ivib,ince]
 
 parallel:
   key: "distortion"
   to_sweep: [ivae,ivib,ince]
-
-  # the rest should really be in a default file for `parallel`
-  override_dirname: ${hydra:job.override_dirname}
-  main_script: ${hydra:runtime.cwd}/main.py
-
-hydra:
-  job:
-    config:
-      override_dirname:
-        item_sep: ' '

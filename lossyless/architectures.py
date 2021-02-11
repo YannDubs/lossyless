@@ -178,7 +178,7 @@ class Resnet(nn.Module):
         first conv, and remove the max pooling layer as done (for cifar10) in
         https://gist.github.com/y0ast/d91d09565462125a1eb75acc65da1469.
 
-    out_dim : int, optional
+    out_shape : int or tuple, optional
         Size of the output.
 
     base : {'resnet18', 'resnet34', 'resnet50', 'resnet101',
@@ -198,17 +198,19 @@ class Resnet(nn.Module):
     def __init__(
         self,
         in_shape,
-        out_dim,
+        out_shape,
         base="resnet18",
         is_pretrained=False,
         norm_layer="batchnorm",
     ):
         super().__init__()
         self.in_shape = in_shape
-        self.out_dim = out_dim
+        self.out_shape = [out_shape] if isinstance(out_shape, int) else out_shape
+        self.out_dim = prod(self.out_shape)
+
         self.resnet = torchvision.models.__dict__[base](
             pretrained=is_pretrained,
-            num_classes=out_dim,
+            num_classes=self.out_dim,
             norm_layer=get_Normalization(norm_layer, 2),
         )
 
@@ -220,12 +222,14 @@ class Resnet(nn.Module):
             self.resnet.maxpool = nn.Identity()
 
         if self.out_dim != 1000:
-            self.resnet.fc = nn.Linear(self.resnet.fc.in_features, out_dim)
+            self.resnet.fc = nn.Linear(self.resnet.fc.in_features, self.out_dim)
 
         self.reset_parameters()
 
     def forward(self, X):
-        return self.resnet(X)
+        Y_pred = self.resnet(X)
+        Y_pred = Y_pred.unflatten(dim=-1, sizes=self.out_shape)
+        return Y_pred
 
     def reset_parameters(self):
         # resnet is already correctly initialized
@@ -241,7 +245,7 @@ class CNN(nn.Module):
 
     Notes
     -----
-    - Only works for images whose width and height are power of 2.
+    - Only works for images whose side is a power of 2 (not necessarily  squared).
     - If `in_shape` and `out_dim` are reversed (i.e. `in_shape` is int) then will transpose the CNN.
 
     Parameters
@@ -263,6 +267,10 @@ class CNN(nn.Module):
     activation : {"gdn"}U{any torch.nn activation}, optional
         Activation to use.
 
+    n_layers : int, optional, optional
+        Number of layers. If `None` uses the required number of layers so that the smallest side 
+        is 2 after encoding (i.e. one less than the maximum).
+
     kwargs :
         Additional arguments to `ConvBlock`.
     """
@@ -274,6 +282,7 @@ class CNN(nn.Module):
         hid_dim=32,
         norm_layer="batchnorm",
         activation="ReLU",
+        n_layers=None,
         **kwargs,
     ):
 
@@ -290,20 +299,28 @@ class CNN(nn.Module):
         self.hid_dim = hid_dim
         self.norm_layer = norm_layer
         self.activation = activation
+        self.n_layers = n_layers
+
+        # if want non pow2 you can pass it through a linear layer to get the closest power of 2
+        # and if transposed a linear layer to get in_shape. But better if it's done when image is
+        # smaller (or best is simply to resize it to power of 2)
+        assert is_pow2(self.in_shape[1]) and is_pow2(self.in_shape[2])
+
+        if self.n_layers is None:
+            # divide length by 2 at every step until smallest is 2
+            min_side = min(self.in_shape[1], self.in_shape[2])
+            self.n_layers = int(math.log2(min_side) - 1)
 
         Norm = get_Normalization(self.norm_layer, 2)
         # don't use bias with batch_norm https://twitter.com/karpathy/status/1013245864570073090?l...
         is_bias = Norm == nn.Identity
 
-        assert is_pow2(self.in_shape[1]) and is_pow2(self.in_shape[2])
-
-        n_layers = 4
         # for size 32 will go 32,16,8,4,2
         # channels for hid_dim=32: 3,32,64,128,256
         channels = [self.in_shape[0]]
-        channels += [self.hid_dim * (2 ** i) for i in range(0, n_layers)]
-        # by how much will increase after flattening
-        factor = (self.in_shape[1] * self.in_shape[2]) // ((2 ** n_layers) ** 2)
+        channels += [self.hid_dim * (2 ** i) for i in range(0, self.n_layers)]
+        end_h = self.in_shape[1] // (2 ** self.n_layers)
+        end_w = self.in_shape[2] // (2 ** self.n_layers)
 
         if self.is_transpose:
             channels.reverse()
@@ -319,13 +336,13 @@ class CNN(nn.Module):
 
         if self.is_transpose:
             layers = [
-                nn.Linear(self.out_dim, channels[0] * factor, bias=is_bias),
-                nn.Unflatten(dim=-1, unflattened_size=(channels[0], 2, 2)),
+                nn.Linear(self.out_dim, channels[0] * end_w * end_h, bias=is_bias),
+                nn.Unflatten(dim=-1, unflattened_size=(channels[0], end_h, end_w)),
             ] + layers
         else:
             layers += [
                 nn.Flatten(start_dim=1),
-                nn.Linear(channels[-1] * factor, self.out_dim),
+                nn.Linear(channels[-1] * end_w * end_h, self.out_dim),
                 # last layer should always have bias
             ]
 

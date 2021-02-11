@@ -14,13 +14,13 @@ trainer:
   log_every_n_steps: 20
 
 logger:
-  wandb:
+  wandb_kwargs: 
     tags: [test, quick]
     anonymous: true
     project: tmp
 
 callbacks:
-  additional: ["GPUStatsMonitor","TrainingDataMonitor","ModuleDataMonitor"] # if add other callbacks through additional will be replaced
+  additional: ["GPUStatsMonitor","TrainingDataMonitor","ModuleDataMonitor","LearningRateMonitor"] # if add other callbacks through additional will be replaced
 
   TrainingDataMonitor:
     log_every_n_steps: 50

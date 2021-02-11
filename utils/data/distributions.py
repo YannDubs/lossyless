@@ -67,6 +67,8 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
         self.min_x, self.min_y = self.data.quantile(0.1, dim=0)
         self.max_x, self.max_y = self.data.quantile(0.9, dim=0)
 
+        assert not self.is_normalize, "Cannot currently normalize distribution"
+
     def get_x_target_Mx(self, index):
         Mx = self.targets[index]
         return self.data[index], Mx, Mx
@@ -90,7 +92,7 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
             raise ValueError(f"Unkown equivalence={self.equivalence}.")
 
     def get_max_var(self, x, Mx):
-        # Mx is a regression task so one a possible max variant is simply predicting x
+        # Mx is a regression task so one possible max variant is simply predicting x
         return x
 
     def sample_equivalence_action(self):
@@ -126,6 +128,11 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
 
         else:
             raise ValueError(f"Unkown equivalence={self.equivalence}.")
+
+    def get_equiv_x(self, x, Mx):
+        rep = self.get_representative(Mx)
+        action = self.sample_equivalence_action()
+        return action(rep)
 
     @property
     def entropies(self):

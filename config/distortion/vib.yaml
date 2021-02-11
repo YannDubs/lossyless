@@ -1,18 +1,12 @@
 # @package _global_
-distortion:
-  name: vib # vib predicting the index + which transformations were applied
-  mode: direct
-  factor_beta: 0.005 # compared to ivae gives importance -- to rate 
-  kwargs: 
-    z_dim: ${encoder.z_dim}
-    y_shape: ${data.aux_shape}
-    is_classification: ${data.aux_is_clf}
-    dataset: ${data.dataset}
-    arch: null
-    arch_kwargs:
-      complexity: 2
+defaults:
+  - base_direct@distortion
 
-data:
+distortion:
+  name: vib # vae that reconstructs the augmented images
+  factor_beta: 0.005 # compared to ivae gives importance -- to rate 
+  
+data_feat:
   kwargs:
     dataset_kwargs:
-      additional_target: max_var # maximum variant. I.e. similar to max invariant but is not invariant 
+      additional_target:  max_var

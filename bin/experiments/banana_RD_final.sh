@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
-experiment=$prfx"banana_RD_final"
+experiment="banana_RD_final"
 notes="
-**Goal**: Run rate distortion curve for banana distribution without any rounding / discretization
-**Hypothesis**: Should be close to the estimated optimal rate distortion curve, and now can approximate it using differential entropies.
+**Goal**: Run rate distortion curve for banana distribution when predicting representative
+**Hypothesis**: Should be close to the estimated optimal rate distortion curve, and can approximate it using differential entropies.
 "
 
-# e.g. command: bin/experiments/banana_viz.sh -s vector -t 360
+# e.g. command: bin/experiments/banana_RD_final.sh -s vector  -t 720
 
 # parses special mode for running the script
 source `dirname $0`/../utils.sh
@@ -17,74 +17,69 @@ source `dirname $0`/../utils.sh
 # only differences (as far as I can tell):
 # - use batch norm
 # - hidden dim for MLPs is 1024 instead of 100
-# - beta = 0.15 (for no invaraince) instead of 1
 # - train batch size is 8192 instead of 1024
 # - not using soft rounding
 
 # Encoder
 encoder_kwargs="
-encoder=mlp
+architecture@encoder=fancymlp
 encoder.z_dim=2
-encoder.arch_kwargs.complexity=null
-+encoder.arch_kwargs.activation=Softplus
-+encoder.arch_kwargs.hid_dim=1024
-+encoder.arch_kwargs.n_hid_layers=2
-+encoder.arch_kwargs.norm_layer=batchnorm
 "
 
-# Decoder
-decoder_kwargs="
+# Distortion
+distortion_kwargs="
 distortion.factor_beta=1
-distortion.kwargs.arch=mlp
-distortion.kwargs.arch_kwargs.complexity=null
-+distortion.kwargs.arch_kwargs.activation=Softplus
-+distortion.kwargs.arch_kwargs.hid_dim=1024
-+distortion.kwargs.arch_kwargs.n_hid_layers=2
-+distortion.kwargs.arch_kwargs.norm_layer=batchnorm
++architecture@distortion.kwargs=fancymlp
 "
 
-# Loss
+# Rate
 rate_kwargs="
 rate=H_factorized
 rate.factor_beta=1
 "
 
-# Training / General
+# Data
+data_kwargs="
+data@data_feat=bananaRot
+data_feat.kwargs.batch_size=8192
+data_feat.kwargs.val_size=100000
+data_feat.kwargs.val_batch_size=16384
+trainer.reload_dataloaders_every_epoch=True
+"
+
+#! check if work well without scheduler for the coder (you were previously using expdexay)
+# Featurizer
 general_kwargs="
-optimizer.lr=1e-3
-optimizer.scheduler.name=MultiStepLR
-+optimizer.scheduler.milestones=[50,75,87]
-optimizer_coder.lr=1e-3
-optimizer_coder.name=null
-data=bananaRot
-data.kwargs.batch_size=8192
-data.kwargs.dataset_kwargs.length=1024000
-data.kwargs.val_size=100000
-data.kwargs.val_batch_size=16384
-+data.kwargs.dataset_kwargs.decimals=null
+is_only_feat=True
+featurizer=neural_rec
+optimizer@optimizer_feat=adam1e-3
+scheduler@scheduler_feat=multistep
+scheduler_feat.kwargs.MultiStepLR.milestones=[50,75,87]
+optimizer@optimizer_coder=adam1e-3
+scheduler@scheduler_coder=none
 trainer.max_epochs=100
 trainer.precision=32
-trainer.reload_dataloaders_every_epoch=True
 evaluation.is_est_entropies=True
 "
 
 kwargs="
 experiment=$experiment 
-$general_kwargs
 $encoder_kwargs
-$decoder_kwargs
+$distortion_kwargs
 $rate_kwargs
+$data_kwargs
+$general_kwargs
 timeout=${time}
 $add_kwargs
 "
 
-# note: instead of using "ivae" and "vae" on the augmented datasets, we run "ivae" on the 
-# an unaugmented data (which is equivalent to running "vae" on the augmented one) 
 kwargs_multi="
 distortion=ivae,vae
-loss.beta=0.000001,0.00001,0.0001,0.001,0.003,0.01,0.03,0.1,0.3,1,3,10,100,1000,10000
-seed=1,2,3,4,5
+featurizer.loss.beta=0.000001,0.00001,0.0001,0.001,0.003,0.01,0.03,0.1,0.3,1,3,10,100,1000,10000
+seed=2,3,4,5
 " 
+
+
 
 if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in  "" 
@@ -97,4 +92,24 @@ if [ "$is_plot_only" = false ] ; then
   done
 fi
 
-#TODO plotting pipeline
+wait
+
+# for featurizer
+col_val_subset=""
+rate_cols="['test/feat/rate']"
+distortion_cols="['test/feat/distortion','test/feat/online_loss']"
+compare="dist"
+python aggregate.py \
+       experiment=$experiment  \
+       collect_data.predictor=null \
+       $col_val_subset \
+       +summarize_RD_curves.rate_cols="${rate_cols}" \
+       +summarize_RD_curves.distortion_cols="${distortion_cols}" \
+       +summarize_RD_curves.mse_cols="${distortion_cols}" \
+       +plot_all_RD_curves.rate_cols="${rate_cols}" \
+       +plot_all_RD_curves.distortion_cols="${distortion_cols}" \
+       +plot_all_RD_curves.logbase_x=2 \
+       +plot_all_RD_curves.hue=$compare \
+       +plot_invariance_RD_curve.noninvariant='vae' \
+       +plot_invariance_RD_curve.logbase_x=2 \
+       agg_mode=[summarize_metrics,summarize_RD_curves,plot_all_RD_curves,plot_invariance_RD_curve]

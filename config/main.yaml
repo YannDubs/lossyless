@@ -1,161 +1,159 @@
 defaults:
-  - hydra/job_logging: colorlog
-  - hydra/hydra_logging: colorlog
-  
+
+  # GENERAL #
+  - _self_
   - user
-  - data: mnist
-  - encoder: resnet
+  
+  - logger: wandb
+  - server: none
+
+  # FEATURIZER #
+  - data@data_feat: mnist
+  - architecture@encoder: resnet
+  - checkpoint@checkpoint_feat: bestValLoss # NB : will not be able to use Val loss for vib because validation is meaningless for distortion
+  - optimizer@optimizer_feat: adam1e-3
+  - scheduler@scheduler_feat: expdecay
+  - optimizer@optimizer_coder: adam3e-3
+  - scheduler@scheduler_coder: expdecay
   - distortion: ivae
-  - rate: MI_unitgaussian
-  - server: none 
-  # cannot use server directly (besides none) need the correct hydra/launcher: (i.e. submitit_slurm or submitit_local)
+  - rate: H_factorized
+  - featurizer: neural_rec
+
+  # PREDICTOR #
+  - architecture@predictor: resnet18
+  - checkpoint@checkpoint_pred: bestValLoss 
+  - optimizer@optimizer_pred: adam1e-3
+  - scheduler@scheduler_pred: expdecay
+
+  # OVERIDES #
+  - override hydra/job_logging: colorlog
+  - override hydra/hydra_logging: colorlog
 
 
-### GENERAL ###
+########## GENERAL ##########
 experiment: ???
 job_id: ??? # unique identifier
 seed: 123
 timeout: 1440 # 24 hours
 time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is not when job runs
-long_name: ${experiment}/data_${data.name}/d_${distortion.name}/e_${encoder.name}/r_${rate.name}/o_${optimizer.name}/dim_${encoder.z_dim}/z_${loss.n_z_samples}/b_${loss.beta}/s_${seed}
+long_name_feat: exp_${experiment}/datafeat_${data_feat.name}/feat_${featurizer.name}/dist_${distortion.name}/enc_${encoder.name}/rate_${rate.name}/optfeat_${optimizer_feat.name}/schedfeat_${scheduler_feat.name}/zdim_${encoder.z_dim}/zs_${featurizer.loss.n_z_samples}/beta_${featurizer.loss.beta}/seed_${seed}/addfeat_${other.add_feat}
+long_name_pred: ${long_name_feat}/datapred_${data_pred.name}/optpred_${optimizer_pred.name}/schedpred_${scheduler_pred.name}/addpred_${other.add_pred}
+is_only_feat: false # don't run any prediction
 
-paths:
-  # the best practice is not to modify those paths but to simlink them to the places you want
+paths: #! the best practice is not to modify those paths but to simlink them to the places you want
   base_dir: ${hydra:runtime.cwd} 
-  results: ${paths.base_dir}/results/${long_name}/${job_id}
-  pretrained: ${paths.base_dir}/pretrained/${long_name}/${job_id}
   data: ${paths.base_dir}/data
-  logs: ${paths.base_dir}/logs/${long_name}/${job_id}
-  chckpnt: ${paths.base_dir}/checkpoints/${job_id} 
-  # unfortunately cannot use hydra: in hydra so need to do everything by hand
-  # i.e. cannot use ${paths.base_dir}/outputs/{time}
-  work: ${hydra.runtime.cwd}/outputs/${now:%Y-%m-%d_%H-%M-%S}
-  
-evaluation:
-  is_est_entropies: False # whether to evaluate sample estimates of the entropies H[Y|Z], H[M(X)|Z], H[Z] should only use it with deterministic Z
-  
-other:
-  # some meta information that can be useful for internal stuff (usually dirty workarounds or for logging)
+  work: ${hydra.runtime.cwd}/outputs/${now:%Y-%m-%d_%H-%M-%S} # unfortunately cannot use hydra: in hydra so need to do everything by hand i.e. cannot use ${paths.base_dir}/outputs/{time}
+  results: ${paths.base_dir}/results/${long_name}/jid_${job_id}
+  logs: ${paths.base_dir}/logs/${long_name}/jid_${job_id}
+  chckpnt: ${paths.base_dir}/checkpoints/${long_name}/jid_${job_id}
+  pretrained: 
+    save: ${paths.base_dir}/pretrained/${long_name}/jid_${job_id} # directory for saving pretrained models
+    load: ${paths.base_dir}/pretrained/${long_name}/*  # directory for loading pretrained models if you use ** or * it will glob all matching files and take the latest
+
+other: # some meta information that can be useful for internal stuff (usually dirty workarounds or for logging)
   is_debug: False # using debug mode
   is_quick: False # using a "quick" mode and should not log very slow things
   hydra_job_id: ${hydra:job.id} # this is the job id without the sweep number. Useful for filtering and grouping in wandb
+  add_feat: null # some additional value for saving (e.g. current sweeping values)
+  add_pred: null # some additional value for saving (e.g. current sweeping values)
 
-optimizer: # might need to be a group at some point
-  name: adam # not used yet but can change if needed
-  lr: 1e-3
-  weight_decay: 0
-  is_lars: false # whether to use LARS optimizer, useful for large batches.
-  scheduler:
-    name: "expdecay"
-    decay_factor: 100 # by how much to reduce lr during training
+### STAGE SPECIFIC ###
+stage: ??? 
+long_name: ???
+checkpoint: {}
+data: {}
 
-# only used if coder needs an optimizer (for coding)
-optimizer_coder :
-  name: adam # not used yet but can change if needed
-  lr: 0.003 
-  scheduler:
-    decay_factor: 100
-    name: "expdecay"
+### RUNNING ###
+evaluation:
+  is_eval_on_test: True # whether to evaluate on test. If not uses validation which is necessry if don't have access to test set
+  is_est_entropies: False # whether to evaluate sample estimates of the entropies H[Y|Z], H[M(X)|Z], H[Z] should only use it with deterministic Z
+  featurizer:
+    ckpt_path: "best"
+    is_evaluate: ${featurizer.is_train}
+  predictor:
+    ckpt_path: "best"
+    is_evaluate: ${predictor.is_train}
 
-logger:
-  name: wandb # select which one to use (false for nothing)
-
-  csv:
-    save_dir: ${paths.logs}
-    name: ${job_id}
-
-  wandb:
-    name: ${job_id}
-    project: lossyless
-    entity: ${wandb_entity}
-    group: ${experiment}
-    offline: false # Run offline (data can be streamed later to wandb servers).
-    reinit: False # ensure that same wandb after preemption
-    id: ${job_id}
-    save_dir: ${paths.logs}
-
-  tensorboard:
-    save_dir: ${paths.logs}
-    name: ${job_id}
-
-callbacks:
-  additional: []
-
-  ModelCheckpoint_compressor:
-    dirpath: ${paths.chckpnt} 
-    monitor: train/loss
-    mode: "min"
-    verbose: true
-    save_last: True
-    save_top_k: 1
-    save_weights_only: false
+callbacks: # callbacks for feat and pred
+  additional: [LearningRateMonitor] # can use any callback name of lossyless.calllbacks, pl_bolts.callbacks, pl.callbacks
+  # all callback kwargs should be here (loaded automatically if name corresponds)
+  LearningRateMonitor:
+    logging_interval : epoch
 
 trainer:
   #default_root_dir: ${paths.results}
   max_epochs: 200
-  terminate_on_nan: true
+  terminate_on_nan: false # makes it slower if true
   progress_bar_refresh_rate: 0 # increase to show progress bar
   resume_from_checkpoint: null # string to checkpoint if want to resume
-  gradient_clip_val: 0 # increase to clip grad
+  gradient_clip_val: 3 # 0 means no clip #TODO tune (1 seemed to be good in compressai)
   reload_dataloaders_every_epoch: False
   log_every_n_steps: 100
-  
-  # ENGINEERING / SPEED
+
+  # ENGINEERING / SPEED #
   gpus: 1 
   num_nodes: 1  # number gpu nodes
   precision: 16 # use 16 bit for speed 
 
-  # DEBUGGING
+  # DEBUGGING #
   fast_dev_run: false # use true to make a quick test (not full epoch)
   track_grad_norm: -1 # use 2 to track L2 norms of grad
   overfit_batches: 0.0 # use 0.01 to make sure you can overfit 1% of training data => training works
   weights_summary: full # full to print show the entire model, top nly prints the top module
   profiler: null # use `simple` or `"advanced"` to find bottleneck
 
-### GROUP DEFAULTS ###
-data:
-  name: ???
-  dataset: ???
-  mode: ???
-  length: ???
-  shape: ???
-  target_shape: ???
-  aux_shape: ???
-  aux_is_clf: ??? 
-  target_is_clf: ???
-  neg_factor: ??? # useful for contrastive loss. should be len(train_dataset) / (2*batch_size-1)
 
-  kwargs:
-    data_dir: ${paths.data}
-    batch_size: 128
-    reload_dataloaders_every_epoch: ${trainer.reload_dataloaders_every_epoch}
+########## FEATURIZER ##########
+### DATA ###
+data_feat: {}
 
+### MODEL ###
 encoder:
   name: ???
   z_dim: 10
   arch: ???
-  arch_kwargs:
-    complexity: ???
-  fam: diaggaussian
+  arch_kwargs: {}
   fam_kwargs: {}
 
-distortion:
+### OPTIMIZER ###
+optimizer_feat: 
+  kwargs:
+    is_lars: false # whether to use LARS optimizer, useful for large batches.
+scheduler_feat: {}
+
+optimizer_coder: {}
+scheduler_coder: {}
+
+### RUNNING ###
+checkpoint_feat: {}
+# dictionnary that will update the trainer (this is done because often the trainer is the same for feat and pred so want to minimize replication)
+update_trainer_feat: {}
+
+
+########## PREDICTOR ##########
+### DATA ###
+data_pred: {}
+
+### MODEL ###
+predictor:
   name: ???
-  mode: ???
-  factor_beta : 1 # factor that multiplies beta 
-  kwargs: {}
+  is_train: True 
+  arch: ???
+  arch_kwargs: {}
 
-rate:
-  name: ???
-  range_coder: null
-  factor_beta : 1 # factor that multiplies beta 
-  kwargs: {}
+### OPTIMIZER ###
+optimizer_pred: 
+  is_lr_find: True # whether to automatically look for best lr (only set the sugggested value if lr is None, if not just plots)
+scheduler_pred: {}
 
-loss:
-  n_z_samples: 1 # number of samples tu use inside log (like IWAE)
-  beta: 1
+### RUNNING ###
+checkpoint_pred: {}
+# dictionnary that will update the trainer (this is done because often the trainer is the same for feat and pred so want to minimize replication)
+update_trainer_pred: {}
 
-### HYDRA ###
+
+########## HYDRA ##########
 hydra:
   job:
     env_set:

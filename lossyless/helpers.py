@@ -2,6 +2,8 @@ import contextlib
 import itertools
 import operator
 import random
+import sys
+import time
 from collections import OrderedDict
 from functools import reduce
 from numbers import Number
@@ -11,14 +13,58 @@ import numpy as np
 
 import einops
 import torch
+from pl_bolts.optimizers.lars_scheduling import LARSWrapper
 from torch import nn
 from torch.distributions import Distribution, constraints
 from torch.distributions.utils import broadcast_all
+from torch.nn import functional as F
 from torch.nn.utils.rnn import PackedSequence
 from torchvision import transforms as transform_lib
-from torchvision.datasets import CIFAR10
 
 BASE_LOG = 2
+
+
+def check_import(module, to_use=None):
+    """Check whether the given module is imported."""
+    if module not in sys.modules:
+        if to_use is None:
+            error = '{} module not imported. Try "pip install {}".'.format(
+                module, module
+            )
+            raise ImportError(error)
+        else:
+            error = 'You need {} to use {}. Try "pip install {}".'.format(
+                module, to_use, module
+            )
+            raise ImportError(error)
+
+
+class Timer:
+    """Timer context manager"""
+
+    def __enter__(self):
+        """Start a new timer as a context manager"""
+        self.start = time.time()
+        return self
+
+    def __exit__(self, *args):
+        """Stop the context manager timer"""
+        self.end = time.time()
+        self.duration = self.end - self.start
+
+
+def rename_keys_(dictionary, renamer):
+    """Rename the keys in a dictionary using the renamer."""
+    for old, new in renamer.items():
+        dictionary[new] = dictionary.pop(old)
+
+
+def dict_mean(dicts):
+    """Average a list of dictionary."""
+    means = {}
+    for key in dicts[0].keys():
+        means[key] = sum(d[key] for d in dicts) / len(dicts)
+    return means
 
 
 def orderedset(l):
@@ -166,39 +212,6 @@ def is_pow2(n):
     return (n != 0) and (n & (n - 1) == 0)
 
 
-def get_lr_scheduler(optimizer, name, epochs=None, decay_factor=None, **kwargs):
-    """Return the correct learning rate scheduler.
-
-    Parameters
-    ----------
-    optimizer : Optimizer
-        Optimizer to wrap.
-
-    name : {None, "expdecay"}U{any torch lr_scheduler}
-        Name of the optimizer to use. "expdecay" uses an exponential decay scheduler where the lr
-        is decayed by `decay_factor` during training. Needs to be given `epochs`. If another `str`
-        it must be a `torch.optim.lr_scheduler` in which case the arguments are given by `kwargs`.
-
-    epochs : int, optional
-        Number of epochs during training.
-
-    decay_factor : int, optional
-        By how much to reduce learning rate during training. Only if `name = "expdecay"`.
-
-    kwargs :
-        Additional arguments to any `torch.optim.lr_scheduler`.
-
-    """
-    if name is None:
-        return None
-    elif name == "expdecay":
-        gamma = (1 / decay_factor) ** (1 / epochs)
-        return torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma)
-    else:
-        Scheduler = getattr(torch.optim.lr_scheduler, name)
-        return Scheduler(optimizer, **kwargs)
-
-
 def kl_divergence(p, q, z_samples=None, is_lower_var=False, is_reduce=True):
     """Computes KL[p||q], analytically if possible but with MC."""
     try:
@@ -226,45 +239,74 @@ def kl_divergence(p, q, z_samples=None, is_lower_var=False, is_reduce=True):
     return kl_pq
 
 
-MEANS = dict( imagenet=[0.485, 0.456, 0.406],
-              cifar10=[0.4914009, 0.48215896, 0.4465308],
-              galaxy64=[0.03341029, 0.04443058, 0.05051352],
-              galaxy128=[0.03294565, 0.04387402, 0.04995899])
-STDS = dict(imagenet=[0.229, 0.224, 0.225],
-            cifar10=[0.24703279, 0.24348423, 0.26158753],
-            galaxy64=[0.06985303, 0.07943781, 0.09557958],
-            galaxy128=[0.07004886, 0.07964786, 0.09574898],
+MEANS = dict(
+    imagenet=[0.485, 0.456, 0.406],
+    cifar10=[0.4914009, 0.48215896, 0.4465308],
+    galaxy64=[0.03341029, 0.04443058, 0.05051352],
+    galaxy128=[0.03294565, 0.04387402, 0.04995899],
+)
+STDS = dict(
+    imagenet=[0.229, 0.224, 0.225],
+    cifar10=[0.24703279, 0.24348423, 0.26158753],
+    galaxy64=[0.06985303, 0.07943781, 0.09557958],
+    galaxy128=[0.07004886, 0.07964786, 0.09574898],
 )
 
 
-def get_normalization(Dataset):
-    """Return corrrect normalization given dataset class."""
-    if "cifar10" in Dataset.__name__.lower():
-        return transform_lib.Normalize(mean=MEANS["cifar10"], std=STDS["cifar10"])
-    elif "galaxy" in Dataset.__name__.lower():
-        return transform_lib.Normalize(mean=MEANS["galaxy64"], std=STDS["galaxy64"])
-        # todo: differnt means for different resolution
-        # return transform_lib.Normalize(mean=MEANS["galaxy128"],std=STDS["galaxy128"])
-    else:
-        raise ValueError(f"Uknown mean and std for {Dataset}.")
+class Normalizer:
+    def __init__(self, dataset, is_raise=True):
+        super().__init__()
+        self.dataset = dataset.lower()
+        try:
+            self.normalizer = transform_lib.Normalize(
+                mean=MEANS[self.dataset], std=STDS[self.dataset]
+            )
+        except KeyError:
+            if is_raise:
+                raise KeyError(
+                    f"dataset={self.dataset} wasn't found in MEANS={MEANS.keys()} or"
+                    f"STDS={STDS.keys()}. Please add mean and std."
+                )
+            else:
+                self.normalizer = None
+
+    def __call__(self, x):
+        if self.normalizer is None:
+            return x
+
+        return self.normalizer(x)
 
 
-def undo_normalization(Y_hat, targets, dataset):
-    """Undo transformation of predicted and target images given dataset name.
-    Used to ensure nice that can be used for plotting generated images."""
+class UnNormalizer:
+    def __init__(self, dataset, is_raise=True):
+        super().__init__()
+        self.dataset = dataset.lower()
+        try:
+            mean, std = MEANS[self.dataset], STDS[self.dataset]
+            self.unnormalizer = transform_lib.Normalize(
+                [-m / s for m, s in zip(mean, std)], std=[1 / s for s in std]
+            )
+        except KeyError:
+            if is_raise:
+                raise KeyError(
+                    f"dataset={self.dataset} wasn't found in MEANS={MEANS.keys()} or"
+                    f"STDS={STDS.keys()}. Please add mean and std."
+                )
+            else:
+                self.normalizer = None
 
-    # images are in [0,1] due to `ToTensor` so can use sigmoid to ensure output is also in [0,1]
-    Y_hat = torch.sigmoid(Y_hat)
+    def __call__(self, x):
+        if self.unnormalizer is None:
+            return x
 
-    if Y_hat.size(-3) == 3:
-        # only normalized if color
-        mean, std = MEANS[dataset], STDS[dataset]
-        denormalize = transform_lib.Normalize(
-            [-m / s for m, s in zip(mean, std)], std=[1 / s for s in std]
-        )
-        Y_hat, targets = denormalize(Y_hat), denormalize(targets)
+        return self.unnormalizer(x)
 
-    return Y_hat, targets
+
+def is_colored_img(x):
+    """Check if an image or batch of image is colored."""
+    if x.shape[-3] not in [1, 3]:
+        raise ValueError(f"x doesn't seem to be a (batch of) image as shape={x.shape}.")
+    return x.shape[-3] == 3
 
 
 def atleast_ndim(x, ndim):
@@ -374,3 +416,90 @@ def plot_density(p, n_pts=1000, range_lim=0.7, figsize=(7, 7), title=None, ax=No
 
     if title is not None:
         ax.set_title(title)
+
+
+def mse_or_crossentropy_loss(Y_hat, y, is_classification, is_sum_over_tasks=False):
+    """Compute the cross entropy for multilabel clf tasks or MSE for regression"""
+
+    if is_classification:
+        loss = F.cross_entropy(Y_hat, y.long(), reduction="none")
+    else:
+        loss = F.mse_loss(Y_hat, y, reduction="none")
+
+    if not is_sum_over_tasks:
+        n_tasks = prod(Y_hat[0, 0, ...].shape)
+        loss = loss / n_tasks  # takes an average over tasks
+
+    batch_size = loss.size(0)
+    loss = loss.view(batch_size, -1).sum(keepdim=True, dim=-1)
+
+    return loss
+
+
+def get_lr_scheduler(optimizer, mode, epochs=None, decay_factor=None, **kwargs):
+    """Return the correct learning rate scheduler.
+
+    Parameters
+    ----------
+    optimizer : Optimizer
+        Optimizer to wrap.
+
+    mode : {None, "expdecay"}U{any torch lr_scheduler}
+        Name of the optimizer to use. "expdecay" uses an exponential decay scheduler where the lr
+        is decayed by `decay_factor` during training. Needs to be given `epochs`. If another `str`
+        it must be a `torch.optim.lr_scheduler` in which case the arguments are given by `kwargs`.
+
+    epochs : int, optional
+        Number of epochs during training.
+
+    decay_factor : int, optional
+        By how much to reduce learning rate during training. Only if `name = "expdecay"`.
+
+    kwargs :
+        Additional arguments to any `torch.optim.lr_scheduler`.
+
+    """
+    if mode is None:
+        return None
+    elif mode == "expdecay":
+        gamma = (1 / decay_factor) ** (1 / epochs)
+        return torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma)
+    else:
+        Scheduler = getattr(torch.optim.lr_scheduler, mode)
+        return Scheduler(optimizer, **kwargs)
+
+
+def get_optimizer(parameters, mode, is_lars=False, **kwargs):
+    """Return an inistantiated optimizer.
+
+    Parameters
+    ----------
+    optimizer : {"gdn"}U{any torch.optim optimizer}
+        Optimizer to use.mode
+
+    is_lars : bool, optional
+        Whether to use a LARS optimizer which can improve when using large batch sizes.
+
+    kwargs : 
+        Additional arguments to the optimzier.
+    """
+    Optimizer = getattr(torch.optim, mode)
+    optimizer = Optimizer(parameters, **kwargs)
+    if is_lars:
+        optimizer = LARSWrapper(optimizer)
+    return optimizer
+
+
+def append_optimizer_scheduler_(
+    hparams_opt, hparams_sch, parameters, optimizers, schedulers
+):
+    """Return the correct optimzier and scheduler."""
+    optimizer = get_optimizer(parameters, hparams_opt.mode, **hparams_opt.kwargs)
+    optimizers += [optimizer]
+
+    for mode in hparams_sch.modes:
+        sch_kwargs = hparams_sch.kwargs.get(mode, {})
+        scheduler = get_lr_scheduler(optimizer, mode, **sch_kwargs)
+        schedulers += [scheduler]
+
+    return optimizers, schedulers

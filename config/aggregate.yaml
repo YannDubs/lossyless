@@ -1,14 +1,19 @@
 defaults:
-  - hydra/job_logging: colorlog
-  - hydra/hydra_logging: colorlog
+  - override hydra/job_logging: colorlog
+  - override hydra/hydra_logging: colorlog
 
 experiment: ???
-mode: [save_tables, plot_metrics] # plot_aux_trnsf, plot_histories, plot_generalization
-is_recolt: True
+agg_mode: [summarize_metrics] # summarize_RD_curves, plot_all_RD_curves, plot_invariance_RD_curve, plot_scatter_lines, plot_superpose
 col_val_subset : {}
 
+collect_data:
+  # name, pattern to find it
+  featurizer: "results/exp_${experiment}/**/results_compressor.csv"
+  predictor: "results/exp_${experiment}/**/results_predictor.csv"
+
 kwargs:
-  save_dir: ${recolt_data.base_dir}results/${save_experiment}/
+  base_dir: ${hydra:runtime.cwd}
+  save_dir: results/exp_${experiment}/
   prfx: ""
   dpi: 300
   pretty_renamer: {}

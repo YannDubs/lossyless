@@ -5,6 +5,7 @@
 # cuda                  10.2
 # cudnn7                7    
 # python                3.8    (apt)
+# gfortran              latest (apt)
 # nodejs                15     (apt)
 # pytorch               latest (pip)
 # jupyterlab (+ ext)    latest (pip)
@@ -25,6 +26,7 @@ RUN APT_INSTALL="apt-get install -y --no-install-recommends" && \
            /etc/apt/sources.list.d/cuda.list \
            /etc/apt/sources.list.d/nvidia-ml.list && \
 
+    apt-get upgrade && \
     apt-get update && \
 
 # ==================================================================
@@ -49,6 +51,14 @@ RUN APT_INSTALL="apt-get install -y --no-install-recommends" && \
     ./bootstrap && \
     make -j"$(nproc)" install && \
 
+# ==================================================================
+# gfortran
+# ------------------------------------------------------------------
+
+    DEBIAN_FRONTEND=noninteractive $APT_INSTALL \
+        gfortran \
+        && \
+           
 # ==================================================================
 # nodejs
 # ------------------------------------------------------------------
@@ -100,20 +110,8 @@ RUN APT_INSTALL="apt-get install -y --no-install-recommends" && \
         jupyterlab \
         ipywidgets \
         jupyterlab_code_formatter \
-        black \
-        isort \
-        && \
-
-    jupyter labextension install \
-        @jupyter-widgets/jupyterlab-manager \
-        @ryantam626/jupyterlab_code_formatter \
-        @jupyterlab/toc \
-        jupyterlab-topbar-extension \
         jupyterlab-system-monitor \
-        && \
-
-    jupyter nbextension enable --py widgetsnbextension && \
-    jupyter nbextension enable --py jupyterlab_code_formatter \
+        jupyterlab-topbar \
         && \
 
 # ==================================================================
@@ -124,9 +122,7 @@ RUN APT_INSTALL="apt-get install -y --no-install-recommends" && \
         future \
         numpy \
         protobuf \
-        enum34 \
         pyyaml \
-        typing \
         && \
     $PIP_INSTALL \
         torch torchvision 
@@ -149,6 +145,3 @@ RUN ldconfig && \
         rm -rf /var/lib/apt/lists/* /tmp/* ~/*
 
 EXPOSE 8888 8889 6006
-
-
-

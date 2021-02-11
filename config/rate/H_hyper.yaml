@@ -1,11 +1,7 @@
-# @package _global_
-rate:
-  name: H_hyper
-  kwargs:
-    init_scale: 1 # input should be at initialization in [-init_scale, init_scale]. Larger might create overhead. You can use something like 10 for large images but smaller for smaller 
-    filters: [3, 3, 3, 3] # size of the model 
-    factor_dim: 5
-    is_pred_mean: True
-    
-encoder:
-  fam: deterministic # has to use a deterministic encoder with entropy coding to ensure that H[Z|X]=0
+defaults:
+  - base_H
+
+name: H_hyper
+kwargs:
+  factor_dim: 5
+  is_pred_mean: True

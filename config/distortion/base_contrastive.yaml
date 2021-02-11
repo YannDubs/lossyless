@@ -1,0 +1,20 @@
+# @package _global_
+defaults:
+  - base@distortion
+
+distortion:
+  mode: contrastive
+  kwargs:
+    temperature: 0.1
+    is_symmetric: true
+    weight: ${data.neg_factor}
+
+data_feat:
+  kwargs:
+    batch_size: 256 # better results with large batch sizes for estimating MI (like 1024 but then you need LARS)
+    dataset_kwargs:
+      additional_target: equiv_x
+
+optimizer_feat:
+  kwargs:
+    is_lars: false # true is usefull if have to use large batch sizes (but currently bug)

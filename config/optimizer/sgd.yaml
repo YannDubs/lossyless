@@ -1,0 +1,7 @@
+name: sgd
+mode: SGD
+kwargs:
+  lr: 0.1 
+  weight_decay: 5e-4
+  momentum: 0.9
+  nesterov: True
