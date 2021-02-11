@@ -12,6 +12,7 @@ logs
 notebooks
 .hydra
 old
+.idea
 
 # MAC
 .DS_Store

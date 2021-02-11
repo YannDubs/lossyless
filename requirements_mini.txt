@@ -1,0 +1,12 @@
+numpy
+hydra-core
+hydra_colorlog
+hydra-submitit-launcher
+pytorch-lightning
+pytorch-lightning-bolts
+matplotlib
+seaborn
+git+git://github.com/InterDigitalInc/CompressAI.git#egg=compressai
+pillow
+einops
+pandas

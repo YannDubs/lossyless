@@ -24,7 +24,7 @@ from lossyless.callbacks import (
     ReconstructImages,
 )
 from lossyless.distributions import MarginalVamp
-from lossyless.helpers import orderedset
+from lossyless.helpers import check_import, orderedset
 from omegaconf import OmegaConf
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
@@ -39,6 +39,11 @@ from utils.helpers import (
     replace_keys,
     set_debug,
 )
+
+try:
+    import wandb
+except ImportError:
+    pass
 
 logger = logging.getLogger(__name__)
 COMPRESSOR_CKPNT = "best_compressor.ckpt"
@@ -302,6 +307,8 @@ def get_logger(cfg, module):
         logger = CSVLogger(**kwargs)
 
     elif cfg.logger.name == "wandb":
+        check_import("wandb", "WandbLogger")
+
         try:
             logger = WandbLogger(**kwargs)
         except Exception:
@@ -453,8 +460,6 @@ def finalize(cfg, modules, trainers):
     plt.close("all")
 
     if cfg.logger.name == "wandb":
-        import wandb
-
         if wandb.run is not None:
             wandb.run.finish()  # finish the run if still on
 

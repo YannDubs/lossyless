@@ -2,7 +2,6 @@ from .analytic_images import *
 from .distributions import *
 from .images import *
 
-
 def get_datamodule(datamodule):
     """Return the correct uninstantiated datamodule."""
     datamodule = datamodule.lower()
@@ -14,7 +13,7 @@ def get_datamodule(datamodule):
         return MnistDataModule
     elif datamodule == "fashionmnist":
         return FashionMnistDataModule
-    elif datamodule == "galaxy":
+    elif "galaxy" in datamodule:
         return GalaxyDataModule
     elif datamodule == "banana":
         return BananaDataModule

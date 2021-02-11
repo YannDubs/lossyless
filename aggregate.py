@@ -15,7 +15,7 @@ import pandas as pd
 import seaborn as sns
 
 import hydra
-from lossyless.helpers import BASE_LOG
+from lossyless.helpers import BASE_LOG, check_import
 from main import COMPRESSOR_RES
 from omegaconf import OmegaConf
 from utils.helpers import StrFormatter, omegaconf2namespace
@@ -629,6 +629,8 @@ class Aggregator:
             Name of the file for saving to summarized RD curves. Can interpolate {table} if from 
             self.tables.
         """
+        check_import("sklearn", "summarize_RD_curves")
+
         # to be meaningfull, both the disortion and the rate columns should be in bits / erntropies (also as approximately linar the
         # trapezoidal rule should be a very good approximation of integral)
         # h[X] = -1/2 log(2 pi e Var[X]) + KL...

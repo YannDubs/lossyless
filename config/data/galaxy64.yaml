@@ -1,0 +1,10 @@
+defaults:
+  - base
+
+name: galaxy64
+dataset: galaxy
+
+kwargs:
+  dataset_kwargs:
+    resolution: 64
+    equivalence: [x_translation, y_translation]

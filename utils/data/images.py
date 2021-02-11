@@ -5,11 +5,14 @@ import math
 import os
 import subprocess
 import zipfile
+from os import path
 
+import numpy as np
+import pandas as pd
 from PIL import Image
 
 import torch
-from lossyless.helpers import BASE_LOG, get_normalization
+from lossyless.helpers import BASE_LOG, check_import, get_normalization
 from torch.utils.data import random_split
 from torchvision import transforms as transform_lib
 from torchvision.datasets import CIFAR10, MNIST, FashionMNIST
@@ -23,6 +26,11 @@ from utils.estimators import discrete_entropy
 
 from .base import LossylessCLFDataset, LossylessDataModule
 from .helpers import int_or_ratio
+
+try:
+    import cv2  # only used for galaxy so skip if not needed
+except ImportError:
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +100,8 @@ class LossylessImgDataset(LossylessCLFDataset):
         return dict(
             PIL={
                 "rotation": RandomRotation(60),
-                "y_translation": RandomAffine(0, translate=(0.1, 0.1)),
-                "x_translation": RandomAffine(0, translate=(0.1, 0.1)),
+                "y_translation": RandomAffine(0, translate=(0, 0.1)),
+                "x_translation": RandomAffine(0, translate=(0.1, 0)),
                 "scale": RandomAffine(0, scale=(0.8, 1.2)),
                 "color": ColorJitter(
                     brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
@@ -185,7 +193,7 @@ class LossylessImgDataset(LossylessCLFDataset):
 class TorchvisionDataModule(LossylessDataModule):
     def get_train_val_dataset(self, **dataset_kwargs):
         dataset = self.Dataset(
-            self.data_dir, train=True, download=False, **self.dataset_kwargs,
+            self.data_dir, train=True, download=False, **dataset_kwargs,
         )
 
         n_val = int_or_ratio(self.val_size, len(dataset))
@@ -302,73 +310,169 @@ class Cifar10DataModule(TorchvisionDataModule):
 ### Non Torchvision Models ###
 
 # Galaxy Zoo #
-
-# TODO @karen: modify as desired all those methods
-# TODO we should also add the mean and std of "galaxy" in `lossyless.helpers` to normalize the data
-# TODO add config for galaxy in config/data with good defaults
 class GalaxyDataset(LossylessImgDataset):
     def __init__(
-        self, data_root, *args, **kwargs,
+        self,
+        root: str,
+        *args,
+        split: str = "train",
+        download: bool = True,
+        resolution: int = 64,
+        **kwargs,
     ):
+        check_import("cv2", "GalaxyDataset")
+
+        self.root = root
+        data_dir = path.join(root, "galaxyzoo")
+        self.resolution = resolution
+        if download:
+            self.download(data_dir)
+            self.preprocess(data_dir)
+
+        self.load_data(data_dir, split, resolution)
+
         super().__init__(*args, **kwargs)
-        # do as needed. For best compatibility with the framework
-        # self.data should contain the downloaded data in tensor or numpy form
-        # self.targets should contain the targets
-        # self.train should say whether training
 
-        # example:
-        self.data_root = data_root
-        self.download(self.data_root)
-        self.data, self.targets = torch.load("path")
-
-    def download(self, data_root):
-
-        data_dir = os.path.join(data_root, "galaxyzoo")
-
+    def download(self, data_dir):
         def unpack_all_zips():
-            for f, file in enumerate(glob.glob(os.path.join(data_dir, "*.zip"))):
+            for f, file in enumerate(glob.glob(path.join(data_dir, "*.zip"))):
                 with zipfile.ZipFile(file, "r") as zip_ref:
                     zip_ref.extractall(data_dir)
                     os.remove(file)
-                    print("{} completed. Progress: {}/6".format(file, f))
+                    logger.info("{} completed. Progress: {}/6".format(file, f))
 
         filename = "galaxy-zoo-the-galaxy-challenge.zip"
 
         # check if data was already downloaded
-        if os.path.exists(os.path.join(data_root, filename)):
-            # continue unpacking files just in case this got interrupted
+        if path.exists(path.join(self.root, filename)):
+            # continue unpacking files just in case this got interrupted or user
+            # downloaded files manually. you never know :)
             unpack_all_zips()
             return
         # check if user has access to the kaggle API otherwise link instructions
         try:
             import kaggle
         except Exception as e:
-            print(e)
-            print(
-                "The download of the Galaxy dataset failed. Make sure you "
+            logger.critical(
+                "Cannot import Kaggle which is needed for GalaxyDataset. Make sure you "
                 "followed the steps in https://github.com/Kaggle/kaggle-api."
             )
+            raise e
 
         # download the dataset
         bashCommand = (
             "kaggle competitions download -c "
-            "galaxy-zoo-the-galaxy-challenge -p {}".format(data_root)
+            "galaxy-zoo-the-galaxy-challenge -p {}".format(self.root)
         )
         subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
 
         # unpack the data
-        with zipfile.ZipFile(os.path.join(data_root, filename), "r") as zip_ref:
-            zip_ref.extractall(data_dir)
+        with zipfile.ZipFile(os.path.join(self.root, filename), "r") as zip_ref:
+            zip_ref.extractall(self.root)
 
         unpack_all_zips()
+
+    def preprocess(self, data_dir):
+        # check if we already preprocessed the data
+        # this is a hacky check, we just check if the last file that this
+        # routine yields exists
+        if path.exists(path.join(data_dir, "test_images_128.npy")):
+            return
+
+        # SAVE IMAGE IDs
+        def get_image_ids(image_dir):
+            raw_file_paths = glob.glob(path.join(data_dir, image_dir))
+            ids = [int(f.split("/")[-1].split(".")[0]) for f in raw_file_paths]
+            return ids, raw_file_paths
+
+        # test set
+        test_ids, test_paths = get_image_ids("images_test_rev1/*.jpg")
+        np.save(path.join(data_dir, "test_ids"), test_ids)
+
+        # train and valid set
+        ids, paths = get_image_ids("images_training_rev1/*.jpg")
+        # make fixed train / valid split
+        num_valid = len(ids) // 10
+        assert num_valid == 6157, (
+            "Validation set is not the right size. " "Oeef. That is not good."
+        )
+        valid_ids, valid_paths = ids[:num_valid], paths[:num_valid]
+        train_ids, train_paths = ids[num_valid:], paths[num_valid:]
+        np.save(path.join(data_dir, "valid_ids"), valid_ids)
+        np.save(path.join(data_dir, "train_ids"), train_ids)
+
+        # SAVE TRAIN LABELS
+        df = pd.read_csv(path.join(data_dir, "training_solutions_rev1.csv"))
+
+        for split, ids in [("train", train_ids), ("valid", valid_ids)]:
+            targets = [
+                df.loc[df["GalaxyID"] == id].values[:, 1:].astype("float32")
+                for id in ids
+            ]
+            np.save(path.join(data_dir, split + "_targets"), np.array(targets))
+
+        # PRE-PROCESSING IMAGES
+        ORIG_SHAPE = (424, 424)
+        CROP_SIZE = (384, 384)
+        x1 = (ORIG_SHAPE[0] - CROP_SIZE[0]) // 2
+        y1 = (ORIG_SHAPE[1] - CROP_SIZE[1]) // 2
+
+        def get_image(path, out_shape):
+            x = cv2.imread(path)
+            x = x[x1 : x1 + CROP_SIZE[0], y1 : y1 + CROP_SIZE[1]]
+            x = cv2.resize(x, dsize=out_shape, interpolation=cv2.INTER_LINEAR)
+            x = np.transpose(x, (2, 0, 1))
+            return x
+
+        for out_shape in [(64, 64), (128, 128)]:
+            res = str(out_shape[0])
+
+            for (split, raw_paths) in [
+                ("train", train_paths),
+                ("valid", valid_paths),
+                ("test", test_paths),
+            ]:
+                preprocessed_images = []
+                for i, p in enumerate(raw_paths):
+                    logger.info(
+                        "Processed {}/{} images in {} split with resolution "
+                        "{}x{}.".format(i, len(raw_paths), split, res, res)
+                    )
+                    preprocessed_images.append(get_image(p, out_shape))
+
+                out = np.array(preprocessed_images)
+                out_path = split + "_images_" + res
+                np.save(path.join(data_dir, out_path), out)
+                if split == "train":
+                    out = out.astype("float32") / 255.0
+                    mean = np.mean(out, axis=(0, 2, 3))
+                    np.save(path.join(data_dir, out_path + "_mean"), mean)
+                    std = np.std(out, axis=(0, 2, 3))
+                    np.save(path.join(data_dir, out_path + "_std"), std)
+
+        logger.info("Galaxy data successfully pre-processed.")
+
+    def load_data(self, data_dir, split, resolution):
+        imgs = np.load(
+            path.join(data_dir, "{}_images_{}.npy".format(split, resolution))
+        )
+        self.data = imgs.astype("float32") / 255.0
+
+        if not split == "test":
+            self.targets = np.load(path.join(data_dir, split + "_targets.npy"))
+        else:
+            # We do not have test targets bc kaggle holds them back. We will
+            # later need the image IDs to make a submission file that will be
+            # evaluated via the kaggle api.
+            self.ids = np.load(path.join(data_dir, split + "_ids.npy"))
 
     @property
     def augmentations(self):
         return dict(
             PIL={
-                "rotation": RandomRotation(60),
-                "y_translation": RandomAffine(0, translate=(0.1, 0.1)),
-                "x_translation": RandomAffine(0, translate=(0.1, 0.1)),
+                "rotation": RandomRotation(360),
+                "y_translation": RandomAffine(0, translate=(0, 0.5)),
+                "x_translation": RandomAffine(0, translate=(0.5, 0)),
                 "scale": RandomAffine(0, scale=(0.8, 1.2)),
                 "color": ColorJitter(
                     brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
@@ -381,7 +485,7 @@ class GalaxyDataset(LossylessImgDataset):
     def is_clf_x_t_Mx(self):
         is_clf = super(GalaxyDataset, self).is_clf_x_t_Mx
         # input should be true is using log loss for reconstruction (typically MNIST) and False if MSE (typically colored images)
-        is_clf["input"] = True
+        is_clf["input"] = False
         # target should be True if log loss (ie classification) and False if MSE (ie regression)
         is_clf["target"] = False
         return is_clf
@@ -390,7 +494,7 @@ class GalaxyDataset(LossylessImgDataset):
     def shapes_x_t_Mx(self):
         shapes = super(GalaxyDataset, self).shapes_x_t_Mx
         # input is shape image
-        shapes["input"] = (3, 64, 64)
+        shapes["input"] = (3, self.resolution, self.resolution)
         # target is shape of target. This will depend as to if we are using classfication or regression
         # in regression mode (as we said) then you should stack all labels.
         # e.g. if the are 37 different regression tasks use `target=(1,37)` which says that there are 37
@@ -399,12 +503,12 @@ class GalaxyDataset(LossylessImgDataset):
         # for classification something like `target=(2,37)` means 2-class classification for 37
         # labels  (note that I use cross entropy rather than binary cross entropy. it shouldn't matter
         # besides a little more parameters right ? )
-        shapes["target"] = (1, 2)
+        shapes["target"] = (1, 37)
         return shapes
 
     def get_img_target(self, index):
         # change as needed but something like that
-        img = self.images[index]
+        img = self.data[index]
         target = self.targets[index]
 
         # doing this so that it is consistent with all other datasets
@@ -421,41 +525,26 @@ class GalaxyDataModule(LossylessDataModule):
     def Dataset(self):
         return GalaxyDataset
 
-    # helper function for splitting train and valid
-    def get_train_val_dataset(self, **dataset_kwargs):
-        dataset = self.Dataset(
-            self.data_dir, train=True, download=False, **self.dataset_kwargs,
-        )
-
-        # use the following if there's no validation set predefined
-        n_val = int_or_ratio(self.val_size, len(dataset))
-        train, valid = random_split(
-            dataset,
-            [len(dataset) - n_val, n_val],
-            generator=torch.Generator().manual_seed(self.seed),
-        )
-
-        return train, valid
-
     def get_train_dataset(self, **dataset_kwargs):
-        train, _ = self.get_train_val_dataset(**dataset_kwargs)
-        return train
+        return self.Dataset(
+            self.data_dir, split="train", download=False, **dataset_kwargs,
+        )
 
     def get_val_dataset(self, **dataset_kwargs):
-        # if there's a validation set then do what you need here
-        _, valid = self.get_train_val_dataset(**dataset_kwargs)
-        return valid
+        return self.Dataset(
+            self.data_dir, split="valid", download=False, **dataset_kwargs,
+        )
 
     def get_test_dataset(self, **dataset_kwargs):
-        test = self.Dataset(
-            self.data_dir, train=False, download=False, **self.dataset_kwargs,
+        return self.Dataset(
+            self.data_dir, split="test", download=False, **dataset_kwargs,
         )
-        return test
 
     def prepare_data(self):
-        # this is where the downlading should happen if we can if not just put `pass`
-        self.Dataset(self.data_dir, train=True, download=True, **self.dataset_kwargs)
-        self.Dataset(self.data_dir, train=False, download=True, **self.dataset_kwargs)
+        for split in ["train", "valid", "test"]:
+            self.Dataset(
+                self.data_dir, split=split, download=True, **self.dataset_kwargs,
+            )
 
     @property
     def mode(self):

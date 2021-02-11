@@ -16,6 +16,7 @@ ndd
 
 # only necessay for satellite dataset
 kaggle
+opencv-python
 
 #only necessary if want to log using wandb
 wandb
