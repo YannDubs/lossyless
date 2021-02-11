@@ -9,3 +9,4 @@ kwargs:
   val_batch_size: 16384
   dataset_kwargs:
     length: 1024000
+    is_normalize: False

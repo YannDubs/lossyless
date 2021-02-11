@@ -13,7 +13,8 @@ import torchvision
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 
-from .helpers import BASE_LOG, plot_density, setup_grid, to_numpy, undo_normalization
+from .helpers import (BASE_LOG, UnNormalizer, is_colored_img, plot_density,
+                      setup_grid, to_numpy)
 
 try:
     import wandb
@@ -71,8 +72,12 @@ class ReconstructImages(Callback):
             #! waiting for torch lighning #1243
             x_hat = pl_module._save["Y_hat"].float()
             x = pl_module._save["X"].float()
-            # undo normalization for plotting
-            x_hat, x = undo_normalization(x_hat, x, pl_module.hparams.data.dataset)
+
+            if is_colored_img(x):
+                # undo normalization for plotting
+                unnormalizer = UnNormalizer(pl_module.hparams.data.dataset)
+                x = unnormalizer(x)
+
             caption = f"ep: {trainer.current_epoch}"
             save_img(pl_module, trainer, x_hat, "rec_img", caption)
             save_img(pl_module, trainer, x, "real_img", caption)
@@ -150,8 +155,8 @@ class LatentDimInterpolator(Callback):
         z = einops.rearrange(z, "r c ... -> (r c) ...")
         img = pl_module.distortion_estimator.q_YlZ(z)
 
-        # undo normalization for plotting
-        img, _ = undo_normalization(img, img, pl_module.hparams.data.dataset)
+        # put back to [0,1]
+        img = torch.sigmoid(img)
         return img
 
     def latent_traverse_2d(self, pl_module):

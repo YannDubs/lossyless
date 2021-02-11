@@ -4,4 +4,3 @@ defaults:
 # neural compressor that uses x_hat for predicition
 
 name: neural_rec
-is_learnable: True 

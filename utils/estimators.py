@@ -97,7 +97,7 @@ def discrete_entropy(x, base=2, is_plugin=False, **kwargs):
     try:
         import ndd
     except ImportError:
-        logger.error(
+        logger.exception(
             "To compute discrete entropies you need to install `ndd`. Returning -inf."
         )
         return -np.inf

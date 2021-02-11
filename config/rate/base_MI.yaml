@@ -1,0 +1,6 @@
+# @package _global_
+defaults:
+  - base@rate
+    
+encoder:
+  fam: diaggaussian 

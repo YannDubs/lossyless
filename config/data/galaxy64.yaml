@@ -1,10 +1,10 @@
+
 defaults:
-  - base
+  - base_galaxy
 
 name: galaxy64
-dataset: galaxy
+dataset: galaxy64 # actually this is all galaxy dataset (we are using single dataset) but adding 64 so that can use different normalization if needed
 
 kwargs:
   dataset_kwargs:
     resolution: 64
-    equivalence: [x_translation, y_translation]

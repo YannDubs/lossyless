@@ -67,6 +67,8 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
         self.min_x, self.min_y = self.data.quantile(0.1, dim=0)
         self.max_x, self.max_y = self.data.quantile(0.9, dim=0)
 
+        assert not self.is_normalize, "Cannot currently normalize distribution"
+
     def get_x_target_Mx(self, index):
         Mx = self.targets[index]
         return self.data[index], Mx, Mx

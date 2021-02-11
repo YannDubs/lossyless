@@ -296,7 +296,7 @@ def get_callbacks(cfg, is_featurizer):
     return callbacks
 
 
-def get_logger(cfg, module):
+def get_logger(cfg, module, is_featurizer):
     """Return coorect logger."""
 
     kwargs = cfg.logger.kwargs
@@ -318,10 +318,9 @@ def get_logger(cfg, module):
         if cfg.trainer.track_grad_norm == 2:
             # use wandb rather than lightning gradients
             cfg.trainer.track_grad_norm = -1
+            to_watch = module.p_ZlX.mapper if is_featurizer else module.predictor
             logger.watch(
-                module.p_ZlX.mapper,
-                log="gradients",
-                log_freq=cfg.trainer.log_every_n_steps * 10,
+                to_watch, log="gradients", log_freq=cfg.trainer.log_every_n_steps * 10,
             )
 
     elif cfg.logger.name == "tensorboard":
@@ -345,7 +344,7 @@ def get_trainer(cfg, module, is_featurizer):
         cfg.trainer.resume_from_checkpoint = str(last_chckpnt)
 
     trainer = pl.Trainer(
-        logger=get_logger(cfg, module),
+        logger=get_logger(cfg, module, is_featurizer),
         callbacks=get_callbacks(cfg, is_featurizer),
         checkpoint_callback=True,
         **cfg.trainer,
@@ -400,13 +399,19 @@ def evaluate(
     Can also compute sample estimates of soem entropies, which should be better estimates than the 
     lower bounds used during training. Only estimate entropies if `is_featurizer`.
     """
-    # test on test
-    test_res = trainer.test(ckpt_path=ckpt_path)[0]
+    # Evaluation
+    if cfg.evaluation.is_eval_on_test:
+        test_dataloaders = datamodule.test_dataloader()
+    else:
+        # testing on validation (needed if don't have access to test set)
+        test_dataloaders = datamodule.val_dataloader()
+
+    test_res = trainer.test(test_dataloaders=test_dataloaders, ckpt_path=ckpt_path)[0]
     if is_est_entropies and is_featurizer:
         append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
     log_dict(trainer, test_res, is_param=False)
 
-    # test on train
+    # Evaluation on train
     train_res = trainer.test(
         test_dataloaders=datamodule.train_dataloader(), ckpt_path=ckpt_path
     )[0]
@@ -447,7 +452,11 @@ def initialize_predictor_(module, datamodule, trainer, cfg):
     if module.hparams.optimizer_pred.is_lr_find:
         old_lr = module.hparams.optimizer_pred.kwargs.lr
         new_lr = learning_rate_finder(module, datamodule, trainer)
-        if old_lr is None:
+
+        if (old_lr is None) and (new_lr is None):
+            raise ValueError(f"Couldn't find new lr and no old lr given.")
+
+        if old_lr is None and (new_lr is not None):
             module.hparams.optimizer_pred.kwargs.lr = new_lr
             logger.info(f"Using lr={new_lr} for the predictor.")
         else:

@@ -254,64 +254,59 @@ STDS = dict(
 
 
 class Normalizer:
-    def __init__(self, dataset):
+    def __init__(self, dataset, is_raise=True):
         super().__init__()
+        self.dataset = dataset.lower()
         try:
             self.normalizer = transform_lib.Normalize(
-                mean=MEANS[dataset], std=STDS[dataset]
+                mean=MEANS[self.dataset], std=STDS[self.dataset]
             )
-        except:
-            self.normalizer = None
+        except KeyError:
+            if is_raise:
+                raise KeyError(
+                    f"dataset={self.dataset} wasn't found in MEANS={MEANS.keys()} or"
+                    f"STDS={STDS.keys()}. Please add mean and std."
+                )
+            else:
+                self.normalizer = None
 
     def __call__(self, x):
-        if x.size(-3) != 3 and self.normalizer is None:
-            # if not colored and wasn't in dict
+        if self.normalizer is None:
             return x
 
         return self.normalizer(x)
 
 
 class UnNormalizer:
-    def __init__(self, dataset):
+    def __init__(self, dataset, is_raise=True):
         super().__init__()
+        self.dataset = dataset.lower()
         try:
-            mean, std = MEANS[dataset], STDS[dataset]
+            mean, std = MEANS[self.dataset], STDS[self.dataset]
             self.unnormalizer = transform_lib.Normalize(
                 [-m / s for m, s in zip(mean, std)], std=[1 / s for s in std]
             )
-        except:
-            self.unnormalizer = None
+        except KeyError:
+            if is_raise:
+                raise KeyError(
+                    f"dataset={self.dataset} wasn't found in MEANS={MEANS.keys()} or"
+                    f"STDS={STDS.keys()}. Please add mean and std."
+                )
+            else:
+                self.normalizer = None
 
     def __call__(self, x):
-        if x.size(-3) != 3 and self.unnormalizer is None:
-            # if not colored and wasn't in dict
+        if self.unnormalizer is None:
             return x
 
         return self.unnormalizer(x)
 
 
-def get_normalization(Dataset):
-    """Return corrrect normalization given dataset class."""
-    if "cifar10" in Dataset.__name__.lower():
-        return Normalizer("cifar10")
-    elif "galaxy" in Dataset.__name__.lower():
-        return Normalizer("galaxy64")
-        # todo: different means for different resolution
-        # return Normalizer("galaxy129")
-    else:
-        raise ValueError(f"Uknown mean and std for {Dataset}.")
-
-
-def undo_normalization(Y_hat, targets, dataset):
-    """Undo transformation of predicted and target images given dataset name.
-    Used to ensure nice that can be used for plotting generated images."""
-
-    # images are in [0,1] due to `ToTensor` so can use sigmoid to ensure output is also in [0,1]
-    Y_hat = torch.sigmoid(Y_hat)
-
-    unnormalizer = UnNormalizer(dataset)
-
-    return unnormalizer(Y_hat), unnormalizer(targets)
+def is_colored_img(x):
+    """Check if an image or batch of image is colored."""
+    if x.shape[-3] not in [1, 3]:
+        raise ValueError(f"x doesn't seem to be a (batch of) image as shape={x.shape}.")
+    return x.shape[-3] == 3
 
 
 def atleast_ndim(x, ndim):

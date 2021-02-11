@@ -31,18 +31,28 @@ class LossylessDataset(abc.ABC):
         Equivalence relationship with respect to which to be invariant. Depends on the dataset.
         `None` means no equivalence.
 
+    is_normalize : bool, optional
+        Whether to normalize the data.
+
     seed : int, optional
         Pseudo random seed.
     """
 
     def __init__(
-        self, *args, additional_target=None, equivalence=None, seed=123, **kwargs,
+        self,
+        *args,
+        additional_target=None,
+        equivalence=None,
+        is_normalize=False,
+        seed=123,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
         self.additional_target = additional_target
         self.equivalence = equivalence
         self.seed = seed
+        self.is_normalize = is_normalize
 
     @abc.abstractmethod
     def get_x_target_Mx(self, index):

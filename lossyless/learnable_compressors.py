@@ -197,6 +197,8 @@ class LearnableCompressor(pl.LightningModule):
             rate=rate / math.log(BASE_LOG),
             distortion=distortion / math.log(BASE_LOG),
         )
+        # if both are entropies this will say how good the model is
+        logs["ratedist"] = logs["rate"] + logs["distortion"]
         other = dict()
 
         return loss, logs, other

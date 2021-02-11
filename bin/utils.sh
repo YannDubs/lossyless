@@ -78,7 +78,7 @@ fi
 
 experiment="${prfx}""$experiment"
 
-results="results/$experiment"
+results="results/exp_$experiment"
 if [ -d "$results" ]; then
 
   echo -n "$results exist. Should I delete it (y/n) ? "

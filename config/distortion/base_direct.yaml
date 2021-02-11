@@ -7,6 +7,8 @@ kwargs:
   y_shape: ${data.aux_shape}
   is_classification: ${data.aux_is_clf}
   dataset: ${data.dataset}
+  is_normalized: ${data.kwargs.dataset_kwargs.is_normalize}
+  data_mode: ${data.mode}
   arch: null
   arch_kwargs:
     complexity: 2

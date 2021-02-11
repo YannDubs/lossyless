@@ -9,10 +9,9 @@ from os import path
 
 import numpy as np
 import pandas as pd
-from PIL import Image
 
 import torch
-from lossyless.helpers import BASE_LOG, check_import, get_normalization
+from lossyless.helpers import BASE_LOG, Normalizer, check_import
 from torch.utils.data import random_split
 from torchvision import transforms as transform_lib
 from torchvision.datasets import CIFAR10, MNIST, FashionMNIST
@@ -69,17 +68,28 @@ class LossylessImgDataset(LossylessCLFDataset):
     def __init__(
         self, *args, equivalence={}, is_augment_val=False, is_normalize=True, **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, is_normalize=is_normalize, **kwargs)
         self.equivalence = equivalence
         self.is_augment_val = is_augment_val
-        self.is_normalize = is_normalize
 
         self.base_tranform = self.get_base_transform()
         self.PIL_augment, self.tensor_augment = self.get_curr_augmentations()
 
+    @property
+    @abc.abstractmethod
+    def is_train(self):
+        """Whether considering training split."""
+        ...
+
     @abc.abstractmethod
     def get_img_target(self, index):
         """Return the unaugmented image (in PIL format) and target."""
+        ...
+
+    @property
+    @abc.abstractmethod
+    def dataset_name(self):
+        """Name of the dataset."""
         ...
 
     def get_x_target_Mx(self, index):
@@ -144,7 +154,8 @@ class LossylessImgDataset(LossylessCLFDataset):
 
         if self.is_normalize and self.is_color:
             # only normalize colored images
-            trnsfs += [get_normalization(type(self))]
+            # raise if can't normalize because you specifrically gave `is_normalize`
+            trnsfs += [Normalizer(self.dataset_name, is_raise=True)]
 
         return transform_lib.Compose(trnsfs)
 
@@ -163,7 +174,7 @@ class LossylessImgDataset(LossylessCLFDataset):
 
     def get_curr_augmentations(self):
         """Return the current augmentations transorms (tuple for PIL and tensor)."""
-        if self.is_augment_val or self.train:
+        if self.is_augment_val or self.is_train:
             PIL_augment, tensor_augment = self.get_augmentations()
             return PIL_augment, tensor_augment
         else:
@@ -202,6 +213,7 @@ class TorchvisionDataModule(LossylessDataModule):
             [len(dataset) - n_val, n_val],
             generator=torch.Generator().manual_seed(self.seed),
         )
+        valid.train = False
 
         return train, valid
 
@@ -252,6 +264,14 @@ class MnistDataset(LossylessImgDataset, MNIST):
         img, target = MNIST.__getitem__(self, index)
         return img, target
 
+    @property
+    def is_train(self):
+        return self.train
+
+    @property
+    def dataset_name(self):
+        return "MNIST"
+
 
 class MnistDataModule(TorchvisionDataModule):
     @property
@@ -273,6 +293,14 @@ class FashionMnistDataset(LossylessImgDataset, FashionMNIST):
         shapes["input"] = (1, 32, 32)
         shapes["target"] = (10,)
         return shapes
+
+    @property
+    def is_train(self):
+        return self.train
+
+    @property
+    def dataset_name(self):
+        return "FashionMNIST"
 
     processed_folder = MnistDataset.processed_folder
     raw_folder = MnistDataset.raw_folder
@@ -297,6 +325,14 @@ class Cifar10Dataset(LossylessImgDataset, CIFAR10):
         img, target = CIFAR10.__getitem__(self, index)
         return img, target
 
+    @property
+    def is_train(self):
+        return self.train
+
+    @property
+    def dataset_name(self):
+        return "CIFAR10"
+
 
 class Cifar10DataModule(TorchvisionDataModule):
     @property
@@ -320,18 +356,26 @@ class GalaxyDataset(LossylessImgDataset):
         resolution: int = 64,
         **kwargs,
     ):
+        # TODO check if need to normalize (if not add is_normalize=False in cfg) because very low std
         check_import("cv2", "GalaxyDataset")
 
         self.root = root
+        self.split = split
         data_dir = path.join(root, "galaxyzoo")
         self.resolution = resolution
-        if download:
+        if download and not self.is_exist_data(data_dir):
             self.download(data_dir)
             self.preprocess(data_dir)
 
         self.load_data(data_dir, split, resolution)
 
         super().__init__(*args, **kwargs)
+
+    def is_exist_data(self, data_dir):
+        # check if we already preprocessed and downloaded the data
+        # this is a hacky check, we just check if the last file that this
+        # routine yields exists
+        return path.exists(path.join(data_dir, "test_images_128.npy"))
 
     def download(self, data_dir):
         def unpack_all_zips():
@@ -359,25 +403,32 @@ class GalaxyDataset(LossylessImgDataset):
             )
             raise e
 
+        logger.info("Downloading Galaxy ...")
+
         # download the dataset
         bashCommand = (
             "kaggle competitions download -c "
             "galaxy-zoo-the-galaxy-challenge -p {}".format(self.root)
         )
-        subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
+        process = subprocess.Popen(
+            bashCommand.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+        )
+        out = process.communicate()[0].decode("utf-8")
+        is_error = process.returncode != 0
+        if is_error:
+            logging.critical(
+                f"{bashCommand} failed with outputs: {out}. \n "
+                "Hint: don't forget to accept competition rules at "
+                "https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/rules. "
+            )
 
         # unpack the data
         with zipfile.ZipFile(os.path.join(self.root, filename), "r") as zip_ref:
-            zip_ref.extractall(self.root)
+            zip_ref.extractall(data_dir)
 
         unpack_all_zips()
 
     def preprocess(self, data_dir):
-        # check if we already preprocessed the data
-        # this is a hacky check, we just check if the last file that this
-        # routine yields exists
-        if path.exists(path.join(data_dir, "test_images_128.npy")):
-            return
 
         # SAVE IMAGE IDs
         def get_image_ids(image_dir):
@@ -471,8 +522,8 @@ class GalaxyDataset(LossylessImgDataset):
         return dict(
             PIL={
                 "rotation": RandomRotation(360),
-                "y_translation": RandomAffine(0, translate=(0, 0.5)),
-                "x_translation": RandomAffine(0, translate=(0.5, 0)),
+                "y_translation": RandomAffine(0, translate=(0, 0.25)),
+                "x_translation": RandomAffine(0, translate=(0.25, 0)),
                 "scale": RandomAffine(0, scale=(0.8, 1.2)),
                 "color": ColorJitter(
                     brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
@@ -513,11 +564,20 @@ class GalaxyDataset(LossylessImgDataset):
 
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
-        img = Image.fromarray(img)
+        # equivalent: Image.fromarray((img.transpose(1,2,0)*255).astype(np.uint8))
+        img = transform_lib.functional.to_pil_image(torch.from_numpy(img), None)
 
         # don't apply transformation yet, it's done for you
 
         return img, target
+
+    @property
+    def is_train(self):
+        return self.split == "train"
+
+    @property
+    def dataset_name(self):
+        return f"galaxy{self.resolution}"
 
 
 class GalaxyDataModule(LossylessDataModule):

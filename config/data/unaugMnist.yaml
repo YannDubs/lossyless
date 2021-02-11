@@ -9,3 +9,4 @@ kwargs:
   dataset_kwargs:
     n_per_target: 1000
     equivalence: []
+    is_normalize: False

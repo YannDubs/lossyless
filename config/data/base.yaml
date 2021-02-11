@@ -16,3 +16,5 @@ kwargs:
   data_dir: ${paths.data}
   batch_size: 128
   reload_dataloaders_every_epoch: ${trainer.reload_dataloaders_every_epoch}
+  dataset_kwargs:
+    is_normalize: True
