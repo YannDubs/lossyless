@@ -861,7 +861,7 @@ class Aggregator:
 
         if is_x_errorbar or is_y_errorbar:
             if (len(cols_to_agg) == 0) or ("sem" not in aggregates):
-                logger.warn(
+                logger.warning(
                     f"Not plotting errorbars due to empty cols_to_agg={cols_to_agg} or 'sem' not in aggregates={aggregates}."
                 )
                 is_x_errorbar, is_y_errorbar = False, False

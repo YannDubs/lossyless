@@ -22,16 +22,9 @@ $add_kwargs
 
 # every arguments that you are sweeping over
 kwargs_multi="
-distortion=vae
-loss.beta=0.01,0.1,1.
+distortion=vae,ivae
+featurizer.loss.beta=0.01,0.1,1.
 seed=1,2,3
-"
-# ivib,ivae,ince,vae,nce,vib,taskvib
-
-kwargs_multi="
-distortion=vae
-loss.beta=0.01,0.1,1.,10
-seed=1
 "
 
 if [ "$is_plot_only" = false ] ; then

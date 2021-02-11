@@ -15,9 +15,9 @@ defaults:
   - scheduler@scheduler_feat: expdecay
   - optimizer@optimizer_coder: adam3e-3
   - scheduler@scheduler_coder: expdecay
-  - featurizer: neural_rec
   - distortion: ivae
   - rate: H_factorized
+  - featurizer: neural_rec
 
   # PREDICTOR #
   - architecture@predictor: resnet18

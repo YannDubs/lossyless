@@ -381,7 +381,7 @@ def load_pretrained(cfg, Module, file):
 def is_est_entropies(cfg):
     # entropy estimation when Z is stochastic will not be good
     if cfg.evaluation.is_est_entropies and cfg.encoder.fam != "deterministic":
-        logger.warn("Turning off `is_est_entropies` because stochastic Z.")
+        logger.warning("Turning off `is_est_entropies` because stochastic Z.")
         return False
     return cfg.evaluation.is_est_entropies
 
@@ -435,12 +435,20 @@ def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
     """Append entropy estimates to the results."""
     is_discrete_Y = cfg.data.target_is_clf
     is_discrete_M = datamodule.dataset.is_clf_x_t_Mx["max_inv"]
+
+    # get the max invariant from the dataset
+    dkwargs = {"additional_target": "max_inv"}
+    if is_test:
+        if cfg.evaluation.is_eval_on_test:
+            dataloader = datamodule.test_dataloader(dataset_kwargs=dkwargs)
+        else:
+            # testing on validation (needed if don't have access to test set)
+            dataloader = datamodule.val_dataloader(dataset_kwargs=dkwargs)
+    else:
+        dataloader = datamodule.train_dataloader(dataset_kwargs=dkwargs)
+
     H_MlZ, H_YlZ, H_Z = estimate_entropies(
-        trainer,
-        datamodule,
-        is_test=is_test,
-        is_discrete_M=is_discrete_M,
-        is_discrete_Y=is_discrete_Y,
+        trainer, dataloader, is_discrete_M=is_discrete_M, is_discrete_Y=is_discrete_Y,
     )
     prfx = "test" if is_test else "testtrain"
     results[f"{prfx}/feat/H_MlZ"] = H_MlZ

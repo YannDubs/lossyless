@@ -21,15 +21,8 @@ $add_kwargs
 
 # every arguments that you are sweeping over
 kwargs_multi="
-featurizer=ivae_hfac_b01,ivae_hfac_b1,ivae_hfac_b10,vae_hfac_b0.01,vae_hfac_b01,vae_hfac_b1,vae_hfac_b10,none,webp++,webp--
+featurizer=ivae_hfac_b01,ivae_hfac_b1,ivae_hfac_b10,vae_hfac_b01,vae_hfac_b1,vae_hfac_b10,none,webp++,webp--
 seed=1,2,3
-"
-
-
-kwargs_multi="
-featurizer=ivae_hfac_b01vae_hfac_b0.01,none,webp++
-seed=1
-trainer.max_epochs=2
 "
 
 
