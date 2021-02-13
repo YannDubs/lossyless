@@ -46,8 +46,9 @@ except ImportError:
     pass
 
 logger = logging.getLogger(__name__)
-COMPRESSOR_CKPNT = "best_compressor.ckpt"
-PREDICTOR_CKPNT = "best_predictor.ckpt"
+COMPRESSOR_CHCKPNT = "best_compressor.ckpt"
+PREDICTOR_CHCKPNT = "best_predictor.ckpt"
+LAST_CHCKPNT = "last.ckpt"
 COMPRESSOR_RES = "results_compressor.csv"
 PREDICTOR_RES = "results_predictor.csv"
 
@@ -77,10 +78,10 @@ def main(cfg_hydra):
 
         logger.info("Train compressor ...")
         comp_trainer.fit(compressor, datamodule=datamodule)
-        save_pretrained(cfg, comp_trainer, COMPRESSOR_CKPNT)
+        save_pretrained(cfg, comp_trainer, COMPRESSOR_CHCKPNT)
     else:
         logger.info("Load pretrained compressor ...")
-        compressor = load_pretrained(cfg, LearnableCompressor, COMPRESSOR_CKPNT)
+        compressor = load_pretrained(cfg, LearnableCompressor, COMPRESSOR_CHCKPNT)
         comp_trainer = get_trainer(cfg, compressor, is_featurizer=True)
 
     if cfg.evaluation.featurizer.is_evaluate:
@@ -95,10 +96,10 @@ def main(cfg_hydra):
             is_featurizer=True,
         )
 
-    if cfg.is_only_feat:
-        logger.info("Stage : Shutdown after featurizer")
-        return finalize(cfg, modules=[compressor], trainers=[comp_trainer])
+    finalize_stage(cfg, compressor, comp_trainer)
     del datamodule  # not used anymore and can be large
+    if cfg.is_only_feat:
+        return finalize(cfg, modules=[compressor], trainers=[comp_trainer])
 
     ############## COMMUNICATION (compress and decompress the datamodule) ##############
     logger.info("Stage : Communication")
@@ -127,11 +128,11 @@ def main(cfg_hydra):
 
         logger.info("Train predictor ...")
         pred_trainer.fit(predictor, datamodule=datamodule)
-        save_pretrained(cfg, pred_trainer, PREDICTOR_CKPNT)
+        save_pretrained(cfg, pred_trainer, PREDICTOR_CHCKPNT)
 
     else:
         logger.info("Load pretrained predictor ...")
-        predictor = load_pretrained(cfg, Predictor, PREDICTOR_CKPNT)
+        predictor = load_pretrained(cfg, Predictor, PREDICTOR_CHCKPNT)
         pred_trainer = get_trainer(cfg, predictor, is_featurizer=False)
 
     if cfg.evaluation.predictor.is_evaluate:
@@ -146,8 +147,10 @@ def main(cfg_hydra):
             is_featurizer=False,
         )
 
+    finalize_stage(cfg, predictor, pred_trainer)
+
     ############## SHUTDOWN ##############
-    logger.info("Stage : Shutdown")
+
     return finalize(
         cfg, modules=[compressor, predictor], trainers=[comp_trainer, pred_trainer]
     )
@@ -340,7 +343,7 @@ def get_trainer(cfg, module, is_featurizer):
     """Instantiate trainer."""
 
     # Resume training ?
-    last_chckpnt = Path(cfg.checkpoint.kwargs.dirpath) / "last.ckpt"
+    last_chckpnt = Path(cfg.checkpoint.kwargs.dirpath) / LAST_CHCKPNT
     if last_chckpnt.exists():
         cfg.trainer.resume_from_checkpoint = str(last_chckpnt)
 
@@ -362,6 +365,13 @@ def placeholder_fit(trainer, module, datamodule):
 
 def save_pretrained(cfg, trainer, file):
     """Send best checkpoint for compressor to main directory."""
+
+    # restore best checkpoint
+    best = trainer.checkpoint_callback.best_model_path
+    trainer.resume_from_checkpoint = best
+    trainer.checkpoint_connector.restore_weights()
+
+    # save
     dest_path = Path(cfg.paths.pretrained.save)
     dest_path.mkdir(parents=True, exist_ok=True)
     trainer.save_checkpoint(dest_path / file, weights_only=True)
@@ -472,8 +482,21 @@ def initialize_predictor_(module, datamodule, trainer, cfg):
             module.hparams.optimizer_pred.kwargs.lr = old_lr
 
 
+def finalize_stage(cfg, module, trainer):
+    """Finalize the current stage."""
+    logger.info(f"Finalizing {cfg.stage}.")
+
+    assert (
+        cfg.checkpoint.kwargs.dirpath != cfg.paths.pretrained.save
+    ), "This will remove diesired checkpoints"
+
+    for checkpoint in Path(cfg.checkpoint.kwargs.dirpath).glob("*.ckpt"):
+        checkpoint.unlink()  # remove all checkpoints as best is already saved elsewhere
+
+
 def finalize(cfg, modules, trainers):
     """Finalizes the script."""
+    logger.info("Stage : Shutdown")
 
     plt.close("all")
 
