@@ -54,56 +54,64 @@ PREDICTOR_RES = "results_predictor.csv"
 
 
 @hydra.main(config_name="main", config_path="config")
-def main(cfg_hydra):
+def main(cfg):
     ############## STARTUP ##############
     logger.info("Stage : Startup")
-    begin(cfg_hydra)
+    begin(cfg)
 
     ############## COMPRESSOR (i.e. sender) ##############
     logger.info("Stage : Compressor")
-    cfg = set_cfg(cfg_hydra, mode="featurizer")
-    datamodule = instantiate_datamodule_(cfg)
-    cfg = omegaconf2namespace(cfg)  # ensure real python types (only once cfg are fixed)
+    comp_cfg = set_cfg(cfg, mode="featurizer")
+    comp_datamodule = instantiate_datamodule_(comp_cfg)
+    comp_cfg = omegaconf2namespace(
+        comp_cfg
+    )  # ensure real python types (only once cfg are fixed)
 
-    if not cfg.featurizer.is_learnable:
-        logger.info(f"Using classical compressor {cfg.featurizer.mode} ...")
-        compressor = ClassicalCompressor(hparams=cfg)
-        comp_trainer = get_trainer(cfg, compressor, is_featurizer=True,)
-        placeholder_fit(comp_trainer, compressor, datamodule)
+    if not comp_cfg.featurizer.is_learnable:
+        logger.info(f"Using classical compressor {comp_cfg.featurizer.mode} ...")
+        compressor = ClassicalCompressor(hparams=comp_cfg)
+        comp_trainer = get_trainer(comp_cfg, compressor, is_featurizer=True,)
+        placeholder_fit(comp_trainer, compressor, comp_datamodule)
 
-    elif cfg.featurizer.is_train:
-        compressor = LearnableCompressor(hparams=cfg)
-        comp_trainer = get_trainer(cfg, compressor, is_featurizer=True)
-        initialize_compressor_(compressor, datamodule, comp_trainer, cfg)
+    elif comp_cfg.featurizer.is_train:
+        compressor = LearnableCompressor(hparams=comp_cfg)
+        comp_trainer = get_trainer(comp_cfg, compressor, is_featurizer=True)
+        initialize_compressor_(compressor, comp_datamodule, comp_trainer, comp_cfg)
 
         logger.info("Train compressor ...")
-        comp_trainer.fit(compressor, datamodule=datamodule)
-        save_pretrained(cfg, comp_trainer, COMPRESSOR_CHCKPNT)
+        comp_trainer.fit(compressor, datamodule=comp_datamodule)
+        save_pretrained(comp_cfg, comp_trainer, COMPRESSOR_CHCKPNT)
     else:
         logger.info("Load pretrained compressor ...")
-        compressor = load_pretrained(cfg, LearnableCompressor, COMPRESSOR_CHCKPNT)
-        comp_trainer = get_trainer(cfg, compressor, is_featurizer=True)
+        compressor = load_pretrained(comp_cfg, LearnableCompressor, COMPRESSOR_CHCKPNT)
+        comp_trainer = get_trainer(comp_cfg, compressor, is_featurizer=True)
 
-    if cfg.evaluation.featurizer.is_evaluate:
+    if comp_cfg.evaluation.featurizer.is_evaluate:
         logger.info("Evaluate compressor ...")
         evaluate(
             comp_trainer,
-            datamodule,
-            cfg,
+            comp_datamodule,
+            comp_cfg,
             COMPRESSOR_RES,
-            is_est_entropies(cfg),
-            ckpt_path=cfg.evaluation.featurizer.ckpt_path,
+            is_est_entropies(comp_cfg),
+            ckpt_path=comp_cfg.evaluation.featurizer.ckpt_path,
             is_featurizer=True,
         )
 
-    finalize_stage(cfg, compressor, comp_trainer)
-    del datamodule  # not used anymore and can be large
-    if cfg.is_only_feat:
-        return finalize(cfg, modules=[compressor], trainers=[comp_trainer])
+    finalize_stage(comp_cfg, compressor, comp_trainer)
+    if comp_cfg.is_only_feat:
+        return finalize(
+            modules=dict(featurizer=compressor),
+            trainers=dict(featurizer=comp_trainer),
+            datamodules=dict(featurizer=comp_datamodule),
+            cfgs=dict(featurizer=comp_cfg),
+        )
+    if not comp_cfg.is_return:
+        comp_datamodule = None  # not used anymore and can be large
 
     ############## COMMUNICATION (compress and decompress the datamodule) ##############
     logger.info("Stage : Communication")
-    if cfg.featurizer.is_on_the_fly:
+    if comp_cfg.featurizer.is_on_the_fly:
         # this will perform compression on the fly
         #! one issue is that if using data augmentations you will augment before the featurizer
         # which is less realisitic (normalization is dealt with correctly though)
@@ -117,42 +125,47 @@ def main(cfg_hydra):
 
     ############## DOWNSTREAM PREDICTOR (i.e. receiver) ##############
     logger.info("Stage : Predictor")
-    cfg = set_cfg(cfg_hydra, mode="predictor")
-    datamodule = instantiate_datamodule_(cfg, pre_featurizer=pre_featurizer)
-    cfg = omegaconf2namespace(cfg)  # ensure real python types (only once cfg are fixed)
+    pred_cfg = set_cfg(cfg, mode="predictor")
+    pred_datamodule = instantiate_datamodule_(pred_cfg, pre_featurizer=pre_featurizer)
+    pred_cfg = omegaconf2namespace(
+        pred_cfg
+    )  # ensure real python types (only once cfg are fixed)
 
-    if cfg.predictor.is_train:
-        predictor = Predictor(hparams=cfg, featurizer=onfly_featurizer)
-        pred_trainer = get_trainer(cfg, predictor, is_featurizer=False)
-        initialize_predictor_(predictor, datamodule, pred_trainer, cfg)
+    if pred_cfg.predictor.is_train:
+        predictor = Predictor(hparams=pred_cfg, featurizer=onfly_featurizer)
+        pred_trainer = get_trainer(pred_cfg, predictor, is_featurizer=False)
+        initialize_predictor_(predictor, pred_datamodule, pred_trainer, pred_cfg)
 
         logger.info("Train predictor ...")
-        pred_trainer.fit(predictor, datamodule=datamodule)
-        save_pretrained(cfg, pred_trainer, PREDICTOR_CHCKPNT)
+        pred_trainer.fit(predictor, datamodule=pred_datamodule)
+        save_pretrained(pred_cfg, pred_trainer, PREDICTOR_CHCKPNT)
 
     else:
         logger.info("Load pretrained predictor ...")
-        predictor = load_pretrained(cfg, Predictor, PREDICTOR_CHCKPNT)
-        pred_trainer = get_trainer(cfg, predictor, is_featurizer=False)
+        predictor = load_pretrained(pred_cfg, Predictor, PREDICTOR_CHCKPNT)
+        pred_trainer = get_trainer(pred_cfg, predictor, is_featurizer=False)
 
-    if cfg.evaluation.predictor.is_evaluate:
+    if pred_cfg.evaluation.predictor.is_evaluate:
         logger.info("Evaluate predictor ...")
         evaluate(
             pred_trainer,
-            datamodule,
-            cfg,
+            pred_datamodule,
+            pred_cfg,
             PREDICTOR_RES,
             False,
-            ckpt_path=cfg.evaluation.predictor.ckpt_path,
+            ckpt_path=pred_cfg.evaluation.predictor.ckpt_path,
             is_featurizer=False,
         )
 
-    finalize_stage(cfg, predictor, pred_trainer)
+    finalize_stage(pred_cfg, predictor, pred_trainer)
 
     ############## SHUTDOWN ##############
 
     return finalize(
-        cfg, modules=[compressor, predictor], trainers=[comp_trainer, pred_trainer]
+        modules=dict(featurizer=compressor, predictor=predictor),
+        trainers=dict(featurizer=comp_trainer, predictor=pred_trainer),
+        datamodules=dict(featurizer=comp_datamodule, predictor=pred_datamodule),
+        cfgs=dict(featurizer=comp_cfg, predictor=pred_cfg),
     )
 
 
@@ -207,12 +220,13 @@ def set_cfg(cfg, mode):
         else:
             raise ValueError(f"Unkown mode={mode}.")
 
-    # make sure all paths exist
-    for _, path in cfg.paths.items():
-        if isinstance(path, str):
-            Path(path).mkdir(parents=True, exist_ok=True)
+    if not cfg.is_no_save:
+        # make sure all paths exist
+        for _, path in cfg.paths.items():
+            if isinstance(path, str):
+                Path(path).mkdir(parents=True, exist_ok=True)
 
-    Path(cfg.paths.pretrained.save).mkdir(parents=True, exist_ok=True)
+        Path(cfg.paths.pretrained.save).mkdir(parents=True, exist_ok=True)
 
     return cfg
 
@@ -494,8 +508,10 @@ def finalize_stage(cfg, module, trainer):
         checkpoint.unlink()  # remove all checkpoints as best is already saved elsewhere
 
 
-def finalize(cfg, modules, trainers):
+def finalize(modules, trainers, datamodules, cfgs):
     """Finalizes the script."""
+    cfg = cfgs["featurizer"]  # this is always in
+
     logger.info("Stage : Shutdown")
 
     plt.close("all")
@@ -507,7 +523,10 @@ def finalize(cfg, modules, trainers):
     logger.info("Finished.")
     logging.shutdown()
 
-    return 0
+    if cfg.is_return:
+        return modules, trainers, datamodules, cfgs
+    else:
+        return 0
 
 
 if __name__ == "__main__":

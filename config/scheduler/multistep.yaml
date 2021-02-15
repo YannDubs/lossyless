@@ -4,3 +4,4 @@ kwargs:
   # all kwargs
   MultiStepLR:
     milestones: ???
+    gamma: 0.1

@@ -171,6 +171,7 @@ class LearnableCompressor(pl.LightningModule):
     def loss(self, rates, distortions):
         n_z = rates.size(0)
         cfg = self.hparams
+        #! careful this is actually 1/beta from the paper (oops)
         beta = (
             cfg.featurizer.loss.beta * cfg.rate.factor_beta * cfg.distortion.factor_beta
         )

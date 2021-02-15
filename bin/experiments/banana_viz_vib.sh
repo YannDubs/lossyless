@@ -73,10 +73,11 @@ timeout=${time}
 $add_kwargs
 "
 
+
 kwargs_multi="
-data@data_feat=bananaRot,bananaXtrnslt,bananaYtrnslt 
+data@data_feat=bananaRot
 distortion=ivib,vib
-featurizer.loss.beta=0.01,0.1,1,10,100
+featurizer.loss.beta=0.1
 " 
 
 if [ "$is_plot_only" = false ] ; then
@@ -113,5 +114,16 @@ python aggregate.py \
        agg_mode=[summarize_metrics,summarize_RD_curves,plot_all_RD_curves,plot_invariance_RD_curve]
 
 
+col_val_subset=""
+python load_pretrained.py \
+       load_pretrained.experiment=$experiment  \
+       $col_val_subset \
+       $kwargs  \
+       server=local \
+       trainer.gpus=0 \
+       +load_pretrained.codebook_plot.is_plot_codebook=False \
+       $kwargs_multi \
+       load_pretrained.mode=[maxinv_distribution_plot,codebook_plot] \
+       -m
 
 

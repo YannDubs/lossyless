@@ -4,12 +4,15 @@ import operator
 import random
 import sys
 import time
+import warnings
 from collections import OrderedDict
 from functools import reduce
 from numbers import Number
 
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
+from matplotlib.cbook import MatplotlibDeprecationWarning
 
 import einops
 import torch
@@ -503,3 +506,87 @@ def append_optimizer_scheduler_(
         schedulers += [scheduler]
 
     return optimizers, schedulers
+
+
+@contextlib.contextmanager
+def plot_config(
+    style="ticks",
+    context="notebook",
+    palette="colorblind",
+    font_scale=1,
+    font="sans-serif",
+    is_ax_off=False,
+    is_rm_xticks=False,
+    is_rm_yticks=False,
+    rc=dict(),
+    set_kwargs=dict(),
+    despine_kwargs=dict(),
+    # pretty_renamer=dict(), #TODO
+):
+    """Temporary seaborn and matplotlib figure style / context / limits / ....
+
+    Parameters
+    ----------
+    style : dict, None, or one of {darkgrid, whitegrid, dark, white, ticks}
+        A dictionary of parameters or the name of a preconfigured set.
+
+    context : dict, None, or one of {paper, notebook, talk, poster}
+        A dictionary of parameters or the name of a preconfigured set.
+
+    palette : string or sequence
+        Color palette, see :func:`color_palette`
+
+    font : string
+        Font family, see matplotlib font manager.
+
+    font_scale : float, optional
+        Separate scaling factor to independently scale the size of the
+        font elements.
+
+    is_ax_off : bool, optional
+        Whether to turn off all axes.
+
+    is_rm_xticks, is_rm_yticks : bool, optional
+        Whether to remove the ticks and labels from y or x axis.
+
+    rc : dict, optional
+        Parameter mappings to override the values in the preset seaborn
+        style dictionaries.
+
+    set_kwargs : dict, optional
+        kwargs for matplotlib axes. Such as xlim, ylim, ...
+
+    despine_kwargs : dict, optional
+        Arguments to `sns.despine`.
+    """
+    defaults = plt.rcParams.copy()
+
+    try:
+        rc["font.family"] = font
+        plt.rcParams.update(rc)
+
+        with sns.axes_style(style=style, rc=rc), sns.plotting_context(
+            context=context, font_scale=font_scale, rc=rc
+        ), sns.color_palette(palette):
+            yield
+            last_fig = plt.gcf()
+            for i, ax in enumerate(last_fig.axes):
+                ax.set(**set_kwargs)
+
+                if is_ax_off:
+                    ax.axis("off")
+
+                if is_rm_yticks:
+                    ax.axes.yaxis.set_ticks([])
+
+                if is_rm_xticks:
+                    ax.axes.xaxis.set_ticks([])
+
+        sns.despine(**despine_kwargs)
+
+    finally:
+        with warnings.catch_warnings():
+            # filter out depreciation warnings when resetting defaults
+            warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
+            # reset defaults
+            plt.rcParams.update(defaults)

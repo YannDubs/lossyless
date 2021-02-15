@@ -39,6 +39,8 @@ time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is no
 long_name_feat: exp_${experiment}/datafeat_${data_feat.name}/feat_${featurizer.name}/dist_${distortion.name}/enc_${encoder.name}/rate_${rate.name}/optfeat_${optimizer_feat.name}/schedfeat_${scheduler_feat.name}/zdim_${encoder.z_dim}/zs_${featurizer.loss.n_z_samples}/beta_${featurizer.loss.beta}/seed_${seed}/addfeat_${other.add_feat}
 long_name_pred: ${long_name_feat}/datapred_${data_pred.name}/optpred_${optimizer_pred.name}/schedpred_${scheduler_pred.name}/addpred_${other.add_pred}
 is_only_feat: false # don't run any prediction
+is_return: false
+is_no_save: ${is_return} # if you are sure you don't want to save anything
 
 paths: #! the best practice is not to modify those paths but to simlink them to the places you want
   base_dir: ${hydra:runtime.cwd} 
