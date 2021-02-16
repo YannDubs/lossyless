@@ -4,6 +4,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+import torch
+from lossyless.helpers import to_numpy
 
 
 def get_default_args(func):
@@ -67,9 +69,22 @@ def aggregate(table, cols_to_agg=[], aggregates=["mean", "sem"]):
 
 
 def save_fig(fig, filename, dpi, is_tight=True):
-    """General fucntion for many different types of figures."""
+    """General function for many different types of figures."""
+
+    # order matters ! and don't use elif!
     if isinstance(fig, sns.FacetGrid):
         fig = fig.fig
+
+    if isinstance(fig, torch.Tensor):
+        x = fig.permute(1, 2, 0)
+        if x.size(2) == 1:
+            fig = plt.imshow(to_numpy(x.squeeze()), cmap="gray")
+        else:
+            fig = plt.imshow(to_numpy(x))
+        plt.axis("off")
+
+    if isinstance(fig, matplotlib.image.AxesImage):
+        fig = fig.get_figure()
 
     if isinstance(fig, matplotlib.figure.Figure):
 

@@ -8,24 +8,18 @@ import glob
 import logging
 from pathlib import Path
 
+import hydra
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from omegaconf import OmegaConf
 
-import hydra
 from lossyless.helpers import BASE_LOG, check_import
 from main import COMPRESSOR_RES
-from omegaconf import OmegaConf
 from utils.helpers import omegaconf2namespace
-from utils.postplotting import (
-    PRETTY_RENAMER,
-    PostPlotter,
-    data_getter,
-    folder_split,
-    single_plot,
-    table_summarizer,
-)
+from utils.postplotting import (PRETTY_RENAMER, PostPlotter, data_getter,
+                                folder_split, single_plot, table_summarizer)
 from utils.postplotting.helpers import aggregate
 from utils.visualizations.helpers import kwargs_log_scale
 

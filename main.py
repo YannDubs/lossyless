@@ -7,15 +7,18 @@ import copy
 import logging
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-import pandas as pd
-
 import compressai
 import hydra
-import lossyless
+import matplotlib.pyplot as plt
 import omegaconf
+import pandas as pd
 import pl_bolts
 import pytorch_lightning as pl
+from omegaconf import OmegaConf
+from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
+
+import lossyless
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
 from lossyless.callbacks import (
     CodebookPlot,
@@ -25,9 +28,6 @@ from lossyless.callbacks import (
 )
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import, orderedset
-from omegaconf import OmegaConf
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
 from utils.helpers import (
@@ -70,7 +70,11 @@ def main(cfg):
     if not comp_cfg.featurizer.is_learnable:
         logger.info(f"Using classical compressor {comp_cfg.featurizer.mode} ...")
         compressor = ClassicalCompressor(hparams=comp_cfg)
-        comp_trainer = get_trainer(comp_cfg, compressor, is_featurizer=True,)
+        comp_trainer = get_trainer(
+            comp_cfg,
+            compressor,
+            is_featurizer=True,
+        )
         placeholder_fit(comp_trainer, compressor, comp_datamodule)
 
     elif comp_cfg.featurizer.is_train:
@@ -338,7 +342,9 @@ def get_logger(cfg, module, is_featurizer):
             cfg.trainer.track_grad_norm = -1
             to_watch = module.p_ZlX.mapper if is_featurizer else module.predictor
             logger.watch(
-                to_watch, log="gradients", log_freq=cfg.trainer.log_every_n_steps * 10,
+                to_watch,
+                log="gradients",
+                log_freq=cfg.trainer.log_every_n_steps * 10,
             )
 
     elif cfg.logger.name == "tensorboard":
@@ -420,18 +426,14 @@ def evaluate(
     is_featurizer=True,
 ):
     """
-    Evaluate the trainer by loging all the metrics from the training and test set from the best model. 
-    Can also compute sample estimates of soem entropies, which should be better estimates than the 
+    Evaluate the trainer by loging all the metrics from the training and test set from the best model.
+    Can also compute sample estimates of soem entropies, which should be better estimates than the
     lower bounds used during training. Only estimate entropies if `is_featurizer`.
     """
     # Evaluation
-    if cfg.evaluation.is_eval_on_test:
-        test_dataloaders = datamodule.test_dataloader()
-    else:
-        # testing on validation (needed if don't have access to test set)
-        test_dataloaders = datamodule.val_dataloader()
+    eval_dataloader = datamodule.eval_dataloader(cfg.evaluation.is_eval_on_test)
 
-    test_res = trainer.test(test_dataloaders=test_dataloaders, ckpt_path=ckpt_path)[0]
+    test_res = trainer.test(test_dataloaders=eval_dataloader, ckpt_path=ckpt_path)[0]
     if is_est_entropies and is_featurizer:
         append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
     log_dict(trainer, test_res, is_param=False)
@@ -472,7 +474,10 @@ def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
         dataloader = datamodule.train_dataloader(dataset_kwargs=dkwargs)
 
     H_MlZ, H_YlZ, H_Z = estimate_entropies(
-        trainer, dataloader, is_discrete_M=is_discrete_M, is_discrete_Y=is_discrete_Y,
+        trainer,
+        dataloader,
+        is_discrete_M=is_discrete_M,
+        is_discrete_Y=is_discrete_Y,
     )
     prfx = "test" if is_test else "testtrain"
     results[f"{prfx}/feat/H_MlZ"] = H_MlZ
