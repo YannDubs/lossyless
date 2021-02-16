@@ -342,7 +342,7 @@ class LossylessDataModule(LightningDataModule):
             self.train_dataset = self.get_train_dataset(**curr_kwargs)
 
         if batch_size is None:
-            batch_size = (self.batch_size,)
+            batch_size = self.batch_size
 
         return DataLoader(
             self.train_dataset,
