@@ -75,8 +75,8 @@ $add_kwargs
 
 kwargs_multi="
 distortion=ivae,vae
-featurizer.loss.beta=0.000001,0.00001,0.0001,0.001,0.003,0.01,0.03,0.1,0.3,1,3,10,100,1000,10000
-seed=2,3,4,5
+featurizer.loss.beta=0.00001,0.0001,0.001,0.01,0.1,1,10,100,1000
+seed=1,2,3
 " 
 
 
@@ -113,3 +113,16 @@ python aggregate.py \
        +plot_invariance_RD_curve.noninvariant='vae' \
        +plot_invariance_RD_curve.logbase_x=2 \
        agg_mode=[summarize_metrics,summarize_RD_curves,plot_all_RD_curves,plot_invariance_RD_curve]
+
+
+# plot loaded model
+col_val_subset=""
+python load_pretrained.py \
+       load_pretrained.experiment=$experiment  \
+       $col_val_subset \
+       $kwargs  \
+       server=local \
+       trainer.gpus=0 \
+       $kwargs_multi \
+       load_pretrained.mode=[maxinv_distribution_plot,codebook_plot] \
+       -m

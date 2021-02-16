@@ -1,3 +1,6 @@
+# user specific
+config/user.yaml
+
 # directories
 results
 outputs*

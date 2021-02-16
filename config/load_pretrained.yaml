@@ -1,0 +1,20 @@
+defaults:
+  - main # load all the config that were used for pretraining => makes sure that same model
+
+load_pretrained:
+  experiment: ???
+  mode: [] # ???
+  col_val_subset : {}
+  save_dir: ${paths.base_dir}/results/${long_name} # it's not kwargs because will be reevaluated at runtime => can use paths in main
+  collect_data:
+    is_only_feat: True
+
+  kwargs:
+    prfx: ""
+    dpi: 300
+    pretty_renamer: {}
+
+# run on cpu
+trainer:
+  gpus: 0
+  precision: 32
