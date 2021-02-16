@@ -26,7 +26,7 @@ def omegaconf2namespace(cfg, is_allow_missing=False):
 
 def dict2namespace(d, is_allow_missing=False, all_keys=""):
     """Converts recursively dictionary to namespace."""
-    namespace = NamespaceMap(**d)
+    namespace = NamespaceMap(d)
     for k, v in d.items():
         if v == "???" and not is_allow_missing:
             raise ValueError(f"Missing value for {all_keys}.{k}.")
@@ -37,6 +37,12 @@ def dict2namespace(d, is_allow_missing=False, all_keys=""):
 
 class NamespaceMap(Namespace, collections.abc.MutableMapping):
     """Namespace that can act like a dict."""
+
+    def __init__(self, d):
+        # has to take a single argument as input instead of a dictionnary as namespace usually do
+        # because from pytorch_lightning.utilities.apply_func import apply_to_collection doesn't work
+        # with namespace (even though they think it does)
+        super().__init__(**d)
 
     def __getitem__(self, k):
         return self.__dict__[k]
