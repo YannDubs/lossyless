@@ -1,15 +1,14 @@
 import math
 
+import einops
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from matplotlib.lines import Line2D
-
-import einops
 import torch
 import torchvision
+from matplotlib.lines import Line2D
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 
@@ -20,6 +19,7 @@ from .helpers import (
     plot_config,
     plot_density,
     setup_grid,
+    tensors_to_fig,
     to_numpy,
 )
 
@@ -56,7 +56,7 @@ def is_plot(trainer, plot_interval):
 
 class PlottingCallback(Callback):
     """Base classes for calbacks that plot.
-    
+
     Parameters
     ----------
     plot_interval : int, optional
@@ -96,14 +96,16 @@ class ReconstructImages(PlottingCallback):
     """
 
     def yield_figs_kwargs(self, trainer, pl_module):
+        cfg = pl_module.hparams
         #! waiting for torch lighning #1243
         x_hat = pl_module._save["Y_hat"].float()
         x = pl_module._save["X"].float()
 
         if is_colored_img(x):
-            # undo normalization for plotting
-            unnormalizer = UnNormalizer(pl_module.hparams.data.dataset)
-            x = unnormalizer(x)
+            if cfg.data.kwargs.dataset_kwargs.is_normalize:
+                # undo normalization for plotting
+                unnormalizer = UnNormalizer(cfg.data.dataset)
+                x = unnormalizer(x)
 
         yield x_hat, dict(name="rec_img")
 
@@ -130,7 +132,7 @@ class LatentDimInterpolator(PlottingCallback):
     n_lat_traverse : int, optional
         Number of latent to traverse for traversal 1_d. Max is `z_dim`.
 
-    kwargs : 
+    kwargs :
         Additional arguments to PlottingCallback.
     """
 
@@ -139,8 +141,8 @@ class LatentDimInterpolator(PlottingCallback):
         z_dim,
         range_start=-5,
         range_end=5,
-        n_per_lat=10,
-        n_lat_traverse=10,
+        n_per_lat=7,
+        n_lat_traverse=5,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -153,10 +155,10 @@ class LatentDimInterpolator(PlottingCallback):
     def yield_figs_kwargs(self, trainer, pl_module):
         with torch.no_grad():
             pl_module.eval()
-            with plot_config(**self.plot_config_kwargs):
+            with plot_config(**self.plot_config_kwargs, font_scale=2):
                 traversals_2d = self.latent_traverse_2d(pl_module)
 
-            with plot_config(**self.plot_config_kwargs):
+            with plot_config(**self.plot_config_kwargs, font_scale=1.5):
                 traversals_1d = self.latent_traverse_1d(pl_module)
 
         pl_module.train()
@@ -202,17 +204,27 @@ class LatentDimInterpolator(PlottingCallback):
             z_2d[i, :, 0] = traversals[i]  # fill first latent
 
         imgs = self._traverse_line(1, pl_module, z=z_2d)  # fill 2nd latent and rec.
-        grid = torchvision.utils.make_grid(imgs, nrow=self.n_per_lat)
+        fig = tensors_to_fig(
+            imgs,
+            n_cols=self.n_per_lat,
+            x_labels=["1st Latent"],
+            y_labels=["2nd Latent"],
+        )
 
-        return grid
+        return fig
 
     def latent_traverse_1d(self, pl_module):
         """Traverses the first `self.n_lat` latents separately."""
         n_lat_traverse = min(self.n_lat_traverse, self.z_dim)
         imgs = [self._traverse_line(i, pl_module) for i in range(n_lat_traverse)]
         imgs = torch.cat(imgs, dim=0)
-        grid = torchvision.utils.make_grid(imgs, nrow=self.n_per_lat)
-        return grid
+        fig = tensors_to_fig(
+            imgs,
+            n_cols=self.n_per_lat,
+            x_labels=["Sweeps"],
+            y_labels=[f"Lat. {i}" for i in range(n_lat_traverse)],
+        )
+        return fig
 
 
 class CodebookPlot(PlottingCallback):
@@ -236,15 +248,20 @@ class CodebookPlot(PlottingCallback):
         Size fo figure.
 
     is_plot_codebook : bool, optional
-        Whether to plot the codebook or only the quantization space. THis can only be true for VAE 
+        Whether to plot the codebook or only the quantization space. THis can only be true for VAE
         and iVAE, not or iVIB and iNCE because they don't reconstruct an element in X space.
 
-    kwargs : 
+    kwargs :
         Additional arguments to PlottingCallback.
     """
 
     def __init__(
-        self, range_lim=5, n_pts=500, figsize=(9, 9), is_plot_codebook=True, **kwargs,
+        self,
+        range_lim=5,
+        n_pts=500,
+        figsize=(9, 9),
+        is_plot_codebook=True,
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.range_lim = range_lim
@@ -382,7 +399,7 @@ class MaxinvDistributionPlot(PlottingCallback):
     equivalences : list of str, optional
         List of equivalences to use in case you are invariant to nothing.
 
-    kwargs : 
+    kwargs :
         Additional arguments to PlottingCallback.
     """
 

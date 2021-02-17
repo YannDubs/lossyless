@@ -97,7 +97,6 @@ def giffify(
     sweep_parameter,
     sweep_values,
     fps=2,
-    quality=70,
     is_transparent=False,
     **kwargs,
 ):
@@ -131,10 +130,7 @@ def giffify(
         fig = gen_single_fig(**{sweep_parameter: v}, **kwargs)
         plt.close()
         img = fig2img(fig, is_transparent=is_transparent)
-        if i > 0:
-            img = transform.resize(img, size)
-        else:
-            size = img.shape[:2]
+        size = img.shape[:2]
         figs.append(img)
 
     imageio.mimsave(save_filename, figs, fps=fps)

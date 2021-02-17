@@ -9,13 +9,12 @@ from collections import OrderedDict
 from functools import reduce
 from numbers import Number
 
+import einops
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-from matplotlib.cbook import MatplotlibDeprecationWarning
-
-import einops
 import torch
+from matplotlib.cbook import MatplotlibDeprecationWarning
 from pl_bolts.optimizers.lars_scheduling import LARSWrapper
 from torch import nn
 from torch.distributions import Distribution, constraints
@@ -483,7 +482,7 @@ def get_optimizer(parameters, mode, is_lars=False, **kwargs):
     is_lars : bool, optional
         Whether to use a LARS optimizer which can improve when using large batch sizes.
 
-    kwargs : 
+    kwargs :
         Additional arguments to the optimzier.
     """
     Optimizer = getattr(torch.optim, mode)
@@ -590,3 +589,89 @@ def plot_config(
             warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
             # reset defaults
             plt.rcParams.update(defaults)
+
+
+def tensors_to_fig(
+    x,
+    n_rows=None,
+    n_cols=None,
+    x_labels=[],
+    y_labels=[],
+    imgsize=(4, 4),
+):
+    """Make a grid-like figure from tensors and labels. Return figure."""
+    b, c, h, w = x.shape
+    assert (n_rows is not None) or (n_cols is not None)
+    if n_cols is None:
+        n_cols = b // n_rows
+    elif n_rows is None:
+        n_rows = b // n_cols
+
+    n_x_labels = len(x_labels)
+    n_y_labels = len(y_labels)
+    assert n_x_labels in [0, 1, n_cols]
+    assert n_y_labels in [0, 1, n_rows]
+
+    figsize = (imgsize[0] * n_cols, imgsize[1] * n_rows)
+
+    constrained_layout = True
+
+    # TODO : remove once use matplotlib 3.4
+    # i.e. use fig, axarr = plt.subplots(n_rows, n_cols, squeeze=False, sharex=True, sharey=True, figsize=figsize, constrained_layout=True)
+    if n_x_labels == 1 or n_y_labels == 1:
+        constrained_layout = False
+
+    fig, axarr = plt.subplots(
+        n_rows,
+        n_cols,
+        squeeze=False,
+        sharex=True,
+        sharey=True,
+        figsize=figsize,
+        constrained_layout=constrained_layout,
+    )
+
+    for i in range(n_cols):
+        for j in range(n_rows):
+            xij = x[i * n_rows + j]
+            xij = xij.permute(1, 2, 0)
+            axij = axarr[j, i]
+            if xij.size(2) == 1:
+                axij.imshow(to_numpy(xij.squeeze()), cmap="gray")
+            else:
+                axij.imshow(to_numpy(xij))
+
+            axij.get_xaxis().set_ticks([])
+            axij.get_xaxis().set_ticklabels([])
+            axij.get_yaxis().set_ticks([])
+            axij.get_yaxis().set_ticklabels([])
+
+            if n_x_labels == n_cols and j == (n_rows - 1):
+                axij.set_xlabel(x_labels[i])
+            if n_y_labels == n_rows and i == 0:
+                axij.set_ylabel(y_labels[j])
+
+    # TODO : remove all the resut once use matplotlib 3.4
+    # i.e. use:
+    #     if n_x_labels == 1:
+    #         fig.supxlabel(x_labels[0])
+
+    #     if n_y_labels == 1:
+    #         fig.supylabel(y_labels[0])
+    # fig.set_constrained_layout_pads(w_pad=0, h_pad=0.,hspace=hspace, wspace=wspace)
+
+    large_ax = fig.add_subplot(111, frameon=False)
+    # hide tick and tick label of the big axis
+    plt.tick_params(labelcolor="none", top=False, bottom=False, left=False, right=False)
+
+    if n_x_labels == 1:
+        large_ax.set_xlabel(x_labels[0])
+
+    if n_y_labels == 1:
+        large_ax.set_ylabel(y_labels[0])
+
+    # TODO : remove once use matplotlib 3.4
+    if n_x_labels == 1 or n_y_labels == 1:
+        plt.tight_layout()
+
+    return fig
