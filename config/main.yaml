@@ -113,7 +113,7 @@ data_feat: {}
 ### MODEL ###
 encoder:
   name: ???
-  z_dim: 10
+  z_dim: 128
   arch: ???
   arch_kwargs: {}
   fam_kwargs: {}
