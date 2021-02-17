@@ -19,10 +19,12 @@ from torchvision.transforms import (
     ColorJitter,
     RandomAffine,
     RandomErasing,
+    RandomHorizontalFlip,
     RandomRotation,
 )
 from utils.estimators import discrete_entropy
 
+from .autoaugment import CIFAR10Policy, ImageNetPolicy, SVHNPolicy
 from .base import LossylessCLFDataset, LossylessDataModule
 from .helpers import int_or_ratio
 
@@ -109,13 +111,18 @@ class LossylessImgDataset(LossylessCLFDataset):
         """
         return dict(
             PIL={
-                "rotation": RandomRotation(60),
+                "rotation": RandomRotation(30),
                 "y_translation": RandomAffine(0, translate=(0, 0.1)),
                 "x_translation": RandomAffine(0, translate=(0.1, 0)),
+                "shear": RandomAffine(0, shear=10),
                 "scale": RandomAffine(0, scale=(0.8, 1.2)),
                 "color": ColorJitter(
                     brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
                 ),
+                "hflip": RandomHorizontalFlip(),
+                "auto_cifar10": CIFAR10Policy(),
+                "auto_imagenet": ImageNetPolicy(),
+                "auto_svhn": SVHNPolicy(),
             },
             tensor={"erasing": RandomErasing(value=0.5),},
         )
