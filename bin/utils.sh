@@ -78,14 +78,16 @@ fi
 
 experiment="${prfx}""$experiment"
 
-results="results/exp_$experiment"
-if [ -d "$results" ]; then
+if [ "$is_plot_only" = false ] ; then
+  results="results/exp_$experiment"
+  if [ -d "$results" ]; then
 
-  echo -n "$results exist. Should I delete it (y/n) ? "
-  read answer
+    echo -n "$results exist. Should I delete it (y/n) ? "
+    read answer
 
-  if [ "$answer" != "${answer#[Yy]}" ] ;then
-      echo "Deleted $results"
-      rm -rf $results
-  fi
-fi  
+    if [ "$answer" != "${answer#[Yy]}" ] ;then
+        echo "Deleted $results"
+        rm -rf $results
+    fi
+  fi  
+fi
