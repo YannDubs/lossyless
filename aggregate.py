@@ -18,8 +18,14 @@ from omegaconf import OmegaConf
 from lossyless.helpers import BASE_LOG, check_import
 from main import COMPRESSOR_RES
 from utils.helpers import omegaconf2namespace
-from utils.postplotting import (PRETTY_RENAMER, PostPlotter, data_getter,
-                                folder_split, single_plot, table_summarizer)
+from utils.postplotting import (
+    PRETTY_RENAMER,
+    PostPlotter,
+    data_getter,
+    folder_split,
+    single_plot,
+    table_summarizer,
+)
 from utils.postplotting.helpers import aggregate
 from utils.visualizations.helpers import kwargs_log_scale
 
@@ -50,6 +56,10 @@ def main(cfg):
     for name, pattern in cfg.collect_data.items():
         if pattern is not None:
             aggregator.collect_data(pattern=pattern, table_name=name)
+
+    if len(cfg.collect_data) > 1:
+        # if multiple tables also add "merged" that contains all
+        aggregator.merge_tables(list(cfg.collect_data.keys()))
 
     aggregator.subset(cfg.col_val_subset)
 
@@ -104,6 +114,16 @@ class ResultAggregator(PostPlotter):
         self.tables = dict()
         self.param_names = dict()
 
+    def merge_tables(self, to_merge=["featurizer", "predictor"]):
+        """Add one large table called `"merge"` that concatenates other tables."""
+        merged = self.tables[to_merge[0]]
+        for table in to_merge[1:]:
+            merged = pd.merge(
+                merged, self.tables[table], left_index=True, right_index=True
+            )
+        self.param_names["merged"] = list(merged.index.names)
+        self.tables["merged"] = merged
+
     def collect_data(
         self,
         pattern=f"results/**/{COMPRESSOR_RES}",
@@ -128,7 +148,7 @@ class ResultAggregator(PostPlotter):
         table_name : str, optional
             Name of the table under which to save the loaded data.
 
-        params_to_rm : list of str, optional   
+        params_to_rm : list of str, optional
             Params to remove.
         """
         paths = glob.glob(str(self.base_dir / pattern), recursive=True)
@@ -212,6 +232,7 @@ class ResultAggregator(PostPlotter):
         kwargs :
             Additional arguments to `plot_scatter_lines`.
         """
+
         data = merge_rate_distortions(data, rate_cols, distortion_cols)
 
         is_single_col = len(distortion_cols) == 1
@@ -236,8 +257,10 @@ class ResultAggregator(PostPlotter):
             **kwargs,
         )
 
+    @data_getter
     def plot_invariance_RD_curve(
         self,
+        data="featurizer",
         col_dist_param="dist",
         noninvariant="vae",
         rate_col="test/feat/rate",
@@ -255,6 +278,9 @@ class ResultAggregator(PostPlotter):
 
         Parameters
         ----------
+        data : pd.DataFrame or str
+            Dataframe to use for plotting. If str will use one of self.tables. If `None` runs all tables.
+
         col_dist_param : str, optional
             Name of the column that will distinguish the non invariant and the invariant model.
 
@@ -267,7 +293,7 @@ class ResultAggregator(PostPlotter):
         kwargs :
             Additional arguments to `plot_scatter_lines`.
         """
-        results = self.tables["featurizer"]
+        results = data
         results = merge_rate_distortions(
             results, [rate_col], [upper_distortion, desirable_distortion]
         )
@@ -357,7 +383,7 @@ class ResultAggregator(PostPlotter):
             in terms of prediction to the best one.
 
         filename : str, optional
-            Name of the file for saving to summarized RD curves. Can interpolate {table} if from 
+            Name of the file for saving to summarized RD curves. Can interpolate {table} if from
             self.tables.
         """
         check_import("sklearn", "summarize_RD_curves")
@@ -617,7 +643,10 @@ class ResultAggregator(PostPlotter):
 
         elif mode == "lmplot":
             used_kwargs = dict(
-                legend="full", sharey=sharey, sharex=sharex, legend_out=legend_out,
+                legend="full",
+                sharey=sharey,
+                sharex=sharex,
+                legend_out=legend_out,
             )
             used_kwargs.update(kwargs)
 

@@ -432,7 +432,6 @@ def evaluate(
     """
     # Evaluation
     eval_dataloader = datamodule.eval_dataloader(cfg.evaluation.is_eval_on_test)
-
     test_res = trainer.test(test_dataloaders=eval_dataloader, ckpt_path=ckpt_path)[0]
     if is_est_entropies and is_featurizer:
         append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
@@ -443,9 +442,9 @@ def evaluate(
         test_dataloaders=datamodule.train_dataloader(), ckpt_path=ckpt_path
     )[0]
     train_res = replace_keys(train_res, "test", "testtrain")
-    if cfg.evaluation.is_est_entropies and is_featurizer:
+    if is_est_entropies and is_featurizer:
         # ? this can be slow on all training set, is it necessary ?
-        append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=False)
+        append_entropy_est_(train_res, trainer, datamodule, cfg, is_test=False)
     log_dict(trainer, train_res, is_param=False)
 
     # save results
