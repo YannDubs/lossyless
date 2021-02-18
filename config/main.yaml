@@ -146,7 +146,7 @@ predictor:
 
 ### OPTIMIZER ###
 optimizer_pred: 
-  is_lr_find: True # whether to automatically look for best lr (only set the sugggested value if lr is None, if not just plots)
+  is_lr_find: False # whether to automatically look for best lr (only set the sugggested value if lr is None, if not just plots)
 scheduler_pred: {}
 
 ### RUNNING ###
