@@ -7,18 +7,15 @@ import copy
 import logging
 from pathlib import Path
 
+import matplotlib.pyplot as plt
+import pandas as pd
+
 import compressai
 import hydra
-import matplotlib.pyplot as plt
+import lossyless
 import omegaconf
-import pandas as pd
 import pl_bolts
 import pytorch_lightning as pl
-from omegaconf import OmegaConf
-from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
-
-import lossyless
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
 from lossyless.callbacks import (
     CodebookPlot,
@@ -28,6 +25,9 @@ from lossyless.callbacks import (
 )
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import, orderedset
+from omegaconf import OmegaConf
+from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
 from utils.helpers import (
@@ -51,6 +51,7 @@ PREDICTOR_CHCKPNT = "best_predictor.ckpt"
 LAST_CHCKPNT = "last.ckpt"
 COMPRESSOR_RES = "results_compressor.csv"
 PREDICTOR_RES = "results_predictor.csv"
+FILE_END = "end.txt"
 
 
 @hydra.main(config_name="main", config_path="config")
@@ -70,14 +71,10 @@ def main(cfg):
     if not comp_cfg.featurizer.is_learnable:
         logger.info(f"Using classical compressor {comp_cfg.featurizer.mode} ...")
         compressor = ClassicalCompressor(hparams=comp_cfg)
-        comp_trainer = get_trainer(
-            comp_cfg,
-            compressor,
-            is_featurizer=True,
-        )
+        comp_trainer = get_trainer(comp_cfg, compressor, is_featurizer=True,)
         placeholder_fit(comp_trainer, compressor, comp_datamodule)
 
-    elif comp_cfg.featurizer.is_train:
+    elif comp_cfg.featurizer.is_train and not is_trained(comp_cfg, COMPRESSOR_CHCKPNT):
         compressor = LearnableCompressor(hparams=comp_cfg)
         comp_trainer = get_trainer(comp_cfg, compressor, is_featurizer=True)
         initialize_compressor_(compressor, comp_datamodule, comp_trainer, comp_cfg)
@@ -135,7 +132,7 @@ def main(cfg):
         pred_cfg
     )  # ensure real python types (only once cfg are fixed)
 
-    if pred_cfg.predictor.is_train:
+    if pred_cfg.predictor.is_train and not is_trained(comp_cfg, PREDICTOR_CHCKPNT):
         predictor = Predictor(hparams=pred_cfg, featurizer=onfly_featurizer)
         pred_trainer = get_trainer(pred_cfg, predictor, is_featurizer=False)
         initialize_predictor_(predictor, pred_datamodule, pred_trainer, pred_cfg)
@@ -231,6 +228,19 @@ def set_cfg(cfg, mode):
                 Path(path).mkdir(parents=True, exist_ok=True)
 
         Path(cfg.paths.pretrained.save).mkdir(parents=True, exist_ok=True)
+
+    file_end = Path(cfg.paths.logs) / f"{cfg.stage}_{FILE_END}"
+    if file_end.is_file():
+        logger.info(f"Skipping most of {cfg.stage} as {file_end} exists.")
+
+        with omegaconf.open_dict(cfg):
+            if mode == "featurizer":
+                cfg.featurizer.is_train = False
+                cfg.evaluation.featurizer.is_evaluate = False
+
+            elif mode == "predictor":  # improbable
+                cfg.predictor.is_train = False
+                cfg.evaluation.predictor.is_evaluate = False
 
     return cfg
 
@@ -342,9 +352,7 @@ def get_logger(cfg, module, is_featurizer):
             cfg.trainer.track_grad_norm = -1
             to_watch = module.p_ZlX.mapper if is_featurizer else module.predictor
             logger.watch(
-                to_watch,
-                log="gradients",
-                log_freq=cfg.trainer.log_every_n_steps * 10,
+                to_watch, log="gradients", log_freq=cfg.trainer.log_every_n_steps * 10,
             )
 
     elif cfg.logger.name == "tensorboard":
@@ -397,6 +405,12 @@ def save_pretrained(cfg, trainer, file):
     trainer.save_checkpoint(dest_path / file, weights_only=True)
 
 
+def is_trained(cfg, file):
+    """Test whether already saved the checkpoint, if yes then you already trained but might have preempted."""
+    dest_path = Path(cfg.paths.pretrained.save)
+    return (dest_path / file).is_file()
+
+
 def load_pretrained(cfg, Module, file):
     """Load the best checkpoint from the latest run that has the same name as current run."""
     save_path = Path(cfg.paths.pretrained.load)
@@ -430,30 +444,36 @@ def evaluate(
     Can also compute sample estimates of soem entropies, which should be better estimates than the
     lower bounds used during training. Only estimate entropies if `is_featurizer`.
     """
-    # Evaluation
-    eval_dataloader = datamodule.eval_dataloader(cfg.evaluation.is_eval_on_test)
-    test_res = trainer.test(test_dataloaders=eval_dataloader, ckpt_path=ckpt_path)[0]
-    if is_est_entropies and is_featurizer:
-        append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
-    log_dict(trainer, test_res, is_param=False)
+    try:
+        # Evaluation
+        eval_dataloader = datamodule.eval_dataloader(cfg.evaluation.is_eval_on_test)
+        test_res = trainer.test(test_dataloaders=eval_dataloader, ckpt_path=ckpt_path)[
+            0
+        ]
+        if is_est_entropies and is_featurizer:
+            append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
+        log_dict(trainer, test_res, is_param=False)
 
-    # Evaluation on train
-    train_res = trainer.test(
-        test_dataloaders=datamodule.train_dataloader(), ckpt_path=ckpt_path
-    )[0]
-    train_res = replace_keys(train_res, "test", "testtrain")
-    if is_est_entropies and is_featurizer:
-        # ? this can be slow on all training set, is it necessary ?
-        append_entropy_est_(train_res, trainer, datamodule, cfg, is_test=False)
-    log_dict(trainer, train_res, is_param=False)
+        # Evaluation on train
+        train_res = trainer.test(
+            test_dataloaders=datamodule.train_dataloader(), ckpt_path=ckpt_path
+        )[0]
+        train_res = replace_keys(train_res, "test", "testtrain")
+        if is_est_entropies and is_featurizer:
+            # ? this can be slow on all training set, is it necessary ?
+            append_entropy_est_(train_res, trainer, datamodule, cfg, is_test=False)
+        log_dict(trainer, train_res, is_param=False)
 
-    # save results
-    train_res = replace_keys(train_res, "testtrain/", "")
-    test_res = replace_keys(test_res, "test/", "")
-    results = pd.DataFrame.from_dict(dict(train=train_res, test=test_res))
-    path = Path(cfg.paths.results) / file
-    results.to_csv(path, header=True, index=True)
-    logger.info(f"Logging results to {path}.")
+        # save results
+        train_res = replace_keys(train_res, "testtrain/", "")
+        test_res = replace_keys(test_res, "test/", "")
+        results = pd.DataFrame.from_dict(dict(train=train_res, test=test_res))
+        path = Path(cfg.paths.results) / file
+        results.to_csv(path, header=True, index=True)
+        logger.info(f"Logging results to {path}.")
+    except:
+        logger.exception("Failed to evaluate. Skipping this error:")
+        pass
 
 
 def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
@@ -473,10 +493,7 @@ def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
         dataloader = datamodule.train_dataloader(dataset_kwargs=dkwargs)
 
     H_MlZ, H_YlZ, H_Z = estimate_entropies(
-        trainer,
-        dataloader,
-        is_discrete_M=is_discrete_M,
-        is_discrete_Y=is_discrete_Y,
+        trainer, dataloader, is_discrete_M=is_discrete_M, is_discrete_Y=is_discrete_Y,
     )
     prfx = "test" if is_test else "testtrain"
     results[f"{prfx}/feat/H_MlZ"] = H_MlZ
@@ -510,6 +527,10 @@ def finalize_stage(cfg, module, trainer):
 
     for checkpoint in Path(cfg.checkpoint.kwargs.dirpath).glob("*.ckpt"):
         checkpoint.unlink()  # remove all checkpoints as best is already saved elsewhere
+
+    # save end fiel to make sure that you don't retrain if preemption
+    file_end = Path(cfg.paths.logs) / f"{cfg.stage}_{FILE_END}"
+    file_end.touch(exist_ok=True)
 
 
 def finalize(modules, trainers, datamodules, cfgs):
