@@ -304,6 +304,7 @@ def get_logger(cfg, module, is_featurizer):
     # useful for different modes (e.g. wandb_kwargs)
     kwargs.update(cfg.logger.get(f"{cfg.logger.name}_kwargs", {}))
 
+
     if cfg.logger.name == "csv":
         logger = CSVLogger(**kwargs)
 
@@ -326,6 +327,10 @@ def get_logger(cfg, module, is_featurizer):
 
     elif cfg.logger.name == "tensorboard":
         logger = TensorBoardLogger(**kwargs)
+
+        def save_hack():
+            pass
+        logger.save = save_hack
 
     elif cfg.logger.name is None:
         logger = False
