@@ -312,6 +312,10 @@ class HRateEstimator(RateEstimator):
             p for n, p in self.named_parameters() if n.endswith(".quantiles")
         )
 
+    @property
+    def is_updated(self):
+        return self.entropy_bottleneck._offset.numel() > 0
+
 
 class HRateFactorizedPrior(HRateEstimator):
     """
@@ -348,7 +352,7 @@ class HRateFactorizedPrior(HRateEstimator):
 
         logs = dict(H_q_Z=neg_log_q_z.mean() / math.log(BASE_LOG), H_ZlX=0)
 
-        if not self.training:
+        if not self.training and self.is_updated:
             n_bits, logs2 = self.real_rate(z, is_return_logs=True)
             logs.update(logs2)
             logs["n_bits"] = n_bits
@@ -462,7 +466,7 @@ class HRateHyperprior(HRateEstimator):
             H_ZlX=0,
         )
 
-        if not self.training:
+        if not self.training and self.is_updated:
             n_bits, logs2 = self.real_rate(z, is_return_logs=True)
             logs.update(logs2)
             logs["n_bits"] = n_bits
@@ -556,8 +560,4 @@ class HRateHyperprior(HRateEstimator):
         net.load_state_dict(state_dict)
         return net
 
-    def update(self, force=False, scale_table=None):
-        if scale_table is None:
-            scale_table = get_scale_table()
-        self.gaussian_conditional.update_scale_table(scale_table, force=force)
-        super().update(force=force)
+    update = compressai.models.ScaleHyperprior.update

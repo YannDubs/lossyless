@@ -247,7 +247,7 @@ class LearnableCompressor(pl.LightningModule):
         )
         return loss
 
-    def on_validation_epoch_start(self):
+    def on_test_epoch_start(self):
         """Make sure that you can actually use the coder during eval."""
         self.rate_estimator.update(force=True)
 
