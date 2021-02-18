@@ -7,13 +7,8 @@ from torch.nn import functional as F
 
 from .architectures import get_Architecture
 from .distributions import Deterministic, DiagGaussian
-from .helpers import (
-    BASE_LOG,
-    UnNormalizer,
-    is_colored_img,
-    kl_divergence,
-    mse_or_crossentropy_loss,
-)
+from .helpers import (BASE_LOG, UnNormalizer, is_colored_img, kl_divergence,
+                      mse_or_crossentropy_loss)
 
 __all__ = ["get_distortion_estimator"]
 

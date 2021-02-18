@@ -138,9 +138,13 @@ class ClassicalCompressor(pl.LightningModule):
         self.save_hyperparameters(hparams)
         self.out_shape = self.hparams.data.shape  # always return reconstruction
 
-        dataset = self.hparams.data.dataset
-        self.unormalizer = UnNormalizer(dataset)
-        self.normalizer = Normalizer(dataset)
+        if self.hparams.data.kwargs.dataset_kwargs.is_normalize:
+            dataset = self.hparams.data.dataset
+            self.unormalizer = UnNormalizer(dataset)
+            self.normalizer = Normalizer(dataset)
+        else:
+            self.unormalizer = nn.Identity()
+            self.normalizer = nn.Identity()
 
         if self.hparams.featurizer.mode is None:
             self.compressor = Identity()

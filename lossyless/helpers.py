@@ -4,15 +4,17 @@ import operator
 import random
 import sys
 import time
+import warnings
 from collections import OrderedDict
 from functools import reduce
 from numbers import Number
 
+import einops
 import matplotlib.pyplot as plt
 import numpy as np
-
-import einops
+import seaborn as sns
 import torch
+from matplotlib.cbook import MatplotlibDeprecationWarning
 from pl_bolts.optimizers.lars_scheduling import LARSWrapper
 from torch import nn
 from torch.distributions import Distribution, constraints
@@ -480,7 +482,7 @@ def get_optimizer(parameters, mode, is_lars=False, **kwargs):
     is_lars : bool, optional
         Whether to use a LARS optimizer which can improve when using large batch sizes.
 
-    kwargs : 
+    kwargs :
         Additional arguments to the optimzier.
     """
     Optimizer = getattr(torch.optim, mode)
@@ -503,3 +505,173 @@ def append_optimizer_scheduler_(
         schedulers += [scheduler]
 
     return optimizers, schedulers
+
+
+@contextlib.contextmanager
+def plot_config(
+    style="ticks",
+    context="notebook",
+    palette="colorblind",
+    font_scale=1,
+    font="sans-serif",
+    is_ax_off=False,
+    is_rm_xticks=False,
+    is_rm_yticks=False,
+    rc=dict(),
+    set_kwargs=dict(),
+    despine_kwargs=dict(),
+    # pretty_renamer=dict(), #TODO
+):
+    """Temporary seaborn and matplotlib figure style / context / limits / ....
+
+    Parameters
+    ----------
+    style : dict, None, or one of {darkgrid, whitegrid, dark, white, ticks}
+        A dictionary of parameters or the name of a preconfigured set.
+
+    context : dict, None, or one of {paper, notebook, talk, poster}
+        A dictionary of parameters or the name of a preconfigured set.
+
+    palette : string or sequence
+        Color palette, see :func:`color_palette`
+
+    font : string
+        Font family, see matplotlib font manager.
+
+    font_scale : float, optional
+        Separate scaling factor to independently scale the size of the
+        font elements.
+
+    is_ax_off : bool, optional
+        Whether to turn off all axes.
+
+    is_rm_xticks, is_rm_yticks : bool, optional
+        Whether to remove the ticks and labels from y or x axis.
+
+    rc : dict, optional
+        Parameter mappings to override the values in the preset seaborn
+        style dictionaries.
+
+    set_kwargs : dict, optional
+        kwargs for matplotlib axes. Such as xlim, ylim, ...
+
+    despine_kwargs : dict, optional
+        Arguments to `sns.despine`.
+    """
+    defaults = plt.rcParams.copy()
+
+    try:
+        rc["font.family"] = font
+        plt.rcParams.update(rc)
+
+        with sns.axes_style(style=style, rc=rc), sns.plotting_context(
+            context=context, font_scale=font_scale, rc=rc
+        ), sns.color_palette(palette):
+            yield
+            last_fig = plt.gcf()
+            for i, ax in enumerate(last_fig.axes):
+                ax.set(**set_kwargs)
+
+                if is_ax_off:
+                    ax.axis("off")
+
+                if is_rm_yticks:
+                    ax.axes.yaxis.set_ticks([])
+
+                if is_rm_xticks:
+                    ax.axes.xaxis.set_ticks([])
+
+        sns.despine(**despine_kwargs)
+
+    finally:
+        with warnings.catch_warnings():
+            # filter out depreciation warnings when resetting defaults
+            warnings.filterwarnings("ignore", category=MatplotlibDeprecationWarning)
+            # reset defaults
+            plt.rcParams.update(defaults)
+
+
+def tensors_to_fig(
+    x,
+    n_rows=None,
+    n_cols=None,
+    x_labels=[],
+    y_labels=[],
+    imgsize=(4, 4),
+):
+    """Make a grid-like figure from tensors and labels. Return figure."""
+    b, c, h, w = x.shape
+    assert (n_rows is not None) or (n_cols is not None)
+    if n_cols is None:
+        n_cols = b // n_rows
+    elif n_rows is None:
+        n_rows = b // n_cols
+
+    n_x_labels = len(x_labels)
+    n_y_labels = len(y_labels)
+    assert n_x_labels in [0, 1, n_cols]
+    assert n_y_labels in [0, 1, n_rows]
+
+    figsize = (imgsize[0] * n_cols, imgsize[1] * n_rows)
+
+    constrained_layout = True
+
+    # TODO : remove once use matplotlib 3.4
+    # i.e. use fig, axarr = plt.subplots(n_rows, n_cols, squeeze=False, sharex=True, sharey=True, figsize=figsize, constrained_layout=True)
+    if n_x_labels == 1 or n_y_labels == 1:
+        constrained_layout = False
+
+    fig, axarr = plt.subplots(
+        n_rows,
+        n_cols,
+        squeeze=False,
+        sharex=True,
+        sharey=True,
+        figsize=figsize,
+        constrained_layout=constrained_layout,
+    )
+
+    for i in range(n_cols):
+        for j in range(n_rows):
+            xij = x[i * n_rows + j]
+            xij = xij.permute(1, 2, 0)
+            axij = axarr[j, i]
+            if xij.size(2) == 1:
+                axij.imshow(to_numpy(xij.squeeze()), cmap="gray")
+            else:
+                axij.imshow(to_numpy(xij))
+
+            axij.get_xaxis().set_ticks([])
+            axij.get_xaxis().set_ticklabels([])
+            axij.get_yaxis().set_ticks([])
+            axij.get_yaxis().set_ticklabels([])
+
+            if n_x_labels == n_cols and j == (n_rows - 1):
+                axij.set_xlabel(x_labels[i])
+            if n_y_labels == n_rows and i == 0:
+                axij.set_ylabel(y_labels[j])
+
+    # TODO : remove all the resut once use matplotlib 3.4
+    # i.e. use:
+    #     if n_x_labels == 1:
+    #         fig.supxlabel(x_labels[0])
+
+    #     if n_y_labels == 1:
+    #         fig.supylabel(y_labels[0])
+    # fig.set_constrained_layout_pads(w_pad=0, h_pad=0.,hspace=hspace, wspace=wspace)
+
+    large_ax = fig.add_subplot(111, frameon=False)
+    # hide tick and tick label of the big axis
+    plt.tick_params(labelcolor="none", top=False, bottom=False, left=False, right=False)
+
+    if n_x_labels == 1:
+        large_ax.set_xlabel(x_labels[0])
+
+    if n_y_labels == 1:
+        large_ax.set_ylabel(y_labels[0])
+
+    # TODO : remove once use matplotlib 3.4
+    if n_x_labels == 1 or n_y_labels == 1:
+        plt.tight_layout()
+
+    return fig

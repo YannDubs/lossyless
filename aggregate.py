@@ -1,25 +1,33 @@
-"""Entropy point to aggregate a series of results obtained using `main.py` in a nice plot / table.
+"""Entry point to aggregate a series of results obtained using `main.py` in a nice plot / table.
 
 This should be called by `python aggregate.py <conf>` where <conf> sets all configs from the cli, see 
 the file `config/aggregate.yaml` for details about the configs. or use `python aggregate.py -h`.
 """
-import functools
+
 import glob
-import inspect
 import logging
 from pathlib import Path
 
+import hydra
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from omegaconf import OmegaConf
 
-import hydra
 from lossyless.helpers import BASE_LOG, check_import
 from main import COMPRESSOR_RES
-from omegaconf import OmegaConf
-from utils.helpers import StrFormatter, omegaconf2namespace
-from utils.visualizations.helpers import kwargs_log_scale, plot_config
+from utils.helpers import omegaconf2namespace
+from utils.postplotting import (
+    PRETTY_RENAMER,
+    PostPlotter,
+    data_getter,
+    folder_split,
+    single_plot,
+    table_summarizer,
+)
+from utils.postplotting.helpers import aggregate
+from utils.visualizations.helpers import kwargs_log_scale
 
 try:
     import sklearn.metrics
@@ -27,37 +35,6 @@ except:
     pass
 
 logger = logging.getLogger(__name__)
-
-
-PRETTY_RENAMER = StrFormatter(
-    exact_match={},
-    subtring_replace={
-        # Math stuff
-        "H_Q_Zls": r"$\mathrm{H}_{\theta}[Z|S]$",
-        "H_Q_Tlz": r"$\mathrm{H}_{\theta}[T|Z]$",
-        "H_Q_Z": r"$\mathrm{H}_{\theta}[Z]$",
-        "H_Q_S": r"$\mathrm{H}_{\theta}[S]$",
-        "H_Ylz": r"$\mathrm{H}[Y|Z]$",
-        "H_Zlx": r"$\mathrm{H}[Z|X]$",
-        "H_Mlz": r"$\mathrm{H}[M(X)|Z]$",
-        "H_Z": r"$\mathrm{H}[Z]$",
-        "I_Q_Zx": r"$\mathrm{I}_{\theta}[Z;X]$",
-        "I_Q_Zm": r"$\mathrm{I}_{\theta}[Z;M]$",
-        "beta": r"$\beta$",
-        # General
-        "_": " ",
-        "Resnet": "ResNet",
-        "Ivae": "Inv. VAE",
-        "Ivib": "Inv. VIB",
-        "Ince": "Inv. NCE",
-        "Bananarot": "Rotation Inv. Banana",
-        "Bananaxtrnslt": "X-axis Inv. Banana",
-        "Bananaytrnslt": "Y-axis Inv. Banana",
-        "Lr": "Learning Rate",
-        "Online Loss": r"$\mathrm{H}_{\theta}[Y|Z]$",
-    },
-    to_upper=["Cifar10", "Mnist", "Mlp", "Vae", "Nce", "Vib", "Adam",],
-)
 
 
 @hydra.main(config_name="aggregate", config_path="config")
@@ -73,12 +50,16 @@ def main(cfg):
     # make sure you are using primitive types from now on because omegaconf does not always work
     cfg = omegaconf2namespace(cfg)
 
-    aggregator = Aggregator(pretty_renamer=PRETTY_RENAMER, **cfg.kwargs)
+    aggregator = ResultAggregator(pretty_renamer=PRETTY_RENAMER, **cfg.kwargs)
 
-    logger.info(f"Recolting the data ..")
+    logger.info(f"Collecting the data ..")
     for name, pattern in cfg.collect_data.items():
         if pattern is not None:
             aggregator.collect_data(pattern=pattern, table_name=name)
+
+    if len(cfg.collect_data) > 1:
+        # if multiple tables also add "merged" that contains all
+        aggregator.merge_tables(list(cfg.collect_data.keys()))
 
     aggregator.subset(cfg.col_val_subset)
 
@@ -108,202 +89,9 @@ def begin(cfg):
     logger.info(f"Aggregating {cfg.experiment} ...")
 
 
-# DECORATORS
-def get_default_args(func):
-    """Return the default arguments of a function.
-    credit : https://stackoverflow.com/questions/12627118/get-a-function-arguments-default-value
-    """
-    signature = inspect.signature(func)
-    return {
-        k: v.default
-        for k, v in signature.parameters.items()
-        if v.default is not inspect.Parameter.empty
-    }
-
-
-def data_getter(fn):
-    """Get the correct data."""
-    dflt_kwargs = get_default_args(fn)
-
-    @functools.wraps(fn)
-    def helper(
-        self, data=dflt_kwargs["data"], filename=dflt_kwargs["filename"], **kwargs
-    ):
-        if data is None:
-            # if None run all tables
-            return [
-                helper(self, data=k, filename=filename, **kwargs)
-                for k in self.tables.keys()
-            ]
-
-        if isinstance(data, str):
-            # cannot use format because might be other other patterns (format cannot do partial format)
-            filename = filename.replace("{table}", data)
-            data = self.tables[data]
-
-        data = data.copy()
-
-        return fn(self, data=data, filename=filename, **kwargs)
-
-    return helper
-
-
-def table_summarizer(fn):
-    """Get the data and save the summarized output to a csv if needed.."""
-    dflt_kwargs = get_default_args(fn)
-
-    @functools.wraps(fn)
-    def helper(
-        self, data=dflt_kwargs["data"], filename=dflt_kwargs["filename"], **kwargs
-    ):
-
-        summary = fn(self, data=data, **kwargs)
-
-        if self.is_return_plots:
-            return summary
-        else:
-            summary.to_csv(self.save_dir / f"{self.prfx}{filename}.csv")
-
-    return helper
-
-
-def folder_split(fn):
-    """Split the dataset by the values in folder_col and call fn on each subfolder."""
-    dflt_kwargs = get_default_args(fn)
-
-    @functools.wraps(fn)
-    def helper(
-        self,
-        *args,
-        data=dflt_kwargs["data"],
-        folder_col=dflt_kwargs["folder_col"],
-        filename=dflt_kwargs["filename"],
-        **kwargs,
-    ):
-        kws = ["folder_col"]
-        for kw in kws:
-            kwargs[kw] = eval(kw)
-
-        if folder_col is None:
-            processed_filename = self.save_dir / f"{self.prfx}{filename}"
-            return fn(self, *args, data=data, filename=processed_filename, **kwargs)
-
-        else:
-            out = []
-            flat = data.reset_index(drop=False)
-            for curr_folder in flat[folder_col].unique():
-                curr_data = flat[flat[folder_col] == curr_folder]
-
-                sub_dir = self.save_dir / f"{folder_col}_{curr_folder}"
-                sub_dir.mkdir(parents=True, exist_ok=True)
-
-                processed_filename = sub_dir / f"{self.prfx}{filename}"
-
-                out.append(
-                    fn(
-                        self,
-                        *args,
-                        data=curr_data.set_index(data.index.names),
-                        filename=processed_filename,
-                        **kwargs,
-                    )
-                )
-            return out
-
-    return helper
-
-
-def single_plot(fn):
-    """
-    Wraps any of the aggregator function to produce a single figure. THis enables setting
-    general seaborn and matplotlib parameters, saving the figure if needed, and aggregating the
-    data over desired indices.
-    """
-    dflt_kwargs = get_default_args(fn)
-
-    @functools.wraps(fn)
-    def helper(
-        self,
-        x,
-        y,
-        *args,
-        data=dflt_kwargs["data"],
-        folder_col=dflt_kwargs["folder_col"],
-        filename=dflt_kwargs["filename"],
-        cols_vary_only=dflt_kwargs["cols_vary_only"],
-        cols_to_agg=dflt_kwargs["cols_to_agg"],
-        aggregates=dflt_kwargs["aggregates"],
-        plot_config_kwargs=dflt_kwargs["plot_config_kwargs"],
-        row_title=dflt_kwargs["row_title"],
-        col_title=dflt_kwargs["col_title"],
-        x_rotate=dflt_kwargs["x_rotate"],
-        is_no_legend_title=dflt_kwargs["is_no_legend_title"],
-        set_kwargs=dflt_kwargs["set_kwargs"],
-        **kwargs,
-    ):
-        filename = Path(str(filename).format(x=x, y=y))
-
-        kws = [
-            "folder_col",
-            "filename",
-            "cols_vary_only",
-            "cols_to_agg",
-            "aggregates",
-            "plot_config_kwargs",
-            "row_title",
-            "col_title",
-            "x_rotate",
-            "is_no_legend_title",
-            "set_kwargs",
-        ]
-        for kw in kws:
-            kwargs[kw] = eval(kw)  # put back in kwargs
-
-        kwargs["x"] = x
-        kwargs["y"] = y
-
-        assert_sns_vary_only_param(data, kwargs, cols_vary_only)
-
-        data = aggregate(data, cols_to_agg, aggregates)
-        pretty_data = self.prettify_(data)
-        pretty_kwargs = self.prettify_kwargs(pretty_data, **kwargs)
-        used_plot_config = dict(self.plot_config_kwargs, **plot_config_kwargs)
-
-        with plot_config(**used_plot_config):
-            sns_plot = fn(self, *args, data=pretty_data, **pretty_kwargs)
-
-        for ax in sns_plot.axes.flat:
-            plt.setp(ax.texts, text="")
-        sns_plot.set_titles(row_template=row_title, col_template=col_title)
-
-        if x_rotate != 0:
-            # calling directly `set_xticklabels` on FacetGrid removes the labels sometimes
-            for axes in sns_plot.axes.flat:
-                axes.set_xticklabels(axes.get_xticklabels(), rotation=x_rotate)
-
-        if is_no_legend_title:
-            #! not going to work well if is_legend_out (double legend)
-            for ax in sns_plot.fig.axes:
-                handles, labels = ax.get_legend_handles_labels()
-                if len(handles) > 1:
-                    ax.legend(handles=handles[1:], labels=labels[1:])
-
-        sns_plot.set(**set_kwargs)
-
-        if self.is_return_plots:
-            return sns_plot
-        else:
-            sns_plot.fig.savefig(
-                f"{filename}.png", dpi=self.dpi,
-            )
-            plt.close(sns_plot.fig)
-
-    return helper
-
-
 # MAIN CLASS
-class Aggregator:
-    """Result aggregator.
+class ResultAggregator(PostPlotter):
+    """Aggregates batches of results (multirun)
 
     Parameters
     ----------
@@ -313,44 +101,28 @@ class Aggregator:
     base_dir : str or Path
         Base folder from which all paths start.
 
-    is_return_plots : bool, optional
-        Whether to return plots instead of saving them.
-
-    prfx : str, optional
-        Prefix for the filename to save.
-
-    pretty_renamer : dict, optional
-        Dictionary mapping string (keys) to human readable ones for nicer printing and plotting.
-
-    dpi : int, optional
-        Resolution of the figures
-
-    plot_config_kwargs : dict, optional
-        Default general config for plotting, e.g. arguments to matplotlib.rc, sns.plotting_context,
-        color palettes, matplotlib.set...
+    kwargs :
+        Additional arguments to `PostPlotter`.
     """
 
-    def __init__(
-        self,
-        save_dir,
-        base_dir=Path(__file__).parent,
-        is_return_plots=False,
-        prfx="",
-        pretty_renamer=PRETTY_RENAMER,
-        dpi=300,
-        plot_config_kwargs={},
-    ):
+    def __init__(self, save_dir, base_dir=Path(__file__).parent, **kwargs):
+        super().__init__(**kwargs)
         self.base_dir = Path(base_dir)
         self.save_dir = self.base_dir / Path(save_dir)
-        self.is_return_plots = is_return_plots
-        self.prfx = prfx
-        self.pretty_renamer = pretty_renamer
-        self.dpi = dpi
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+
         self.tables = dict()
         self.param_names = dict()
-        self.plot_config_kwargs = plot_config_kwargs
 
-        self.save_dir.mkdir(parents=True, exist_ok=True)
+    def merge_tables(self, to_merge=["featurizer", "predictor"]):
+        """Add one large table called `"merge"` that concatenates other tables."""
+        merged = self.tables[to_merge[0]]
+        for table in to_merge[1:]:
+            merged = pd.merge(
+                merged, self.tables[table], left_index=True, right_index=True
+            )
+        self.param_names["merged"] = list(merged.index.names)
+        self.tables["merged"] = merged
 
     def collect_data(
         self,
@@ -376,7 +148,7 @@ class Aggregator:
         table_name : str, optional
             Name of the table under which to save the loaded data.
 
-        params_to_rm : list of str, optional   
+        params_to_rm : list of str, optional
             Params to remove.
         """
         paths = glob.glob(str(self.base_dir / pattern), recursive=True)
@@ -410,31 +182,6 @@ class Aggregator:
         param_name = list(params.keys())
         self.tables[table_name] = pd.concat(results, axis=0).set_index(param_name)
         self.param_names[table_name] = param_name
-
-    def prettify_(self, table):
-        """Make the name and values in a dataframe prettier / human readable (inplace)."""
-        idcs = table.index.names
-        table = table.reset_index()  # also want to modify multiindex so tmp flatten
-        table.columns = [self.pretty_renamer[c] for c in table.columns]
-        table = table.applymap(self.pretty_renamer)
-        table = table.set_index([self.pretty_renamer[c] for c in idcs])
-
-        # replace `None` with "None" for string columns such that can see those
-        str_col = table.select_dtypes(include=object).columns
-        table[str_col] = table[str_col].fillna(value="None")
-
-        return table
-
-    def prettify_kwargs(self, table, **kwargs):
-        """Change the kwargs of plotting function such that usable with `prettify(table)`."""
-        cols_and_idcs = list(table.columns) + list(table.index.names)
-        return {
-            # only prettify if part of the columns (not arguments to seaborn)
-            k: self.pretty_renamer[v]
-            if isinstance(v, str) and self.pretty_renamer[v] in cols_and_idcs
-            else v
-            for k, v in kwargs.items()
-        }
 
     def subset(self, col_val):
         """Subset all tables by keeping only the given values in given columns.
@@ -485,6 +232,7 @@ class Aggregator:
         kwargs :
             Additional arguments to `plot_scatter_lines`.
         """
+
         data = merge_rate_distortions(data, rate_cols, distortion_cols)
 
         is_single_col = len(distortion_cols) == 1
@@ -504,11 +252,15 @@ class Aggregator:
             sharey=is_single_row,
             sharex=is_single_col,
             filename=filename,
+            xlabel="Distortion",
+            ylabel="Rate",
             **kwargs,
         )
 
+    @data_getter
     def plot_invariance_RD_curve(
         self,
+        data="featurizer",
         col_dist_param="dist",
         noninvariant="vae",
         rate_col="test/feat/rate",
@@ -526,6 +278,9 @@ class Aggregator:
 
         Parameters
         ----------
+        data : pd.DataFrame or str
+            Dataframe to use for plotting. If str will use one of self.tables. If `None` runs all tables.
+
         col_dist_param : str, optional
             Name of the column that will distinguish the non invariant and the invariant model.
 
@@ -538,7 +293,7 @@ class Aggregator:
         kwargs :
             Additional arguments to `plot_scatter_lines`.
         """
-        results = self.tables["featurizer"]
+        results = data
         results = merge_rate_distortions(
             results, [rate_col], [upper_distortion, desirable_distortion]
         )
@@ -569,6 +324,8 @@ class Aggregator:
             sharey=False,
             sharex=False,
             filename=filename,
+            xlabel="Distortion",
+            ylabel="Rate",
             **kwargs,
         )
 
@@ -626,7 +383,7 @@ class Aggregator:
             in terms of prediction to the best one.
 
         filename : str, optional
-            Name of the file for saving to summarized RD curves. Can interpolate {table} if from 
+            Name of the file for saving to summarized RD curves. Can interpolate {table} if from
             self.tables.
         """
         check_import("sklearn", "summarize_RD_curves")
@@ -780,6 +537,8 @@ class Aggregator:
         row_title="{row_name}",
         col_title="{col_name}",
         plot_config_kwargs={},
+        xlabel="",
+        ylabel="",
         **kwargs,
     ):
         """Plotting all combinations of scatter and line plots.
@@ -884,7 +643,10 @@ class Aggregator:
 
         elif mode == "lmplot":
             used_kwargs = dict(
-                legend="full", sharey=sharey, sharex=sharex, legend_out=legend_out,
+                legend="full",
+                sharey=sharey,
+                sharex=sharex,
+                legend_out=legend_out,
             )
             used_kwargs.update(kwargs)
 
@@ -907,6 +669,17 @@ class Aggregator:
 
         if logbase_x != 1 or logbase_y != 1:
             sns_plot.map_dataframe(set_log_scale, basex=logbase_x, basey=logbase_y)
+
+        #! waiting for https://github.com/mwaskom/seaborn/issues/2456
+        if xlabel != "":
+            for ax in sns_plot.fig.axes:
+                ax.set_xlabel(xlabel)
+
+        if ylabel != "":
+            for ax in sns_plot.fig.axes:
+                ax.set_ylabel(ylabel)
+
+        sns_plot.tight_layout()
 
         return sns_plot
 
@@ -936,54 +709,6 @@ def get_param_in_kwargs(data, **kwargs):
         for n, col in kwargs.items()
         if (isinstance(col, str) and col in data.index.names)
     }
-
-
-def assert_sns_vary_only_param(data, sns_kwargs, param_vary_only):
-    """
-    Make sure that the only multiindices that have not been conditioned over for plotting and has non
-    unique values are in `param_vary_only`.
-    """
-    if param_vary_only is not None:
-        multi_idcs = data.index
-        issues = []
-        for idx in multi_idcs.levels:
-            is_varying = len(idx.values) != 1
-            is_conditioned = idx.name in sns_kwargs.values()
-            is_can_vary = idx.name in param_vary_only
-            if is_varying and not is_conditioned and not is_can_vary:
-                issues.append(idx.name)
-
-        if len(issues) > 0:
-            raise ValueError(
-                f"Not only varying {param_vary_only}. Also varying {issues}."
-            )
-
-
-def aggregate(table, cols_to_agg=[], aggregates=["mean", "sem"]):
-    """Aggregate values of pandas dataframe over some columns.
-
-    Parameters
-    ----------
-    table : pd.DataFrame or pd.Series
-        Table to aggregate.
-
-    cols_to_agg : list of str
-        List of columns over which to aggregate. E.g. `["seed"]`.
-
-    aggregates : list of str
-        List of functions to use for aggregation. The aggregated columns will be called `{col}_{aggregate}`.
-    """
-    if len(cols_to_agg) == 0:
-        return table
-
-    if isinstance(table, pd.Series):
-        table = table.to_frame()
-
-    table_agg = table.groupby(
-        by=[c for c in table.index.names if c not in cols_to_agg]
-    ).agg(aggregates)
-    table_agg.columns = ["_".join(col).rstrip("_") for col in table_agg.columns.values]
-    return table_agg
 
 
 def add_errorbars(data, yerr, xerr, **kwargs):

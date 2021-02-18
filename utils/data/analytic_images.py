@@ -142,6 +142,14 @@ class AnalyticMnistDataset(LossylessImgAnalyticDataset, MNIST):
         img, target = MNIST.__getitem__(self, index)
         return img, target
 
+    @property
+    def is_train(self):
+        return self.train
+
+    @property
+    def dataset_name(self):
+        return "MNIST"
+
 
 class AnalyticMnistDataModule(TorchvisionDataModule):
     @property

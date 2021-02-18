@@ -100,3 +100,15 @@ python aggregate.py \
        collect_data.predictor=null \
        $col_val_subset \
        agg_mode=[summarize_metrics]
+
+col_val_subset=""
+python load_pretrained.py \
+       load_pretrained.experiment=$experiment  \
+       $col_val_subset \
+       $kwargs  \
+       server=local \
+       trainer.gpus=0 \
+       $kwargs_multi \
+       load_pretrained.mode=[maxinv_distribution_plot,codebook_plot] \
+       -m
+

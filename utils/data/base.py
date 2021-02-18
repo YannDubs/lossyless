@@ -2,7 +2,6 @@ import abc
 from pathlib import Path
 
 import numpy as np
-
 import torch
 from lossyless.helpers import to_numpy
 from pytorch_lightning import LightningDataModule
@@ -165,7 +164,11 @@ class LossylessCLFDataset(LossylessDataset):
     """
 
     def __init__(
-        self, *args, n_per_target=None, targets_drop=[], **kwargs,
+        self,
+        *args,
+        n_per_target=None,
+        targets_drop=[],
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
@@ -331,50 +334,66 @@ class LossylessDataModule(LightningDataModule):
         if stage == "test" or stage is None:
             self.test_dataset = self.get_test_dataset(**self.dataset_kwargs)
 
-    def train_dataloader(self, **kwargs):
+    def train_dataloader(self, batch_size=None, **kwargs):
         """Return the training dataloader while possibly modifying dataset kwargs."""
         dkwargs = kwargs.pop("dataset_kwargs", {})
         if self.reload_dataloaders_every_epoch or len(dkwargs) > 0:
             curr_kwargs = dict(self.dataset_kwargs, **dkwargs)
             self.train_dataset = self.get_train_dataset(**curr_kwargs)
 
+        if batch_size is None:
+            batch_size = self.batch_size
+
         return DataLoader(
             self.train_dataset,
-            batch_size=self.batch_size,
+            batch_size=batch_size,
             shuffle=True,
             num_workers=self.num_workers,
             pin_memory=True,
             **kwargs,
         )
 
-    def val_dataloader(self, **kwargs):
+    def val_dataloader(self, batch_size=None, **kwargs):
         """Return the validation dataloader while possibly modifying dataset kwargs."""
         dkwargs = kwargs.pop("dataset_kwargs", {})
         if self.reload_dataloaders_every_epoch or len(dkwargs) > 0:
             curr_kwargs = dict(self.dataset_kwargs, **dkwargs)
             self.val_dataset = self.get_val_dataset(**curr_kwargs)
 
+        if batch_size is None:
+            batch_size = self.val_batch_size
+
         return DataLoader(
             self.val_dataset,
-            batch_size=self.val_batch_size,
+            batch_size=batch_size,
             shuffle=False,
             num_workers=self.num_workers,
             pin_memory=True,
             **kwargs,
         )
 
-    def test_dataloader(self, **kwargs):
+    def test_dataloader(self, batch_size=None, **kwargs):
         """Return the test dataloader while possibly modifying dataset kwargs."""
         dkwargs = kwargs.pop("dataset_kwargs", {})
         if self.reload_dataloaders_every_epoch or len(dkwargs) > 0:
             curr_kwargs = dict(self.dataset_kwargs, **dkwargs)
             self.test_dataset = self.get_test_dataset(**curr_kwargs)
 
+        if batch_size is None:
+            batch_size = self.val_batch_size
+
         return DataLoader(
             self.test_dataset,
-            batch_size=self.val_batch_size,
+            batch_size=batch_size,
             shuffle=False,
             num_workers=self.num_workers,
             pin_memory=True,
             **kwargs,
         )
+
+    def eval_dataloader(self, is_eval_on_test, **kwargs):
+        """Return the evaluation dataloader (test or val)."""
+        if is_eval_on_test:
+            return self.test_dataloader(**kwargs)
+        else:
+            return self.val_dataloader(**kwargs)

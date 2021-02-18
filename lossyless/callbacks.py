@@ -1,20 +1,27 @@
 import math
 
+import einops
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from matplotlib.lines import Line2D
-
-import einops
 import torch
 import torchvision
+from matplotlib.lines import Line2D
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 
-from .helpers import (BASE_LOG, UnNormalizer, is_colored_img, plot_density,
-                      setup_grid, to_numpy)
+from .helpers import (
+    BASE_LOG,
+    UnNormalizer,
+    is_colored_img,
+    plot_config,
+    plot_density,
+    setup_grid,
+    tensors_to_fig,
+    to_numpy,
+)
 
 try:
     import wandb
@@ -47,7 +54,38 @@ def is_plot(trainer, plot_interval):
     return is_plot_interval or is_last_epoch
 
 
-class ReconstructImages(Callback):
+class PlottingCallback(Callback):
+    """Base classes for calbacks that plot.
+
+    Parameters
+    ----------
+    plot_interval : int, optional
+        Every how many epochs to plot.
+
+    plot_config_kwargs : dict, optional
+            General config for plotting, e.g. arguments to matplotlib.rc, sns.plotting_context,
+            matplotlib.set ...
+    """
+
+    def __init__(self, plot_interval=10, plot_config_kwargs={}):
+        super().__init__()
+        self.plot_interval = plot_interval
+        self.plot_config_kwargs = plot_config_kwargs
+
+    def on_epoch_end(self, trainer, pl_module):
+        if is_plot(trainer, self.plot_interval):
+            for fig, kwargs in self.yield_figs_kwargs(trainer, pl_module):
+                if "caption" not in kwargs:
+                    kwargs["caption"] = f"ep: {trainer.current_epoch}"
+
+                save_img(pl_module, trainer, fig, **kwargs)
+                plt.close(fig)
+
+    def yield_figs_kwargs(self, trainer, pl_module):
+        raise NotImplementedError()
+
+
+class ReconstructImages(PlottingCallback):
     """Logs some reconstructed images.
 
     Notes
@@ -55,44 +93,32 @@ class ReconstructImages(Callback):
     - the model should return a dictionary after each training step, containing
     a tensor "Y_hat" and a tensor "Y" both of image shape.
     - this will log one reconstructed image (+real) after each training epoch.
-
-    Parameters
-    ----------
-    plot_interval : int, optional
-        Every how many epochs to plot.
     """
 
-    def __init__(self, plot_interval=10):
-        super().__init__()
-        self.plot_interval = plot_interval
+    def yield_figs_kwargs(self, trainer, pl_module):
+        cfg = pl_module.hparams
+        #! waiting for torch lighning #1243
+        x_hat = pl_module._save["Y_hat"].float()
+        x = pl_module._save["X"].float()
 
-    def on_train_epoch_end(self, trainer, pl_module, outputs):
-
-        if is_plot(trainer, self.plot_interval):
-            #! waiting for torch lighning #1243
-            x_hat = pl_module._save["Y_hat"].float()
-            x = pl_module._save["X"].float()
-
-            if is_colored_img(x):
+        if is_colored_img(x):
+            if cfg.data.kwargs.dataset_kwargs.is_normalize:
                 # undo normalization for plotting
-                unnormalizer = UnNormalizer(pl_module.hparams.data.dataset)
+                unnormalizer = UnNormalizer(cfg.data.dataset)
                 x = unnormalizer(x)
 
-            caption = f"ep: {trainer.current_epoch}"
-            save_img(pl_module, trainer, x_hat, "rec_img", caption)
-            save_img(pl_module, trainer, x, "real_img", caption)
+        yield x_hat, dict(name="rec_img")
+
+        yield x, dict(name="real_img")
 
 
-class LatentDimInterpolator(Callback):
-    """Logs interpolated images (steps through the first 2 dimensions).
+class LatentDimInterpolator(PlottingCallback):
+    """Logs interpolated images.
 
     Parameters
     ----------
     z_dim : int
         Number of dimensions for latents.
-
-    plot_interval : int, optional
-        Every how many epochs to plot.
 
     range_start : float, optional
         Start of the interpolating range.
@@ -105,36 +131,40 @@ class LatentDimInterpolator(Callback):
 
     n_lat_traverse : int, optional
         Number of latent to traverse for traversal 1_d. Max is `z_dim`.
+
+    kwargs :
+        Additional arguments to PlottingCallback.
     """
 
     def __init__(
         self,
         z_dim,
-        plot_interval=20,
         range_start=-5,
         range_end=5,
-        n_per_lat=10,
-        n_lat_traverse=10,
+        n_per_lat=7,
+        n_lat_traverse=5,
+        **kwargs,
     ):
-        super().__init__()
+        super().__init__(**kwargs)
         self.z_dim = z_dim
-        self.plot_interval = plot_interval
         self.range_start = range_start
         self.range_end = range_end
         self.n_per_lat = n_per_lat
         self.n_lat_traverse = n_lat_traverse
 
-    def on_epoch_end(self, trainer, pl_module):
-        if is_plot(trainer, self.plot_interval):
-            with torch.no_grad():
-                pl_module.eval()
+    def yield_figs_kwargs(self, trainer, pl_module):
+        with torch.no_grad():
+            pl_module.eval()
+            with plot_config(**self.plot_config_kwargs, font_scale=2):
                 traversals_2d = self.latent_traverse_2d(pl_module)
-                traversals_1d = self.latent_traverse_1d(pl_module)
-            pl_module.train()
 
-            caption = f"ep: {trainer.current_epoch}"
-            save_img(pl_module, trainer, traversals_2d, "traversals_2d", caption)
-            save_img(pl_module, trainer, traversals_1d, "traversals_1d", caption)
+            with plot_config(**self.plot_config_kwargs, font_scale=1.5):
+                traversals_1d = self.latent_traverse_1d(pl_module)
+
+        pl_module.train()
+
+        yield traversals_2d, dict(name="traversals_2d")
+        yield traversals_1d, dict(name="traversals_1d")
 
     def _traverse_line(self, idx, pl_module, z=None):
         """Return a (size, latent_size) latent sample, corresponding to a traversal
@@ -174,20 +204,30 @@ class LatentDimInterpolator(Callback):
             z_2d[i, :, 0] = traversals[i]  # fill first latent
 
         imgs = self._traverse_line(1, pl_module, z=z_2d)  # fill 2nd latent and rec.
-        grid = torchvision.utils.make_grid(imgs, nrow=self.n_per_lat)
+        fig = tensors_to_fig(
+            imgs,
+            n_cols=self.n_per_lat,
+            x_labels=["1st Latent"],
+            y_labels=["2nd Latent"],
+        )
 
-        return grid
+        return fig
 
     def latent_traverse_1d(self, pl_module):
         """Traverses the first `self.n_lat` latents separately."""
         n_lat_traverse = min(self.n_lat_traverse, self.z_dim)
         imgs = [self._traverse_line(i, pl_module) for i in range(n_lat_traverse)]
         imgs = torch.cat(imgs, dim=0)
-        grid = torchvision.utils.make_grid(imgs, nrow=self.n_per_lat)
-        return grid
+        fig = tensors_to_fig(
+            imgs,
+            n_cols=self.n_per_lat,
+            x_labels=["Sweeps"],
+            y_labels=[f"Lat. {i}" for i in range(n_lat_traverse)],
+        )
+        return fig
 
 
-class CodebookPlot(Callback):
+class CodebookPlot(PlottingCallback):
     """Plot the source distribution and codebook for a distribution.
 
     Notes
@@ -197,9 +237,6 @@ class CodebookPlot(Callback):
 
     Parameters
     ----------
-    plot_interval : int, optional
-        How many epochs to wait before plotting.
-
     range_lim : int, optional
         Will plot x axis and y axis in (-range_lim, range_lim).
 
@@ -211,43 +248,44 @@ class CodebookPlot(Callback):
         Size fo figure.
 
     is_plot_codebook : bool, optional
-        Whether to plot the codebook or only the quantization space. THis can only be true for VAE 
+        Whether to plot the codebook or only the quantization space. THis can only be true for VAE
         and iVAE, not or iVIB and iNCE because they don't reconstruct an element in X space.
+
+    kwargs :
+        Additional arguments to PlottingCallback.
     """
 
     def __init__(
         self,
-        plot_interval=20,
         range_lim=5,
         n_pts=500,
         figsize=(9, 9),
         is_plot_codebook=True,
+        **kwargs,
     ):
-        super().__init__()
-        self.plot_interval = plot_interval
+        super().__init__(**kwargs)
         self.range_lim = range_lim
         self.n_pts = n_pts
         self.figsize = figsize
         self.is_plot_codebook = is_plot_codebook
 
-    def on_epoch_end(self, trainer, pl_module):
-        if is_plot(trainer, self.plot_interval):
-            source = trainer.datamodule.distribution
-            device = pl_module.device
+    def yield_figs_kwargs(self, trainer, pl_module):
+        source = trainer.datamodule.distribution
+        device = pl_module.device
 
-            with torch.no_grad():
-                pl_module.eval()
+        with torch.no_grad():
+            pl_module.eval()
 
-                # ensure cpu because memory ++
-                pl_module_cpu = pl_module.to(torch.device("cpu"))
+            # ensure cpu because memory ++
+            pl_module_cpu = pl_module.to(torch.device("cpu"))
+
+            with plot_config(**self.plot_config_kwargs):
                 fig = self.plot_quantization(pl_module_cpu, source)
 
-            pl_module = pl_module.to(device)  # ensure back on correct
-            pl_module.train()
+        pl_module = pl_module.to(device)  # ensure back on correct
+        pl_module.train()
 
-            caption = f"ep: {trainer.current_epoch}"
-            save_img(pl_module, trainer, fig, "quantization", caption)
-            plt.close(fig)
+        yield fig, dict(name="quantization")
 
     def quantize(self, pl_module, x):
         """Maps (through `idcs`) all elements in batch to the codebook and corresponding rates."""
@@ -335,7 +373,7 @@ class CodebookPlot(Callback):
         return fig
 
 
-class MaxinvDistributionPlot(Callback):
+class MaxinvDistributionPlot(PlottingCallback):
     """Plot the distribtion of a maximal invariant p(M(X)) as well as the learned marginal
     q(M(X)) = E_{p(Z)}[q(M(X)|Z)].
 
@@ -360,64 +398,63 @@ class MaxinvDistributionPlot(Callback):
 
     equivalences : list of str, optional
         List of equivalences to use in case you are invariant to nothing.
+
+    kwargs :
+        Additional arguments to PlottingCallback.
     """
 
     def __init__(
         self,
-        plot_interval=50,
         quantile_lim=5,
         n_pts=500 ** 2,
         figsize=(9, 9),
         equivalences=["rotation", "y_translation", "x_translation"],
+        plot_interval=50,
+        **kwargs,
     ):
-        super().__init__()
-        self.plot_interval = plot_interval
+        super().__init__(plot_interval=plot_interval, **kwargs)
         self.quantile_lim = quantile_lim
         self.n_pts = n_pts
         self.figsize = figsize
         self.equivalences = equivalences
 
-    def on_epoch_end(self, trainer, pl_module):
-        if is_plot(trainer, self.plot_interval):
-            dataset = trainer.datamodule.train_dataset
-            # ensure don't change
-            seed, device, equiv = dataset.seed, pl_module.device, dataset.equivalence
-            pl_module.seed = None  # generate new data
+    def yield_figs_kwargs(self, trainer, pl_module):
+        dataset = trainer.datamodule.train_dataset
+        # ensure don't change
+        seed, device, equiv = dataset.seed, pl_module.device, dataset.equivalence
+        pl_module.seed = None  # generate new data
 
-            # generate new data
-            x, _ = dataset.get_n_data_Mxs(self.n_pts)
+        # generate new data
+        x, _ = dataset.get_n_data_Mxs(self.n_pts)
 
-            with torch.no_grad():
-                pl_module.eval()
+        with torch.no_grad():
+            pl_module.eval()
 
-                # ensure cpu because memory ++
-                pl_module_cpu = pl_module.to(torch.device("cpu"))
+            # ensure cpu because memory ++
+            pl_module_cpu = pl_module.to(torch.device("cpu"))
 
-                # shape: [batch_size, *x_shape]
-                x_hat = pl_module_cpu(x, is_features=False)
+            # shape: [batch_size, *x_shape]
+            x_hat = pl_module_cpu(x, is_features=False)
 
-                # allow computing plots for multiple equivalences (useful for banana without equivalence)
-                equivalences = [equiv] if equiv is not None else self.equivalences
-                for eq in equivalences:
-                    dataset.equivalence = eq
+            # allow computing plots for multiple equivalences (useful for banana without equivalence)
+            equivalences = [equiv] if equiv is not None else self.equivalences
+            for eq in equivalences:
+                dataset.equivalence = eq
 
-                    # shape: [batch_size, *mx_shape]
-                    mx_hat = (
-                        dataset.max_invariant(x_hat) if x_hat.shape[-1] == 2 else x_hat
-                    )
-                    mx = dataset.max_invariant(x)
+                # shape: [batch_size, *mx_shape]
+                mx_hat = dataset.max_invariant(x_hat) if x_hat.shape[-1] == 2 else x_hat
+                mx = dataset.max_invariant(x)
 
+                with plot_config(**self.plot_config_kwargs):
                     fig = self.plot_maxinv(mx, mx_hat)
 
-                    caption = f"ep: {trainer.current_epoch}"
-                    save_img(pl_module, trainer, fig, f"max. inv. {eq}", caption)
-                    plt.close(fig)
+                yield fig, dict(name=f"max. inv. {eq}")
 
-            # restore
-            pl_module = pl_module.to(device)
-            dataset.seed = seed
-            dataset.equivalence = equiv
-            pl_module.train()
+        # restore
+        pl_module = pl_module.to(device)
+        dataset.seed = seed
+        dataset.equivalence = equiv
+        pl_module.train()
 
     def prepare(data, source):
         if source.decimals is not None:

@@ -10,3 +10,4 @@ kwargs:
   dataset_kwargs:
     equivalence: [x_translation, y_translation] 
     is_augment_val: True
+    is_normalize: False

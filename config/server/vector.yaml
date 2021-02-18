@@ -22,7 +22,7 @@ hydra:
     name: ${experiment}
 
     # slurm partition to use on the cluster
-    partition: rtx6000 # cpu,interactive,t4v1,t4v2,p100,rtx6000
+    partition: t4v2 # cpu,interactive,t4v1,t4v2,p100,rtx6000
     comment: null 
     constraint: null 
     exclude: null
