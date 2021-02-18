@@ -247,9 +247,10 @@ class LearnableCompressor(pl.LightningModule):
         )
         return loss
 
-    def on_test_epoch_start(self):
-        """Make sure that you can actually use the coder during eval."""
-        self.rate_estimator.update(force=True)
+    # TODO update rate estimator once you figured out how to deal with loading and why was getting issue
+    # def on_test_epoch_start(self):
+    #     """Make sure that you can actually use the coder during eval."""
+    #     self.rate_estimator.update(force=True)
 
     def yield_parameters(self):
         """Returns an iterator over the model parameters."""
