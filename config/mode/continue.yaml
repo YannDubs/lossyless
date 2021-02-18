@@ -1,0 +1,3 @@
+# @package _global_
+continue_job: ???
+job_id: ${hydra:job.num}_${continue_job}_${hydra:job.num}

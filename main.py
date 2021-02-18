@@ -528,9 +528,10 @@ def finalize_stage(cfg, module, trainer):
     for checkpoint in Path(cfg.checkpoint.kwargs.dirpath).glob("*.ckpt"):
         checkpoint.unlink()  # remove all checkpoints as best is already saved elsewhere
 
-    # save end fiel to make sure that you don't retrain if preemption
-    file_end = Path(cfg.paths.logs) / f"{cfg.stage}_{FILE_END}"
-    file_end.touch(exist_ok=True)
+    if not cfg.is_no_save:
+        # save end fiel to make sure that you don't retrain if preemption
+        file_end = Path(cfg.paths.logs) / f"{cfg.stage}_{FILE_END}"
+        file_end.touch(exist_ok=True)
 
 
 def finalize(modules, trainers, datamodules, cfgs):

@@ -10,13 +10,19 @@ main="main.py"
 
 
 # MODE ?
-while getopts ':s:p:m:t:v:a:' flag; do
+while getopts ':s:p:m:t:v:a:c:' flag; do
   case "${flag}" in
     s )
       server="${OPTARG}"
       add_kwargs="${add_kwargs} server=$server"
       echo "$server server ..."
       ;;
+    c )
+      id="${OPTARG}"
+      mode="continue"
+      add_kwargs="${add_kwargs} +mode=continue continue_job=${id}"
+      echo "Continuing job $id (Only if slurm) ..."
+      ;; 
     m ) 
       mode="${OPTARG}"
       add_kwargs="${add_kwargs} +mode=$mode"
@@ -52,7 +58,7 @@ while getopts ':s:p:m:t:v:a:' flag; do
       echo "Adding ${OPTARG}"
       ;;
     \? ) 
-      echo "Usage: "$name".sh [-stpmva]" 
+      echo "Usage: "$name".sh [-stpmvac]" 
       exit 1
       ;;
     : )
@@ -78,7 +84,7 @@ fi
 
 experiment="${prfx}""$experiment"
 
-if [ "$is_plot_only" = false ] ; then
+if [[ "$is_plot_only" = false && "$mode" != "continue" ]] ; then
   results="results/exp_$experiment"
   if [ -d "$results" ]; then
 
