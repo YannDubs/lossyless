@@ -560,4 +560,9 @@ class HRateHyperprior(HRateEstimator):
         net.load_state_dict(state_dict)
         return net
 
-    update = compressai.models.ScaleHyperprior.update
+    def update(self, scale_table=None, force=False):
+        if scale_table is None:
+            scale_table = get_scale_table()
+        updated = self.gaussian_conditional.update_scale_table(scale_table, force=force)
+        updated |= super().update(force=force)
+        return updated
