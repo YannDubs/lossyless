@@ -102,7 +102,7 @@ class LearnableCompressor(pl.LightningModule):
                 Represented data.
         else:
             X_hat : torch.Tensor of shape=[batch_size,  *data.shape]
-                Reconstructed data.
+                Reconstructed dataIf image it's the unormalized image in [0,1].
         """
         if is_features is None:
             is_features = self.is_features
@@ -121,7 +121,11 @@ class LearnableCompressor(pl.LightningModule):
         if is_features:
             out = z_hat
         else:
+            # only if direct distortion
             x_hat = self.distortion_estimator.q_YlZ(z_hat)
+            if self.distortion_estimator.is_img_out:
+                # if working with an image put it back to [0,1]
+                x_hat = torch.sigmoid(x_hat)
             out = x_hat
 
         return out
