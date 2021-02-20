@@ -5,6 +5,5 @@ is_features: false # whether the featurizer should output z_hat (rather than x_h
 is_train: True # whether to train the compressor, if not will load a pretrained comrpessor if it exists. Only if `is_learnable`
 
 loss:
-  # this is actually only used if neural but need to always be given as used in long_name
-  beta: 1
-  n_z_samples: 1
+  beta: 1 # this will be `quality` for classical
+  n_z_samples: 1 # this is actually only used if neural but need to always be given as used in long_name

@@ -4,6 +4,11 @@ defaults:
 
 featurizer:
   is_learnable: False 
+  quality: null
+
+  loss:
+    beta: ${featurizer.quality}
+
 
 evaluation:
   is_est_entropies: False # cannot

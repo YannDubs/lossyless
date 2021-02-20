@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-experiment="banana_RD_final"
+experiment="banana_RD"
 notes="
 **Goal**: Run rate distortion curve for banana distribution when predicting representative
 **Hypothesis**: Should be close to the estimated optimal rate distortion curve, and can approximate it using differential entropies.
@@ -50,8 +50,8 @@ trainer.reload_dataloaders_every_epoch=True
 #! check if work well without scheduler for the coder (you were previously using expdexay)
 # Featurizer
 general_kwargs="
-is_only_feat=True
-featurizer=neural_rec
+is_only_feat=False
+featurizer=neural_feat
 optimizer@optimizer_feat=adam1e-3
 scheduler@scheduler_feat=multistep
 scheduler_feat.kwargs.MultiStepLR.milestones=[50,75,87]
@@ -60,6 +60,9 @@ scheduler@scheduler_coder=none
 trainer.max_epochs=100
 trainer.precision=32
 evaluation.is_est_entropies=True
+architecture@predictor=fancymlp
+optimizer@optimizer_pred=adam1e-3 
+scheduler@scheduler_pred=multistep
 "
 
 kwargs="
@@ -76,7 +79,7 @@ $add_kwargs
 kwargs_multi="
 distortion=ivae,vae
 featurizer.loss.beta=0.00001,0.0001,0.001,0.01,0.1,1,10,100,1000
-seed=1,2,3
+seed=1,2,3,4,5
 " 
 
 
@@ -97,23 +100,26 @@ wait
 # for featurizer
 col_val_subset=""
 rate_cols="['test/feat/rate']"
-distortion_cols="['test/feat/distortion','test/feat/online_loss']"
+distortion_cols="['test/feat/distortion','test/feat/online_loss','test/pred/loss']"
 compare="dist"
+data="merged" # want to access both ther featurizer data and the  predictor data
 python aggregate.py \
        experiment=$experiment  \
-       collect_data.predictor=null \
        $col_val_subset \
+       +summarize_RD_curves.data="${data}" \
        +summarize_RD_curves.rate_cols="${rate_cols}" \
        +summarize_RD_curves.distortion_cols="${distortion_cols}" \
        +summarize_RD_curves.mse_cols="${distortion_cols}" \
+       +plot_all_RD_curves.data="${data}" \
        +plot_all_RD_curves.rate_cols="${rate_cols}" \
        +plot_all_RD_curves.distortion_cols="${distortion_cols}" \
        +plot_all_RD_curves.logbase_x=2 \
        +plot_all_RD_curves.hue=$compare \
+       +plot_invariance_RD_curve.data="${data}" \
        +plot_invariance_RD_curve.noninvariant='vae' \
        +plot_invariance_RD_curve.logbase_x=2 \
+       +plot_invariance_RD_curve.desirable_distortion="test/pred/loss" \
        agg_mode=[summarize_metrics,summarize_RD_curves,plot_all_RD_curves,plot_invariance_RD_curve]
-
 
 # plot loaded model
 col_val_subset=""
@@ -121,7 +127,7 @@ python load_pretrained.py \
        load_pretrained.experiment=$experiment  \
        $col_val_subset \
        $kwargs  \
-       server=local \
+       server=none \
        trainer.gpus=0 \
        $kwargs_multi \
        load_pretrained.mode=[maxinv_distribution_plot,codebook_plot] \

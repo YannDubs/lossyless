@@ -1,4 +1,0 @@
-name: resnet50
-arch: resnet
-arch_kwargs:
-  base: resnet50
