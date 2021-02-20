@@ -9,8 +9,6 @@ from pathlib import Path
 
 import hydra
 import torch
-from omegaconf import OmegaConf
-
 from lossyless.callbacks import (
     CodebookPlot,
     LatentDimInterpolator,
@@ -24,6 +22,7 @@ from lossyless.helpers import (
     tmp_seed,
 )
 from main import main as main_training
+from omegaconf import OmegaConf
 from utils.helpers import all_logging_disabled
 from utils.postplotting import PRETTY_RENAMER, PostPlotter
 from utils.postplotting.helpers import save_fig
@@ -34,7 +33,12 @@ logger = logging.getLogger(__name__)
 @hydra.main(config_name="load_pretrained", config_path="config")
 def main_cli(cfg):
     # uses main_cli sot that `main` can be called from notebooks.
-    return main(cfg)
+    try:
+        return main(cfg)
+    except:
+        logger.exception("Failed to load pretrained with this error:")
+        # don't raise error because if multirun want the rest to work
+        pass
 
 
 def main(cfg):
@@ -240,8 +244,6 @@ class PretrainedAnalyser(PostPlotter):
                 if cfg.data.kwargs.dataset_kwargs.is_normalize:
                     unnormalizer = UnNormalizer(cfg.data.dataset)
                     xi = unnormalizer(xi)
-
-            xi_hat = torch.sigmoid(xi_hat)
 
             both_images = torch.stack([xi, xi_hat], dim=0)
             fig = tensors_to_fig(
