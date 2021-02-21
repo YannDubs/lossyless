@@ -9,7 +9,7 @@ from compressai.utils.bench import codecs
 from pytorch_lightning.core.decorators import auto_move_data
 from torchvision.transforms import ToPILImage, ToTensor
 
-from .helpers import Normalizer, UnNormalizer, dict_mean, rename_keys_
+from .helpers import UnNormalizer, dict_mean, rename_keys_
 
 __all__ = ["ClassicalCompressor"]
 
@@ -141,10 +141,8 @@ class ClassicalCompressor(pl.LightningModule):
         if self.hparams.data.kwargs.dataset_kwargs.is_normalize:
             dataset = self.hparams.data.dataset
             self.unormalizer = UnNormalizer(dataset)
-            self.normalizer = Normalizer(dataset)
         else:
             self.unormalizer = nn.Identity()
-            self.normalizer = nn.Identity()
 
         if self.hparams.featurizer.mode is None:
             self.compressor = Identity()
@@ -174,7 +172,7 @@ class ClassicalCompressor(pl.LightningModule):
         Returns
         -------
         X_hat : torch.Tensor of shape=[batch_size,  *data.shape]
-            Reconstructed data.
+            Reconstructed data. If image it's the unormalized version.
 
         out : dict
             Only if `is_return_out`. Dictionnary containing information shuch as reconstruction quality
@@ -185,8 +183,6 @@ class ClassicalCompressor(pl.LightningModule):
         out, x_hat = self.compressor.batch_run(
             x, return_rec=True, return_metrics=is_return_out
         )
-
-        x_hat = self.normalizer(x_hat)  # reapply normalization
 
         if is_return_out:
             return x_hat, out
@@ -216,3 +212,6 @@ class ClassicalCompressor(pl.LightningModule):
 
     def configure_optimizers(self, *args, **kwargs):
         pass
+
+    def set_featurize_mode_(self):
+        pass 

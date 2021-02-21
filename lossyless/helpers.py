@@ -9,12 +9,13 @@ from collections import OrderedDict
 from functools import reduce
 from numbers import Number
 
-import einops
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-import torch
 from matplotlib.cbook import MatplotlibDeprecationWarning
+
+import einops
+import torch
 from pl_bolts.optimizers.lars_scheduling import LARSWrapper
 from torch import nn
 from torch.distributions import Distribution, constraints
@@ -255,7 +256,7 @@ STDS = dict(
 )
 
 
-class Normalizer:
+class Normalizer(torch.nn.Module):
     def __init__(self, dataset, is_raise=True):
         super().__init__()
         self.dataset = dataset.lower()
@@ -272,14 +273,14 @@ class Normalizer:
             else:
                 self.normalizer = None
 
-    def __call__(self, x):
+    def forward(self, x):
         if self.normalizer is None:
             return x
 
         return self.normalizer(x)
 
 
-class UnNormalizer:
+class UnNormalizer(torch.nn.Module):
     def __init__(self, dataset, is_raise=True):
         super().__init__()
         self.dataset = dataset.lower()
@@ -297,11 +298,16 @@ class UnNormalizer:
             else:
                 self.normalizer = None
 
-    def __call__(self, x):
+    def forward(self, x):
         if self.unnormalizer is None:
             return x
 
         return self.unnormalizer(x)
+
+
+def is_img_shape(shape):
+    """Whether a shape is from an image."""
+    return len(shape) == 3 and (shape[-3] in [1, 3])
 
 
 def is_colored_img(x):
@@ -592,12 +598,7 @@ def plot_config(
 
 
 def tensors_to_fig(
-    x,
-    n_rows=None,
-    n_cols=None,
-    x_labels=[],
-    y_labels=[],
-    imgsize=(4, 4),
+    x, n_rows=None, n_cols=None, x_labels=[], y_labels=[], imgsize=(4, 4),
 ):
     """Make a grid-like figure from tensors and labels. Return figure."""
     b, c, h, w = x.shape

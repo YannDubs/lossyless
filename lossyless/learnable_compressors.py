@@ -102,7 +102,7 @@ class LearnableCompressor(pl.LightningModule):
                 Represented data.
         else:
             X_hat : torch.Tensor of shape=[batch_size,  *data.shape]
-                Reconstructed data.
+                Reconstructed dataIf image it's the unormalized image in [0,1].
         """
         if is_features is None:
             is_features = self.is_features
@@ -121,7 +121,11 @@ class LearnableCompressor(pl.LightningModule):
         if is_features:
             out = z_hat
         else:
+            # only if direct distortion
             x_hat = self.distortion_estimator.q_YlZ(z_hat)
+            if self.distortion_estimator.is_img_out:
+                # if working with an image put it back to [0,1]
+                x_hat = torch.sigmoid(x_hat)
             out = x_hat
 
         return out
@@ -247,7 +251,7 @@ class LearnableCompressor(pl.LightningModule):
         )
         return loss
 
-    # TODO update rate estimator once you figured out how to deal with loading and why was getting issue
+    # TODO update rate estimator once you figured out how to deal with loading checkpoints
     # def on_test_epoch_start(self):
     #     """Make sure that you can actually use the coder during eval."""
     #     self.rate_estimator.update(force=True)
@@ -299,3 +303,22 @@ class LearnableCompressor(pl.LightningModule):
             )
 
         return optimizers, schedulers
+
+    def set_featurize_mode_(self):
+        """Set as a featurizer."""
+
+        # this ensures that the nothing is persistent, i.e. will not be saved in checkpoint when 
+        # part of predictor
+        for model in self.modules():
+            params = dict(model.named_parameters(recurse=False))
+            buffers = dict(model.named_buffers(recurse=False))
+            for name, param in params.items():
+                del model._parameters[name]
+                model.register_buffer(name, param.data, persistent=False)
+
+            for name, param in buffers.items():
+                del model._buffers[name]
+                model.register_buffer(name, param, persistent=False)
+
+        self.freeze()
+        self.eval()

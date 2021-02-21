@@ -8,15 +8,15 @@ import glob
 import logging
 from pathlib import Path
 
-import hydra
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from omegaconf import OmegaConf
 
+import hydra
 from lossyless.helpers import BASE_LOG, check_import
 from main import COMPRESSOR_RES
+from omegaconf import OmegaConf
 from utils.helpers import omegaconf2namespace
 from utils.postplotting import (
     PRETTY_RENAMER,
@@ -57,7 +57,7 @@ def main(cfg):
         if pattern is not None:
             aggregator.collect_data(pattern=pattern, table_name=name)
 
-    if len(cfg.collect_data) > 1:
+    if len(aggregator.tables) > 1:
         # if multiple tables also add "merged" that contains all
         aggregator.merge_tables(list(cfg.collect_data.keys()))
 
@@ -643,10 +643,7 @@ class ResultAggregator(PostPlotter):
 
         elif mode == "lmplot":
             used_kwargs = dict(
-                legend="full",
-                sharey=sharey,
-                sharex=sharex,
-                legend_out=legend_out,
+                legend="full", sharey=sharey, sharex=sharex, legend_out=legend_out,
             )
             used_kwargs.update(kwargs)
 

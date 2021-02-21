@@ -1,0 +1,10 @@
+base_dir: ${hydra:runtime.cwd}
+# what to purge ? Careful this will delete all your results
+experiment: ???
+is_purge_featurizer: False # whether to purge featurizer in addition to predictor
+match: null # specific substring to match. typicall the job id. THis will remove all child directories
+folders: # which directory to purge 
+  - ${base_dir}/results/exp_${experiment}
+  - ${base_dir}/logs/exp_${experiment}
+  - ${base_dir}/checkpoints/exp_${experiment}
+  - ${base_dir}/pretrained/exp_${experiment}

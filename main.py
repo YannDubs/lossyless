@@ -25,12 +25,13 @@ from lossyless.callbacks import (
 )
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import, orderedset
+from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
-from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
 from utils.helpers import (
+    ModelCheckpoint,
     get_latest_match,
     getattr_from_oneof,
     learning_rate_finder,
@@ -86,6 +87,8 @@ def main(cfg):
         logger.info("Load pretrained compressor ...")
         compressor = load_pretrained(comp_cfg, LearnableCompressor, COMPRESSOR_CHCKPNT)
         comp_trainer = get_trainer(comp_cfg, compressor, is_featurizer=True)
+        placeholder_fit(comp_trainer, compressor, comp_datamodule)
+        comp_cfg.evaluation.featurizer.ckpt_path = None  # eval loaded model
 
     if comp_cfg.evaluation.featurizer.is_evaluate:
         logger.info("Evaluate compressor ...")
@@ -119,10 +122,11 @@ def main(cfg):
         onfly_featurizer = compressor
         pre_featurizer = None
     else:
+        raise NotImplementedError()
         # compressing once the dataset is more realistic (and quicker) but requires
         # more memory as the compressed dataset will be saved to file
-        onfly_featurizer = None
-        pre_featurizer = compressor
+        # onfly_featurizer = None
+        # pre_featurizer = compressor
 
     ############## DOWNSTREAM PREDICTOR (i.e. receiver) ##############
     logger.info("Stage : Predictor")
@@ -143,8 +147,11 @@ def main(cfg):
 
     else:
         logger.info("Load pretrained predictor ...")
-        predictor = load_pretrained(pred_cfg, Predictor, PREDICTOR_CHCKPNT)
+        FeatPred = get_featurizer_predictor(onfly_featurizer)
+        predictor = load_pretrained(pred_cfg, FeatPred, PREDICTOR_CHCKPNT)
         pred_trainer = get_trainer(pred_cfg, predictor, is_featurizer=False)
+        placeholder_fit(pred_trainer, predictor, pred_datamodule)
+        pred_cfg.evaluation.predictor.ckpt_path = None  # eval loaded model
 
     if pred_cfg.evaluation.predictor.is_evaluate:
         logger.info("Evaluate predictor ...")
@@ -158,7 +165,9 @@ def main(cfg):
             is_featurizer=False,
         )
 
-    finalize_stage(pred_cfg, predictor, pred_trainer)
+    finalize_stage(
+        pred_cfg, predictor, pred_trainer, is_save_best=pred_cfg.predictor.is_save_best
+    )
 
     ############## SHUTDOWN ##############
 
@@ -416,13 +425,13 @@ def is_trained(cfg, file):
     return (dest_path / file).is_file()
 
 
-def load_pretrained(cfg, Module, file):
+def load_pretrained(cfg, Module, file, **kwargs):
     """Load the best checkpoint from the latest run that has the same name as current run."""
     save_path = Path(cfg.paths.pretrained.load)
     # select the latest checkpoint matching the path
     chckpnt = get_latest_match(save_path / file)
 
-    loaded_module = Module.load_from_checkpoint(chckpnt)
+    loaded_module = Module.load_from_checkpoint(chckpnt, **kwargs)
 
     return loaded_module
 
@@ -522,7 +531,7 @@ def initialize_predictor_(module, datamodule, trainer, cfg):
             module.hparams.optimizer_pred.kwargs.lr = old_lr
 
 
-def finalize_stage(cfg, module, trainer):
+def finalize_stage(cfg, module, trainer, is_save_best=True):
     """Finalize the current stage."""
     logger.info(f"Finalizing {cfg.stage}.")
 
@@ -533,9 +542,16 @@ def finalize_stage(cfg, module, trainer):
     for checkpoint in Path(cfg.checkpoint.kwargs.dirpath).glob("*.ckpt"):
         checkpoint.unlink()  # remove all checkpoints as best is already saved elsewhere
 
-    # save end fiel to make sure that you don't retrain if preemption
-    file_end = Path(cfg.paths.logs) / f"{cfg.stage}_{FILE_END}"
-    file_end.touch(exist_ok=True)
+    # don't keep the pretrained model
+    if not is_save_best:
+        dest_path = Path(cfg.paths.pretrained.save)
+        for checkpoint in dest_path.glob("*.ckpt"):
+            checkpoint.unlink()  # remove all chacpoints
+
+    if not cfg.is_no_save:
+        # save end fiel to make sure that you don't retrain if preemption
+        file_end = Path(cfg.paths.logs) / f"{cfg.stage}_{FILE_END}"
+        file_end.touch(exist_ok=True)
 
 
 def finalize(modules, trainers, datamodules, cfgs):

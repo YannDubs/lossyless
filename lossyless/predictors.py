@@ -5,9 +5,22 @@ from pytorch_lightning.metrics.functional import accuracy
 
 from .architectures import FlattenMLP, get_Architecture
 from .distortions import mse_or_crossentropy_loss
-from .helpers import Timer, append_optimizer_scheduler_
+from .helpers import Normalizer, Timer, append_optimizer_scheduler_, is_img_shape
 
 __all__ = ["Predictor", "OnlineEvaluator"]
+
+
+def get_featurizer_predictor(featurizer):
+    """
+    Helper function that returns a Predictor with correct featurizer. Cannot use partial because 
+    need lighning module and cannot give as kwargs to load model because not pickable)
+    """
+
+    class FeatPred(Predictor):
+        def __init__(self, hparams, featurizer=featurizer):
+            super().__init__(hparams, featurizer=featurizer)
+
+    return FeatPred
 
 
 class Predictor(pl.LightningModule):
@@ -20,16 +33,25 @@ class Predictor(pl.LightningModule):
 
         if featurizer is not None:
             self.featurizer = featurizer
-            self.featurizer.freeze()
-            self.featurizer.eval()
+            # ensure not saved in checkpoint and frozen
+            self.featurizer.set_featurize_mode_()
+            pred_in_shape = featurizer.out_shape
+
+            is_normalize = self.hparams.data.kwargs.dataset_kwargs.is_normalize
+            if is_img_shape(pred_in_shape) and is_normalize:
+                # reapply normalization because lost during compression
+                self.normalizer = Normalizer(self.hparams.data.dataset)
+            else:
+                self.normalizer = torch.nn.Identity()
+
         else:
             self.featurizer = torch.nn.Identity()
+            self.normalizer = torch.nn.Identity()  # already normalized if needed
+            pred_in_shape = self.hparams.data.shape
 
         cfg_pred = self.hparams.predictor
         Architecture = get_Architecture(cfg_pred.arch, **cfg_pred.arch_kwargs)
-        self.predictor = Architecture(
-            featurizer.out_shape, self.hparams.data.target_shape
-        )
+        self.predictor = Architecture(pred_in_shape, self.hparams.data.target_shape)
 
     @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_logits=True, is_return_logs=False):
@@ -58,6 +80,7 @@ class Predictor(pl.LightningModule):
         with torch.no_grad():
             # shape: [batch_size,  *featurizer.out_shape]
             features = self.featurizer(x)  # can be z_hat or x_hat
+            features = self.normalizer(features)
 
         features = features.detach()  # shouldn't be needed
 
@@ -81,7 +104,7 @@ class Predictor(pl.LightningModule):
         x, y = batch
 
         # shape: [batch_size,  *target_shape]
-        Y_hat = self(x)
+        Y_hat, logs = self(x, is_return_logs=True)
 
         # Shape: [batch, 1]
         loss = self.loss(Y_hat, y)
@@ -89,7 +112,7 @@ class Predictor(pl.LightningModule):
         # Shape: []
         loss = loss.mean()
 
-        logs = dict(loss=loss)
+        logs["loss"] = loss
         if self.is_clf:
             logs["acc"] = accuracy(Y_hat.argmax(dim=-1), y)
 
