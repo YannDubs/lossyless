@@ -256,7 +256,7 @@ STDS = dict(
 )
 
 
-class Normalizer:
+class Normalizer(torch.nn.Module):
     def __init__(self, dataset, is_raise=True):
         super().__init__()
         self.dataset = dataset.lower()
@@ -273,14 +273,14 @@ class Normalizer:
             else:
                 self.normalizer = None
 
-    def __call__(self, x):
+    def forward(self, x):
         if self.normalizer is None:
             return x
 
         return self.normalizer(x)
 
 
-class UnNormalizer:
+class UnNormalizer(torch.nn.Module):
     def __init__(self, dataset, is_raise=True):
         super().__init__()
         self.dataset = dataset.lower()
@@ -298,7 +298,7 @@ class UnNormalizer:
             else:
                 self.normalizer = None
 
-    def __call__(self, x):
+    def forward(self, x):
         if self.unnormalizer is None:
             return x
 

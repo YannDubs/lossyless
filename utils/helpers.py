@@ -285,3 +285,14 @@ def suggest_min_lr(self, skip_begin: int = 10, skip_end: int = 1):
 def apply_featurizer(datamodule, featurizer):
     """Apply a featurizer on every example of a datamodule and return a new datamodule."""
     # TODO
+
+
+class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
+    def on_load_checkpoint(self, checkpointed_state):
+        super().on_load_checkpoint(checkpointed_state)
+
+        # trick to keep only one model because pytorch lighnign by default doesn't save
+        # best k_models, so when preempting they stask up. Open issue. THis is only correct for k=1
+        self.best_k_models = {}
+        self.best_k_models[self.best_model_path] = self.best_model_score
+        self.kth_best_model_path = self.best_model_path

@@ -212,3 +212,6 @@ class ClassicalCompressor(pl.LightningModule):
 
     def configure_optimizers(self, *args, **kwargs):
         pass
+
+    def set_featurize_mode_(self):
+        pass 

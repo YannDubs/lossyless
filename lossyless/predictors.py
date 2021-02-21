@@ -18,7 +18,7 @@ def get_featurizer_predictor(featurizer):
 
     class FeatPred(Predictor):
         def __init__(self, hparams, featurizer=featurizer):
-            super().__init__(hparams, featurizer)
+            super().__init__(hparams, featurizer=featurizer)
 
     return FeatPred
 
@@ -30,21 +30,23 @@ class Predictor(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters(hparams)
         self.is_clf = self.hparams.data.target_is_clf
-        self.normalizer = torch.nn.Identity()
 
         if featurizer is not None:
             self.featurizer = featurizer
-            self.featurizer.freeze()
-            self.featurizer.eval()
+            # ensure not saved in checkpoint and frozen
+            self.featurizer.set_featurize_mode_()
             pred_in_shape = featurizer.out_shape
 
             is_normalize = self.hparams.data.kwargs.dataset_kwargs.is_normalize
             if is_img_shape(pred_in_shape) and is_normalize:
                 # reapply normalization because lost during compression
                 self.normalizer = Normalizer(self.hparams.data.dataset)
+            else:
+                self.normalizer = torch.nn.Identity()
 
         else:
             self.featurizer = torch.nn.Identity()
+            self.normalizer = torch.nn.Identity()  # already normalized if needed
             pred_in_shape = self.hparams.data.shape
 
         cfg_pred = self.hparams.predictor

@@ -140,7 +140,8 @@ data_pred: {}
 ### MODEL ###
 predictor:
   name: ???
-  is_train: True 
+  is_train: True
+  is_save_best: False # don't save the best predictor as it is not of any use (that I can see) 
   arch: ???
   arch_kwargs: {}
 

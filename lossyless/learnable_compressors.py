@@ -303,3 +303,22 @@ class LearnableCompressor(pl.LightningModule):
             )
 
         return optimizers, schedulers
+
+    def set_featurize_mode_(self):
+        """Set as a featurizer."""
+
+        # this ensures that the nothing is persistent, i.e. will not be saved in checkpoint when 
+        # part of predictor
+        for model in self.modules():
+            params = dict(model.named_parameters(recurse=False))
+            buffers = dict(model.named_buffers(recurse=False))
+            for name, param in params.items():
+                del model._parameters[name]
+                model.register_buffer(name, param.data, persistent=False)
+
+            for name, param in buffers.items():
+                del model._buffers[name]
+                model.register_buffer(name, param, persistent=False)
+
+        self.freeze()
+        self.eval()

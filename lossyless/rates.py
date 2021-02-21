@@ -1,5 +1,5 @@
+import logging
 import math
-import time
 
 import compressai
 import einops
@@ -19,6 +19,7 @@ from .helpers import (
     weights_init,
 )
 
+logger = logging.getLogger(__name__)
 __all__ = ["get_rate_estimator"]
 
 ### HELPERS ###
@@ -280,16 +281,19 @@ class HRateEstimator(RateEstimator):
         error_msgs,
     ):
 
-        # Dynamically update the entropy bottleneck buffers related to the CDFs
-
-        policy = "resize"  # resize when loading  (even if already called "update")
-        update_registered_buffers(
-            self.entropy_bottleneck,
-            f"{prefix}entropy_bottleneck",
-            ["_quantized_cdf", "_offset", "_cdf_length"],
-            state_dict,
-            policy=policy,
-        )
+        try:
+            # Dynamically update the entropy bottleneck buffers related to the CDFs
+            policy = "resize"  # resize when loading  (even if already called "update")
+            update_registered_buffers(
+                self.entropy_bottleneck,
+                f"{prefix}entropy_bottleneck",
+                ["_quantized_cdf", "_offset", "_cdf_length"],
+                state_dict,
+                policy=policy,
+            )
+        except KeyError:
+            # if the model is set to featurizer then nothing is in state_dict
+            pass
 
         super()._load_from_state_dict(
             state_dict,
@@ -528,16 +532,19 @@ class HRateHyperprior(HRateEstimator):
         unexpected_keys,
         error_msgs,
     ):
-        # Dynamically update the entropy bottleneck buffers related to the CDFs
-        policy = "resize"  # resize when loading  (even if already called "update")
-
-        update_registered_buffers(
-            self.gaussian_conditional,
-            f"{prefix}gaussian_conditional",
-            ["_quantized_cdf", "_offset", "_cdf_length", "scale_table"],
-            state_dict,
-            policy=policy,
-        )
+        try:
+            # Dynamically update the entropy bottleneck buffers related to the CDFs
+            policy = "resize"  # resize when loading  (even if already called "update")
+            update_registered_buffers(
+                self.gaussian_conditional,
+                f"{prefix}gaussian_conditional",
+                ["_quantized_cdf", "_offset", "_cdf_length", "scale_table"],
+                state_dict,
+                policy=policy,
+            )
+        except KeyError:
+            # if the model is set to featurizer then nothing is in state_dict
+            pass
 
         super()._load_from_state_dict(
             state_dict,

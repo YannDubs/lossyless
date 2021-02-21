@@ -27,11 +27,11 @@ from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import, orderedset
 from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
-from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
 from utils.helpers import (
+    ModelCheckpoint,
     get_latest_match,
     getattr_from_oneof,
     learning_rate_finder,
@@ -122,10 +122,11 @@ def main(cfg):
         onfly_featurizer = compressor
         pre_featurizer = None
     else:
+        raise NotImplementedError()
         # compressing once the dataset is more realistic (and quicker) but requires
         # more memory as the compressed dataset will be saved to file
-        onfly_featurizer = None
-        pre_featurizer = compressor
+        # onfly_featurizer = None
+        # pre_featurizer = compressor
 
     ############## DOWNSTREAM PREDICTOR (i.e. receiver) ##############
     logger.info("Stage : Predictor")
@@ -164,7 +165,9 @@ def main(cfg):
             is_featurizer=False,
         )
 
-    finalize_stage(pred_cfg, predictor, pred_trainer)
+    finalize_stage(
+        pred_cfg, predictor, pred_trainer, is_save_best=pred_cfg.predictor.is_save_best
+    )
 
     ############## SHUTDOWN ##############
 
@@ -523,7 +526,7 @@ def initialize_predictor_(module, datamodule, trainer, cfg):
             module.hparams.optimizer_pred.kwargs.lr = old_lr
 
 
-def finalize_stage(cfg, module, trainer):
+def finalize_stage(cfg, module, trainer, is_save_best=True):
     """Finalize the current stage."""
     logger.info(f"Finalizing {cfg.stage}.")
 
@@ -533,6 +536,12 @@ def finalize_stage(cfg, module, trainer):
 
     for checkpoint in Path(cfg.checkpoint.kwargs.dirpath).glob("*.ckpt"):
         checkpoint.unlink()  # remove all checkpoints as best is already saved elsewhere
+
+    # don't keep the pretrained model
+    if not is_save_best:
+        dest_path = Path(cfg.paths.pretrained.save)
+        for checkpoint in dest_path.glob("*.ckpt"):
+            checkpoint.unlink()  # remove all chacpoints
 
     if not cfg.is_no_save:
         # save end fiel to make sure that you don't retrain if preemption
