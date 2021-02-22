@@ -1,0 +1,7 @@
+name: cosine
+modes: ["CosineAnnealingLR"] # list of scheduler to use
+kwargs:
+  # all kwargs
+  CosineAnnealingLR:
+    T_max: ${trainer.max_epochs}
+    eta_min: 0

@@ -2,6 +2,7 @@ import abc
 from pathlib import Path
 
 import numpy as np
+
 import torch
 from lossyless.helpers import to_numpy
 from pytorch_lightning import LightningDataModule

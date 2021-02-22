@@ -10,7 +10,7 @@ defaults:
   # FEATURIZER #
   - data@data_feat: mnist
   - architecture@encoder: resnet
-  - checkpoint@checkpoint_feat: bestValLoss # NB : will not be able to use Val loss for vib because validation is meaningless for distortion
+  - checkpoint@checkpoint_feat: bestValLoss # NB : will not be able to use Val loss for vib because validation is meaningless for distortion. Nor for INCE in the case where you don't use data augmentations at test time
   - optimizer@optimizer_feat: adam1e-3
   - scheduler@scheduler_feat: expdecay
   - optimizer@optimizer_coder: adam3e-3
@@ -120,6 +120,7 @@ encoder:
 
 ### OPTIMIZER ###
 optimizer_feat: 
+  lr_rate_factor: 1 # mutlitply lr of all rate estimator parameters
   kwargs:
     is_lars: false # whether to use LARS optimizer, useful for large batches.
 scheduler_feat: {}

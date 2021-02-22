@@ -193,9 +193,12 @@ def begin(cfg):
 
     logger.info(f"Workdir : {cfg.paths.work}.")
 
-    if len(cfg.data_pred) == 0:
-        # by default same data for pred and feat
-        cfg.data_pred = cfg.data_feat
+    try:
+        cfg.data_pred.name  # see if data_pred exist
+    except:
+        with omegaconf.open_dict(cfg):
+            # by default same data for pred and feat
+            cfg.data_pred = OmegaConf.merge(cfg.data_feat, cfg.data_pred)
 
 
 def set_cfg(cfg, mode):
@@ -345,35 +348,41 @@ def get_logger(cfg, module, is_featurizer):
     kwargs.update(cfg.logger.get(f"{cfg.logger.name}_kwargs", {}))
 
     if cfg.logger.name == "csv":
-        logger = CSVLogger(**kwargs)
+        pllogger = CSVLogger(**kwargs)
 
     elif cfg.logger.name == "wandb":
         check_import("wandb", "WandbLogger")
 
         try:
-            logger = WandbLogger(**kwargs)
+            pllogger = WandbLogger(**kwargs)
         except Exception:
             cfg.logger.wandb.offline = True
-            logger = WandbLogger(**kwargs)
+            pllogger = WandbLogger(**kwargs)
 
         if cfg.trainer.track_grad_norm == 2:
-            # use wandb rather than lightning gradients
-            cfg.trainer.track_grad_norm = -1
-            to_watch = module.p_ZlX.mapper if is_featurizer else module.predictor
-            logger.watch(
-                to_watch, log="gradients", log_freq=cfg.trainer.log_every_n_steps * 10,
-            )
+            try:
+                # use wandb rather than lightning gradients
+                cfg.trainer.track_grad_norm = -1
+                to_watch = module.p_ZlX.mapper if is_featurizer else module.predictor
+                pllogger.watch(
+                    to_watch,
+                    log="gradients",
+                    log_freq=cfg.trainer.log_every_n_steps * 10,
+                )
+            except:
+                logger.exception("Cannot track gradients. Because:")
+                pass
 
     elif cfg.logger.name == "tensorboard":
-        logger = TensorBoardLogger(**kwargs)
+        pllogger = TensorBoardLogger(**kwargs)
 
     elif cfg.logger.name is None:
-        logger = False
+        pllogger = False
 
     else:
         raise ValueError(f"Unkown logger={cfg.logger.name}.")
 
-    return logger
+    return pllogger
 
 
 def get_trainer(cfg, module, is_featurizer):

@@ -307,7 +307,10 @@ class UnNormalizer(torch.nn.Module):
 
 def is_img_shape(shape):
     """Whether a shape is from an image."""
-    return len(shape) == 3 and (shape[-3] in [1, 3])
+    try:
+        return len(shape) == 3 and (shape[-3] in [1, 3])
+    except TypeError:
+        return False  # if shape is not list
 
 
 def is_colored_img(x):
@@ -426,20 +429,38 @@ def plot_density(p, n_pts=1000, range_lim=0.7, figsize=(7, 7), title=None, ax=No
         ax.set_title(title)
 
 
-def mse_or_crossentropy_loss(Y_hat, y, is_classification, is_sum_over_tasks=False):
-    """Compute the cross entropy for multilabel clf tasks or MSE for regression"""
+def mse_or_crossentropy_loss(Y_hat, y, is_classification, agg_over_tasks="mean"):
+    """
+    Compute the cross entropy for multilabel clf tasks or MSE for regression. `agg_over_tasks`
+    says how to aggregate over task "mean","sum","max","std",or None. The three last assume that 
+    the target shape is (Y_dim, n_tasks), or (Y_dim) if single task.
+    """
 
     if is_classification:
         loss = F.cross_entropy(Y_hat, y.long(), reduction="none")
     else:
         loss = F.mse_loss(Y_hat, y, reduction="none")
 
-    if not is_sum_over_tasks:
-        n_tasks = prod(Y_hat[0, 0, ...].shape)
-        loss = loss / n_tasks  # takes an average over tasks
+    loss = atleast_ndim(loss, 3)  # addd n_tasks = 1 if not given
+    # n_tasks = prod(Y_hat[0, 0, ...].shape)
+    batch_size, Y_dim, *_ = loss.shape
 
-    batch_size = loss.size(0)
-    loss = loss.view(batch_size, -1).sum(keepdim=True, dim=-1)
+    # shape = [batch_size, n_tasks]
+    loss = loss.view(batch_size, Y_dim, -1).mean(keepdim=False, dim=1)
+
+    # shape = [batch_size, 1]
+    if agg_over_tasks == "mean":
+        loss = loss.mean(keepdim=True, dim=1)
+    elif agg_over_tasks == "max":
+        loss = loss.max(keepdim=True, dim=1)[0]
+    elif agg_over_tasks == "sum":
+        loss = loss.sum(keepdim=True, dim=1)
+    elif agg_over_tasks == "std":
+        loss = loss.std(keepdim=True, dim=1)
+    elif agg_over_tasks is None:
+        loss = loss  # shape = [batch_size, n_tasks]
+    else:
+        raise ValueError(f"Unkown agg_over_tasks={agg_over_tasks}.")
 
     return loss
 

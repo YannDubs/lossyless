@@ -1,0 +1,4 @@
+name: simclr
+arch: simclr
+arch_kwargs:
+  is_pretrained: true

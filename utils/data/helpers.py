@@ -30,6 +30,7 @@ def sample_param_augment(rv, interval_trnsf):
     return theta_sample, i_sample
 
 
+# TODO put in augmentations under "analytic"
 class RotationAction(torch.nn.Module):
     """Rotate the image by a sampled angle.
 

@@ -32,7 +32,9 @@ class LearnableCompressor(pl.LightningModule):
         # governs how the compressor acts when calling it directly
         self.is_features = self.hparams.featurizer.is_features
         self.out_shape = (
-            self.hparams.encoder.z_dim if self.is_features else self.hparams.data.shape
+            (self.hparams.encoder.z_dim,)
+            if self.is_features
+            else self.hparams.data.shape
         )
 
     def get_encoder(self):
@@ -131,7 +133,6 @@ class LearnableCompressor(pl.LightningModule):
         return out
 
     def step(self, batch):
-
         x, (_, aux_target) = batch
         n_z = self.hparams.featurizer.loss.n_z_samples
 
@@ -279,10 +280,31 @@ class LearnableCompressor(pl.LightningModule):
         is_optimize_coder = len(aux_parameters) > 0
 
         # COMPRESSOR OPTIMIZER
+        cfg_optf = self.hparams.optimizer_feat
+        if cfg_optf.lr_rate_factor == 1:  # DEV legacy for workshop
+            groups = self.parameters()
+        else:
+            nonerate_parameters = [
+                p
+                for p in self.parameters()
+                if p not in set(self.rate_estimator.parameters())
+            ]
+            rate_parameters = orderedset(self.rate_estimator.parameters())
+
+            groups = [
+                {"params": nonerate_parameters},
+                {
+                    "params": rate_parameters,
+                    # you can use a different learning rate for the rate estimator. This is useful when
+                    # finetuning models by just adding an entropy bottleneck
+                    "lr": cfg_optf.kwargs.lr * cfg_optf.lr_rate_factor,
+                },
+            ]
+
         append_optimizer_scheduler_(
             self.hparams.optimizer_feat,
             self.hparams.scheduler_feat,
-            self.parameters(),
+            groups,
             optimizers,
             schedulers,
         )
@@ -307,7 +329,7 @@ class LearnableCompressor(pl.LightningModule):
     def set_featurize_mode_(self):
         """Set as a featurizer."""
 
-        # this ensures that the nothing is persistent, i.e. will not be saved in checkpoint when 
+        # this ensures that the nothing is persistent, i.e. will not be saved in checkpoint when
         # part of predictor
         for model in self.modules():
             params = dict(model.named_parameters(recurse=False))

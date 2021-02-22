@@ -107,11 +107,13 @@ class Predictor(pl.LightningModule):
         Y_hat, logs = self(x, is_return_logs=True)
 
         # Shape: [batch, 1]
-        loss = self.loss(Y_hat, y)
+        loss, loss_logs = self.loss(Y_hat, y)
+        # breakpoint()
 
         # Shape: []
         loss = loss.mean()
 
+        logs.update(loss_logs)
         logs["loss"] = loss
         if self.is_clf:
             logs["acc"] = accuracy(Y_hat.argmax(dim=-1), y)
@@ -120,7 +122,20 @@ class Predictor(pl.LightningModule):
 
     def loss(self, Y_hat, y):
         """Compute the MSE or cross entropy loss."""
-        return mse_or_crossentropy_loss(Y_hat, y, self.is_clf)
+        # TODO n_classes_multilabel or drop in distortion
+
+        loss = mse_or_crossentropy_loss(Y_hat, y, self.is_clf, agg_over_tasks="mean")
+
+        logs = {}
+        # assumes that shape is (Y_dim, n_tasks) or (Y_dim) for single task
+        # if single task std will be nan which is ok
+        for agg_over_tasks in ["max", "std"]:
+            agg = mse_or_crossentropy_loss(
+                Y_hat.detach(), y, self.is_clf, agg_over_tasks=agg_over_tasks
+            )
+            logs[f"tasks_{agg_over_tasks}"] = agg.mean()
+
+        return loss, logs
 
     def training_step(self, batch, batch_idx):
         loss, logs = self.step(batch)

@@ -1,0 +1,9 @@
+
+defaults:
+  - base_imagenet
+
+name: imagenet
+
+kwargs:
+  dataset_kwargs:
+    equivalence: [resizecrop,hflip]
