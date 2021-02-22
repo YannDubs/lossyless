@@ -29,6 +29,7 @@ trainer.max_epochs=100
 scheduler_pred.kwargs.MultiStepLR.milestones=[20,40,60,80]
 $add_kwargs
 "
+# should be using max_epochs=200 but +update_trainer_pred.max_epochs=100
 
 # every arguments that you are sweeping over
 kwargs_multi="
