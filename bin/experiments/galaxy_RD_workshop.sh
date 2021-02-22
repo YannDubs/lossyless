@@ -16,10 +16,8 @@ architecture@predictor=resnet18
 distortion.kwargs.arch_kwargs.complexity=3
 encoder.z_dim=128
 rate=H_hyper
-is_only_feat=True
 optimizer@optimizer_pred=sgd 
 scheduler@scheduler_pred=multistep
-evaluation.is_est_entropies=True
 trainer.max_epochs=200
 $add_kwargs
 "
@@ -27,12 +25,12 @@ $add_kwargs
 # every arguments that you are sweeping over
 # see kwargs_dep for conditional sweeping
 kwargs_multi="
-seed=1,2,3
+seed=1
 "
 
 if [ "$is_plot_only" = false ] ; then
   # this performs sweepingfor dependent / conditional arguments
-  for kwargs_dep in  "featurizer=neural_rec distortion=vae,ivae featurizer.loss.beta=0.001,0.01,0.03,0.1,0.3,1,3,10,100" "featurizer=jpeg++ featurizer.quality=10,20,30,40,50,60,70,80,90"
+  for kwargs_dep in  "featurizer=neural_rec distortion=ivae,vae featurizer.loss.beta=0.00001,0.0001,0.0003,0.001,0.003,0.01,0.1,1,10" #"featurizer=webp++ featurizer.quality=1,3,5,10,20,30,40,70,95"
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
@@ -74,7 +72,7 @@ python load_pretrained.py \
        load_pretrained.experiment=$experiment  \
        $col_val_subset \
        $kwargs  \
-       server=local \
+       server=none \
        trainer.gpus=0 \
        $kwargs_multi \
        load_pretrained.mode=[latent_traversals_plot,reconstruct_image_plot] \

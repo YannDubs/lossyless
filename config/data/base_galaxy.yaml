@@ -5,8 +5,8 @@ defaults:
 data:
   kwargs:
     dataset_kwargs:
-      equivalence: [x_translation, y_translation]
-      is_normalize: True # TODO: test if better (I dont' think it will)
+      equivalence: [x_translation, y_translation,rotation,scale,color]
+      is_normalize: False # TODO: test if better (I dont' think it will)
 
 evaluation:
   # evaluate on validation set because you don't have access to test set
