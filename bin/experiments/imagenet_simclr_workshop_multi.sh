@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-experiment="imagenet_simclr_workshop"
+experiment="imagenet_simclr_workshop_multi"
 notes="
 **Goal**: Pretrained SimCLR model
 "
@@ -41,10 +41,11 @@ hydra.launcher.partition=rtx6000
 trainer.max_epochs=5
 scheduler@scheduler_pred=multistep
 scheduler_pred.kwargs.MultiStepLR.milestones=[1,2]
+trainer.gpus=4
 " 
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in    "featurizer=simclr encoder.z_dim=2048" "featurizer=bottlenecksimclr featurizer.loss.beta=0.000001,0.00001,0.0001,0.001,0.01,0.1,1,10"
+  for kwargs_dep in  "featurizer=bottlenecksimclr featurizer.loss.beta=0.01"
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m & 

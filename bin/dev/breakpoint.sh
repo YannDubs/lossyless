@@ -20,6 +20,7 @@ distortion=ivae
 rate=H_hyper
 data@data_feat=cifar10
 featurizer=neural_feat
+trainer.max_epochs=100
 timeout=$time
 $add_kwargs
 "

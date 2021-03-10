@@ -359,7 +359,11 @@ class SimCLRProjector(nn.Module):
         self.projection = module.projection
 
     def forward(self, X):
-        return self.projection(X)
+        #  make sure only 2 dims
+        X, shape = batch_flatten(X)
+        X = self.projection(X)
+        X = batch_unflatten(X, shape)
+        return X
 
 
 class CNN(nn.Module):

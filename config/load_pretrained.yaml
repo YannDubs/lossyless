@@ -6,8 +6,13 @@ load_pretrained:
   mode: [] # ???
   col_val_subset : {}
   save_dir: ${paths.base_dir}/results/${long_name} # it's not kwargs because will be reevaluated at runtime => can use paths in main
+  
   collect_data:
     is_only_feat: True
+
+  reconstruct_image_plot_placeholder: {}
+  latent_traversals_plot: {}
+  reconstruct_image_plot: {}
 
   kwargs:
     prfx: ""

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-experiment="imagenet_simclr_workshop"
+experiment="imagenet_simclr_workshop_final"
 notes="
 **Goal**: Pretrained SimCLR model
 "
@@ -14,40 +14,54 @@ source `dirname $0`/../utils.sh
 kwargs="
 experiment=$experiment 
 timeout=$time
+encoder.z_dim=2048
 optimizer@optimizer_feat=adam1e-6
 optimizer_feat.lr_rate_factor=100
 checkpoint@checkpoint_feat=bestTrainLoss
 scheduler@scheduler_feat=expdecay
 data@data_feat=simclr_imagenet
 evaluation.is_est_entropies=False
-+data@data_pred=imagenet
-data_pred.kwargs.dataset_kwargs.equivalence=[simclr_finetune]
-optimizer@optimizer_pred=sslfinetuner
-architecture@predictor=mlp1024
+trainer.val_check_interval=0.25
 $add_kwargs
 "
 #
 #scheduler@scheduler_pred=cosine
 # trainer.max_epochs=20 is because little time
 # checkpoint@checkpoint_feat=bestTrainLoss because you are not augmenting validation set => only consider train
+# trainer.val_check_interval=0.25 checkpoints every 1/4th of epoch
 
 # every arguments that you are sweeping over
 kwargs_multi="
 seed=1
-data_pred.kwargs.batch_size=128
 data_feat.kwargs.batch_size=128
 hydra.launcher.partition=rtx6000
-+update_trainer_pred.max_epochs=3
 trainer.max_epochs=5
-scheduler@scheduler_pred=multistep
-scheduler_pred.kwargs.MultiStepLR.milestones=[1,2]
+rate=H_factorized
+featurizer=simclr_final
+is_only_feat=True
+featurizer.loss.beta=1e-14,1e-12,1e-10,1e-8,1e-6,1e-4,1e-2,1e-1,1
+rate.kwargs.init_scale=10
+" 
+
+kwargs_multi="
+seed=1
+data_feat.kwargs.batch_size=32
+trainer.max_epochs=5
+featurizer=simclr_final
+is_only_feat=True
+featurizer.loss.beta=1e-8
+rate.kwargs.init_scale=10
+trainer.limit_val_batches=0.005
+trainer.limit_train_batches=0.0005
+trainer.limit_test_batches=0.005
+trainer.val_check_interval=1.0
 " 
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in    "featurizer=simclr encoder.z_dim=2048" "featurizer=bottlenecksimclr featurizer.loss.beta=0.000001,0.00001,0.0001,0.001,0.01,0.1,1,10"
+  for kwargs_dep in  "" 
   do
 
-    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m & 
+    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep 
 
     sleep 3
     

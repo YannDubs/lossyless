@@ -1,4 +1,6 @@
 name: ???
 range_coder: null
 factor_beta : 1 # factor that multiplies beta 
+skip_first_k_epoch: 0 # dont' backprop for first x epoch
+is_simclr: False
 kwargs: {}

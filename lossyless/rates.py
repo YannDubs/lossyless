@@ -13,8 +13,16 @@ from compressai.models.utils import update_registered_buffers
 
 from .architectures import MLP
 from .distributions import get_marginalDist
-from .helpers import (BASE_LOG, Timer, atleast_ndim, kl_divergence, mean,
-                      orderedset, to_numpy, weights_init)
+from .helpers import (
+    BASE_LOG,
+    Timer,
+    atleast_ndim,
+    kl_divergence,
+    mean,
+    orderedset,
+    to_numpy,
+    weights_init,
+)
 
 logger = logging.getLogger(__name__)
 __all__ = ["get_rate_estimator"]
@@ -22,6 +30,7 @@ __all__ = ["get_rate_estimator"]
 ### HELPERS ###
 def get_rate_estimator(name, z_dim=None, p_ZlX=None, n_z_samples=None, **kwargs):
     """Return the correct entropy coder."""
+    #! don't do by name but with mode!
     if "lossless" in name:
         return Lossless()
 
@@ -30,6 +39,8 @@ def get_rate_estimator(name, z_dim=None, p_ZlX=None, n_z_samples=None, **kwargs)
             return HRateFactorizedPrior(z_dim, n_z_samples=n_z_samples, **kwargs)
         elif "hyper" in name:
             return HRateHyperprior(z_dim, n_z_samples=n_z_samples, **kwargs)
+        elif "simclr" in name:
+            return HRateSimCLR(z_dim, n_z_samples=n_z_samples, **kwargs)
 
     elif "MI_" in name:
         q_Z = get_marginalDist(
@@ -226,7 +237,9 @@ class Lossless(RateEstimator):
         # ensure that doesn't complain that no grad and put correct shape
         # note that we only compute average and not acatually per example memory usage
         # shape: [n_z_samples, batch_size]
-        rates = nats_rate + z.mean(dim=-1) * 0 # if bit_rate is large and 16 floating point might give inf
+        rates = (
+            nats_rate + z.mean(dim=-1) * 0
+        )  # if bit_rate is large and 16 floating point might give inf
 
         # in bits
         logs = dict()
@@ -410,14 +423,6 @@ class HRateFactorizedPrior(HRateEstimator):
         assert isinstance(all_strings, list) and len(all_strings) == 1
         return self.entropy_bottleneck.decompress(all_strings[0])
 
-    @classmethod
-    def from_state_dict(cls, state_dict):
-        """Return a new model instance from `state_dict`."""
-        z_dim = state_dict["entropy_bottleneck._matrices.0"].size(0)
-        net = cls(z_dim)
-        net.load_state_dict(state_dict)
-        return net
-
 
 def get_scale_table(min=0.11, max=256, levels=64):
     return torch.exp(torch.linspace(math.log(min), math.log(max), levels))
@@ -442,6 +447,11 @@ class HRateHyperprior(HRateEstimator):
     n_z_samples : int, optional
         Number of z samples. Currently if > 1 cannot perform actual compress.
 
+    is_train_side_encoder : bool, optional
+        Whether to train the side encoder. If not will have to be given in the forward function.
+        Not training is useful if there's some additional side information which makes sense to be
+        used instead of trained, e.g. the additonal head in SimCLR.
+
     kwargs:
         Additional arguments to `EntropyBottleneck`.
 
@@ -453,7 +463,15 @@ class HRateHyperprior(HRateEstimator):
     priors for learned image compression." Advances in Neural Information Processing Systems. 2018.
     """
 
-    def __init__(self, z_dim, factor_dim=5, is_pred_mean=True, n_z_samples=1, **kwargs):
+    def __init__(
+        self,
+        z_dim,
+        factor_dim=5,
+        is_pred_mean=True,
+        n_z_samples=1,
+        is_train_side_encoder=True,
+        **kwargs,
+    ):
         super().__init__()
         side_z_dim = z_dim // factor_dim
 
@@ -461,14 +479,17 @@ class HRateHyperprior(HRateEstimator):
         self.is_pred_mean = is_pred_mean
         self.entropy_bottleneck = EntropyBottleneck(side_z_dim, **kwargs)
         self.gaussian_conditional = GaussianConditional(None)
+        self.is_train_side_encoder = is_train_side_encoder
 
         kwargs_mlp = dict(n_hid_layers=2, hid_dim=max(z_dim, 256))
-        self.h_a = MLP(z_dim, side_z_dim, **kwargs_mlp)
+
+        if self.is_train_side_encoder:
+            self.side_encoder = MLP(z_dim, side_z_dim, **kwargs_mlp)
 
         if self.is_pred_mean:
             z_dim *= 2  # predicting mean and var
 
-        self.h_s = MLP(side_z_dim, z_dim, **kwargs_mlp)
+        self.z_encoder = MLP(side_z_dim, z_dim, **kwargs_mlp)
 
     def chunk_params(self, gaussian_params):
         if self.is_pred_mean:
@@ -477,14 +498,16 @@ class HRateHyperprior(HRateEstimator):
             scales_hat, means_hat = gaussian_params, None
         return scales_hat, means_hat
 
-    def forward(self, z, _):
+    def forward(self, z, _, side_encoder=None):
+        if not self.is_train_side_encoder:
+            side_encoder = self.side_encoder
 
         # shape: [n_z_dim, batch_shape, side_z_dim]
-        side_z = self.h_a(z)
+        side_z = side_encoder(z)
         side_z_hat, q_s = self.entropy_bottleneck(side_z)
 
         # scales_hat and means_hat (if not None). shape: [n_z_dim, batch_shape, z_dim]
-        gaussian_params = self.h_s(side_z_hat)
+        gaussian_params = self.z_encoder(side_z_hat)
         scales_hat, means_hat = self.chunk_params(gaussian_params)
 
         # shape: [n_z_dim, batch_shape, z_dim]
@@ -522,7 +545,7 @@ class HRateHyperprior(HRateEstimator):
         side_z_hat = self.entropy_bottleneck.decompress(side_z_strings)
 
         # shape: [batch_shape, z_dim]
-        gaussian_params = self.h_s(side_z_hat)
+        gaussian_params = self.z_encoder(side_z_hat)
 
         # z, scales_hat, means_hat, indexes. shape: [batch_shape, z_dim, 1, 1]
         scales_hat, means_hat = self.chunk_params(gaussian_params)
@@ -533,10 +556,12 @@ class HRateHyperprior(HRateEstimator):
 
         return indexes, means_hat
 
-    def compress(self, z):
+    def compress(self, z, side_encoder=None):
+        if not self.is_train_side_encoder:
+            side_encoder = self.side_encoder
 
         # side_z and side_z_hat. shape: [batch_shape, side_z_dim]
-        side_z = self.h_a(z)
+        side_z = side_encoder(z)
         # len n_z_dim list of bytes
         side_z_strings = self.entropy_bottleneck.compress(side_z)
 
@@ -593,20 +618,27 @@ class HRateHyperprior(HRateEstimator):
             error_msgs,
         )
 
-    @classmethod
-    def from_state_dict(cls, state_dict):
-        """Return a new model instance from `state_dict`."""
-        z_dim = state_dict["h_a.module.0.weight"].size(1)
-        factor_dim = z_dim // state_dict["h_a.module.6.weight"].size(0)
-        is_pred_mean = state_dict["h_s.module.6.weight"].size(0) // 10 == 2
-
-        net = cls(z_dim, factor_dim=factor_dim, is_pred_mean=is_pred_mean)
-        net.load_state_dict(state_dict)
-        return net
-
     def update(self, scale_table=None, force=False):
         if scale_table is None:
             scale_table = get_scale_table()
         updated = self.gaussian_conditional.update_scale_table(scale_table, force=force)
         updated |= super().update(force=force)
         return updated
+
+
+# DEV
+class HRateSimCLR(HRateHyperprior):
+    def __init__(self, z_dim, is_pred_mean=True, n_z_samples=1, **kwargs):
+        HRateEstimator.__init__(self)
+        assert z_dim == 2048
+        side_z_dim = 128
+
+        self.is_can_compress = n_z_samples == 1
+        self.is_pred_mean = is_pred_mean
+        self.entropy_bottleneck = EntropyBottleneck(side_z_dim, **kwargs)
+        self.gaussian_conditional = GaussianConditional(None)
+
+        if self.is_pred_mean:
+            z_dim *= 2  # predicting mean and var
+
+        self.h_s = MLP(side_z_dim, z_dim, n_hid_layers=2, hid_dim=512)

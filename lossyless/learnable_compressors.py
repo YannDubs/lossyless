@@ -117,7 +117,15 @@ class LearnableCompressor(pl.LightningModule):
             z = z.squeeze(0)
             z_hat = self.rate_estimator.compress(z)
         else:
-            z_hat, *_ = self.rate_estimator(z, p_Zlx)
+            if self.hparams.rate.is_simclr:  # DEV
+                if self.current_epoch == 0:
+                    z_hat = z
+                else:
+                    projector = self.distortion_estimator.projector
+                    z_hat, *_ = self.rate_estimator(z, p_Zlx, h_a=projector)
+            else:
+                z_hat, *_ = self.rate_estimator(z, p_Zlx)
+
             z_hat = z_hat.squeeze(0)
 
         if is_features:
@@ -143,8 +151,34 @@ class LearnableCompressor(pl.LightningModule):
         # shape: [n_z, batch_size, z_dim]
         z = p_Zlx.rsample([n_z])
 
-        # z_hat. shape: [n_z, batch_size, z_dim]
-        z_hat, rates, r_logs, r_other = self.rate_estimator(z, p_Zlx)
+        #! to clean or rm
+        if self.hparams.rate.is_simclr:
+            projector = self.distortion_estimator.projector
+            if self.current_epoch == 0:
+                if self.global_step == 0:
+                    logger.info(f"SimCLR.")
+                # train the rate but without changing the featuizer
+                z_detached = z.detach() + z * 0
+
+                z_hat, rates, r_logs, r_other = self.rate_estimator(
+                    z_detached, _, h_a=projector
+                )
+
+                # for first epoch let's just min deltas for rate param
+                deltas = torch.abs(z_hat - z_detached).mean()
+                r_logs["deltas"] = deltas
+
+                # but still want to plot rate => trick
+                rates = rates + deltas - deltas.detach()
+
+                z_hat = z  # actual z that you wil be using is the ral one
+
+            else:
+                z_hat, rates, r_logs, r_other = self.rate_estimator(z, _, h_a=projector)
+
+        else:
+            # z_hat. shape: [n_z, batch_size, z_dim]
+            z_hat, rates, r_logs, r_other = self.rate_estimator(z, p_Zlx)
 
         distortions, d_logs, d_other = self.distortion_estimator(
             z_hat, aux_target, p_Zlx
@@ -181,8 +215,16 @@ class LearnableCompressor(pl.LightningModule):
             cfg.featurizer.loss.beta * cfg.rate.factor_beta * cfg.distortion.factor_beta
         )
 
+        # you don't want to have values that explode
+        # so instead of decreasing more rate just increase distortion
+        labda = 1
+        min_beta = 1e-5  # chosen so that does not = 0 for float16
+        if beta < min_beta:
+            labda = min_beta / beta
+            beta = min_beta
+
         # loose_loss for plotting. shape: []
-        loose_loss = (distortions + beta * rates).mean()
+        loose_loss = (labda * distortions + beta * rates).mean()
 
         # tightens bound using IWAE: log 1/k sum exp(loss). shape: [batch_size]
         if n_z > 1:
@@ -192,9 +234,19 @@ class LearnableCompressor(pl.LightningModule):
             distortions = distortions.squeeze(0)
             rates = rates.squeeze(0)
 
+        # TODO should use a beta scheduler
+        if self.current_epoch < self.hparams.rate.skip_first_k_epoch:
+            if self.global_step == 0:
+                logger.info(
+                    f"Skipping first {self.hparams.featurizer.skip_first_k_epoch} epochs of rate."
+                )
+            # setting beta to zero skips rate but still plots
+            rates = rates * 0 + rates.detach()
+
         # E_x[...]. shape: shape: []
         rate = rates.mean(0)
         distortion = distortions.mean(0)
+
         loss = distortion + beta * rate
 
         logs = dict(
@@ -218,6 +270,14 @@ class LearnableCompressor(pl.LightningModule):
             #! waiting for torch lightning #1243
             #! everyting in other should be detached
             self._save = other
+
+            # TODO should be a finteuner callback
+            if self.current_epoch < self.hparams.featurizer.skip_first_k_epoch:
+                if self.global_step == 0:
+                    logger.info(
+                        f"Skipping first {self.hparams.featurizer.skip_first_k_epoch} epochs."
+                    )
+                loss = loss * 0
 
         # ONLINE EVALUATOR
         elif optimizer_idx == 1:

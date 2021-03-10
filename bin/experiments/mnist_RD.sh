@@ -38,6 +38,8 @@ featurizer.loss.beta=0.001,0.01,0.03,0.1,0.3,1,3,10,100
 seed=1,2,3,4,5
 "
 
+
+
 if [ "$is_plot_only" = false ] ; then
   # don't train vae with augmentation
   for kwargs_dep in  "distortion=vae data_feat.kwargs.dataset_kwargs.equivalence=[]" "distortion=ivae"

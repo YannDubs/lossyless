@@ -92,6 +92,7 @@ trainer:
   gradient_clip_val: 3 # 0 means no clip #TODO tune (1 seemed to be good in compressai)
   reload_dataloaders_every_epoch: False
   log_every_n_steps: 100
+  val_check_interval: 1.0 # decrease for subepoch checkpoitint
 
   # ENGINEERING / SPEED #
   gpus: 1 
