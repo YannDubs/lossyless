@@ -472,20 +472,26 @@ def evaluate(
             append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
         log_dict(trainer, test_res, is_param=False)
 
+        test_res = replace_keys(test_res, "test/", "")
+        tosave = dict(test=test_res)
+
         # Evaluation on train
-        train_res = trainer.test(
-            test_dataloaders=datamodule.train_dataloader(), ckpt_path=ckpt_path
-        )[0]
-        train_res = replace_keys(train_res, "test", "testtrain")
-        if is_est_entropies and is_featurizer:
-            # ? this can be slow on all training set, is it necessary ?
-            append_entropy_est_(train_res, trainer, datamodule, cfg, is_test=False)
-        log_dict(trainer, train_res, is_param=False)
+        if cfg.data.length < 1e5:
+            # don't eval on data if big
+            train_res = trainer.test(
+                test_dataloaders=datamodule.train_dataloader(), ckpt_path=ckpt_path
+            )[0]
+            train_res = replace_keys(train_res, "test", "testtrain")
+            if is_est_entropies and is_featurizer:
+                # ? this can be slow on all training set, is it necessary ?
+                append_entropy_est_(train_res, trainer, datamodule, cfg, is_test=False)
+            log_dict(trainer, train_res, is_param=False)
+
+            train_res = replace_keys(train_res, "testtrain/", "")
+            tosave["train"] = train_res
 
         # save results
-        train_res = replace_keys(train_res, "testtrain/", "")
-        test_res = replace_keys(test_res, "test/", "")
-        results = pd.DataFrame.from_dict(dict(train=train_res, test=test_res))
+        results = pd.DataFrame.from_dict(tosave)
         path = Path(cfg.paths.results) / file
         results.to_csv(path, header=True, index=True)
         logger.info(f"Logging results to {path}.")
