@@ -126,6 +126,7 @@ def single_plot(fn):
         row_title=dflt_kwargs["row_title"],
         col_title=dflt_kwargs["col_title"],
         x_rotate=dflt_kwargs["x_rotate"],
+        legend_out=dflt_kwargs["legend_out"],
         is_no_legend_title=dflt_kwargs["is_no_legend_title"],
         set_kwargs=dflt_kwargs["set_kwargs"],
         **kwargs,
@@ -178,6 +179,9 @@ def single_plot(fn):
                     ax.legend(handles=handles[1:], labels=labels[1:])
 
         sns_plot.set(**set_kwargs)
+
+        if not legend_out:
+            plt.legend()
 
         if self.is_return_plots:
             return sns_plot

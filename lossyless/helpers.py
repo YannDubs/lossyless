@@ -619,7 +619,14 @@ def plot_config(
 
 
 def tensors_to_fig(
-    x, n_rows=None, n_cols=None, x_labels=[], y_labels=[], imgsize=(4, 4),
+    x,
+    n_rows=None,
+    n_cols=None,
+    x_labels=[],
+    y_labels=[],
+    imgsize=(4, 4),
+    small_font=16,
+    large_font=20,
 ):
     """Make a grid-like figure from tensors and labels. Return figure."""
     b, c, h, w = x.shape
@@ -669,9 +676,9 @@ def tensors_to_fig(
             axij.get_yaxis().set_ticklabels([])
 
             if n_x_labels == n_cols and j == (n_rows - 1):
-                axij.set_xlabel(x_labels[i])
+                axij.set_xlabel(x_labels[i], fontsize=small_font)
             if n_y_labels == n_rows and i == 0:
-                axij.set_ylabel(y_labels[j])
+                axij.set_ylabel(y_labels[j], fontsize=small_font)
 
     # TODO : remove all the resut once use matplotlib 3.4
     # i.e. use:
@@ -687,10 +694,10 @@ def tensors_to_fig(
     plt.tick_params(labelcolor="none", top=False, bottom=False, left=False, right=False)
 
     if n_x_labels == 1:
-        large_ax.set_xlabel(x_labels[0])
+        large_ax.set_xlabel(x_labels[0], fontsize=large_font)
 
     if n_y_labels == 1:
-        large_ax.set_ylabel(y_labels[0])
+        large_ax.set_ylabel(y_labels[0], fontsize=large_font)
 
     # TODO : remove once use matplotlib 3.4
     if n_x_labels == 1 or n_y_labels == 1:

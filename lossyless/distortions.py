@@ -476,5 +476,4 @@ class ContrastiveDistortion(nn.Module):
 
         logs = dict(I_q_zm=(hat_H_m - hat_H_mlz.mean()) / math.log(BASE_LOG))
 
-        return hat_H_mlz * 0, logs
-
+        return hat_H_mlz, logs
