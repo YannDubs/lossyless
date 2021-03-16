@@ -253,7 +253,7 @@ class ResultAggregator(PostPlotter):
             sharex=is_single_col,
             filename=filename,
             xlabel="Distortion",
-            ylabel="Rate",
+            ylabel="Rate (bits)",
             **kwargs,
         )
 

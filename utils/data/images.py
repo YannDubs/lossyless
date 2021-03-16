@@ -6,6 +6,7 @@ import os
 import subprocess
 import zipfile
 from os import path
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -14,17 +15,24 @@ import torch
 from lossyless.helpers import BASE_LOG, Normalizer, check_import
 from torch.utils.data import random_split
 from torchvision import transforms as transform_lib
-from torchvision.datasets import CIFAR10, MNIST, FashionMNIST
+from torchvision.datasets import CIFAR10, MNIST, FashionMNIST, ImageNet
 from torchvision.transforms import (
     ColorJitter,
     RandomAffine,
     RandomErasing,
     RandomHorizontalFlip,
+    RandomResizedCrop,
     RandomRotation,
 )
 from utils.estimators import discrete_entropy
 
-from .autoaugment import CIFAR10Policy, ImageNetPolicy, SVHNPolicy
+from .augmentations import (
+    CIFAR10Policy,
+    ImageNetPolicy,
+    SVHNPolicy,
+    get_finetune_augmentations,
+    get_simclr_augmentations,
+)
 from .base import LossylessCLFDataset, LossylessDataModule
 from .helpers import int_or_ratio
 
@@ -40,6 +48,7 @@ __all__ = [
     "MnistDataModule",
     "FashionMnistDataModule",
     "GalaxyDataModule",
+    "ImagenetDataModule",
 ]
 
 
@@ -109,6 +118,7 @@ class LossylessImgDataset(LossylessCLFDataset):
         Return a dictortionary of dictionaries containing all possible augmentations of interest.
         first dictionary say which kind of data they act on.
         """
+        shape = self.shapes_x_t_Mx["input"]
         return dict(
             PIL={
                 "rotation": RandomRotation(30),
@@ -116,13 +126,27 @@ class LossylessImgDataset(LossylessCLFDataset):
                 "x_translation": RandomAffine(0, translate=(0.1, 0)),
                 "shear": RandomAffine(0, shear=10),
                 "scale": RandomAffine(0, scale=(0.8, 1.2)),
+                "rotation++": RandomRotation(45),
+                "y_translation++": RandomAffine(0, translate=(0, 0.25)),
+                "x_translation++": RandomAffine(0, translate=(0.25, 0)),
+                "shear++": RandomAffine(0, shear=25),
+                "scale++": RandomAffine(0, scale=(0.6, 1.4)),
                 "color": ColorJitter(
                     brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
                 ),
                 "hflip": RandomHorizontalFlip(),
+                "resizecrop": RandomResizedCrop(size=(shape[1], shape[2])),
                 "auto_cifar10": CIFAR10Policy(),
                 "auto_imagenet": ImageNetPolicy(),
                 "auto_svhn": SVHNPolicy(),
+                # NB you should use those 3 also at eval time
+                "simclr_cifar10": get_simclr_augmentations(
+                    "cifar10", shape[-1], self.is_train
+                ),
+                "simclr_imagenet": get_simclr_augmentations(
+                    "imagenet", shape[-1], self.is_train
+                ),
+                "simclr_finetune": get_finetune_augmentations(shape[-1], self.is_train),
             },
             tensor={"erasing": RandomErasing(value=0.5),},
         )
@@ -348,7 +372,76 @@ class Cifar10DataModule(TorchvisionDataModule):
 
 
 # Imagenet #
-# TODO
+class ImageNetDataset(LossylessImgDataset, ImageNet):
+    def __init__(self, root, *args, **kwargs):
+        data_dir = path.join(root, "imagenet")
+        super().__init__(data_dir, *args, **kwargs)
+
+    @property
+    def shapes_x_t_Mx(self):
+        shapes = super(ImageNetDataset, self).shapes_x_t_Mx
+        shapes["input"] = (3, 224, 224)
+        shapes["target"] = (1000,)
+        return shapes
+
+    def get_img_target(self, index):
+        img, target = ImageNet.__getitem__(self, index)
+        return img, target
+
+    def get_base_transform(self):
+        # resizing is not just directly resizing but center cropping
+        trnsfs = [
+            transform_lib.Resize(256),
+            transform_lib.CenterCrop(224),
+            transform_lib.ToTensor(),
+        ]
+
+        if self.is_normalize and self.is_color:
+            # only normalize colored images
+            # raise if can't normalize because you specifrically gave `is_normalize`
+            trnsfs += [Normalizer(self.dataset_name, is_raise=True)]
+
+        return transform_lib.Compose(trnsfs)
+
+    @property
+    def is_train(self):
+        return self.split == "train"
+
+    @property
+    def dataset_name(self):
+        return "ImageNet"
+
+    def __len__(self):
+        return ImageNet.__len__(self)
+
+
+class ImagenetDataModule(LossylessDataModule):
+    def get_train_dataset(self, **dataset_kwargs):
+        train = self.Dataset(self.data_dir, split="train", **dataset_kwargs,)
+        return train
+
+    def get_val_dataset(self, **dataset_kwargs):
+        valid = self.Dataset(self.data_dir, split="val", **dataset_kwargs,)
+        return valid
+
+    def get_test_dataset(self, **dataset_kwargs):
+        # we do not have access to test set so use valid
+        test = self.Dataset(self.data_dir, split="val", **dataset_kwargs,)
+        return test
+
+    def prepare_data(self):
+        # ensure that model exists
+        self.Dataset(self.data_dir, split="train", **self.dataset_kwargs)
+        self.Dataset(self.data_dir, split="val", **self.dataset_kwargs)
+
+    @property
+    def mode(self):
+        return "image"
+
+    @property
+    def Dataset(self):
+        return ImageNetDataset
+
 
 ### Non Torchvision Models ###
 
@@ -556,7 +649,7 @@ class GalaxyDataset(LossylessImgDataset):
         # target is shape of target. This will depend as to if we are using classfication or regression
         # in regression mode (as we said) then you should stack all labels.
         # e.g. if the are 37 different regression tasks use `target=(1,37)` which says that there are 37
-        # one dimensional tasks (it's the same as `target=(37,)` but averages over 6 rather than sum)
+        # one dimensional tasks (it's the same as `target=(37,)` but averages over 37 rather than sum)
         #
         # for classification something like `target=(2,37)` means 2-class classification for 37
         # labels  (note that I use cross entropy rather than binary cross entropy. it shouldn't matter

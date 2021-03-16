@@ -7,20 +7,13 @@ import logging
 from copy import deepcopy
 from pathlib import Path
 
+import einops
 import hydra
 import torch
-from lossyless.callbacks import (
-    CodebookPlot,
-    LatentDimInterpolator,
-    MaxinvDistributionPlot,
-)
-from lossyless.helpers import (
-    UnNormalizer,
-    is_colored_img,
-    plot_config,
-    tensors_to_fig,
-    tmp_seed,
-)
+from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
+                                 MaxinvDistributionPlot)
+from lossyless.helpers import (UnNormalizer, is_colored_img, plot_config,
+                               tensors_to_fig, tmp_seed)
 from main import main as main_training
 from omegaconf import OmegaConf
 from utils.helpers import all_logging_disabled
@@ -207,8 +200,45 @@ class PretrainedAnalyser(PostPlotter):
             **kwargs,
         )
 
-    def reconstruct_image_plot(self, seed=123, n_samples=5, is_train=False):
-        """Reconstruct the desired image."""
+    def reconstruct_image_plot(
+        self,
+        seed=123,
+        n_samples=7,
+        is_train=False,
+        is_plot_real=True,
+        n_rows=None,
+        x_labels=None, 
+        y_labels=None,  
+        filename="rec_imgs.png",
+    ):
+        """Reconstruct the desired image.
+        
+        Parameters
+        ----------
+        seed : int, optional
+            Random seed
+
+        n_samples : int, optional
+            Number of images to sample.
+
+        is_train : bool, optional
+            Whether to show training images rather than test.
+
+        is_plot_real : bool, optional
+            Wehter to plot real image in addition to reconstruction.
+
+        n_rows : int, optional
+            Number of rows to use. Usually automatic.
+
+        x_labels : str, optional
+            Labels for x axis. `None` means automatic.
+
+        y_labels : str, optional
+            Labels for y axis. `None` means automatic.
+
+        filename : str, optional
+            Where to save the image.
+        """
         mode = "featurizer"
         module = self.modules[mode]
         datamodule = self.datamodules[mode]
@@ -236,21 +266,84 @@ class PretrainedAnalyser(PostPlotter):
         save_dir = Path(cfg.load_pretrained.save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
 
-        for i, (xi, xi_hat) in enumerate(zip(x, x_hat)):
+        if is_colored_img(x):
+            if cfg.data.kwargs.dataset_kwargs.is_normalize:
+                unnormalizer = UnNormalizer(cfg.data.dataset)
+                x = unnormalizer(x)
 
-            file_path = save_dir / Path(f"{self.prfx}rec_img_{i}.png")
+        file_path = save_dir / Path(f"{self.prfx}{filename}")
 
-            if is_colored_img(xi):
-                if cfg.data.kwargs.dataset_kwargs.is_normalize:
-                    unnormalizer = UnNormalizer(cfg.data.dataset)
-                    xi = unnormalizer(xi)
+        if is_plot_real:
+            if y_labels is None:
+                y_labels = ["Source", "Reconstructions"]
 
-            both_images = torch.stack([xi, xi_hat], dim=0)
+            if x_labels is None:
+                x_labels = ""
+
+            all_images = torch.stack([x, x_hat], dim=0)
+            all_images = einops.rearrange(all_images, "mode b ... -> (b mode) ...")
             fig = tensors_to_fig(
-                both_images, n_cols=2, x_labels=["Real", "Reconstruction"]
+                all_images, n_rows=2, y_labels=y_labels, x_labels=x_labels
+            )
+        else:
+            if y_labels is None:
+                y_labels = ""
+
+            if x_labels is None:
+                x_labels = ["Reconstructions"]
+
+            if n_rows is None:
+                n_rows = 1
+            fig = tensors_to_fig(
+                x_hat, n_rows=n_rows, x_labels=x_labels, y_labels=y_labels
             )
 
-            save_fig(fig, file_path, dpi=self.dpi)
+        save_fig(fig, file_path, dpi=self.dpi)
+
+    def reconstruct_image_plot_placeholder(
+        self, seed=123, is_single_row=True, add_standard="", add_invariant=""
+    ):
+        """Placeholder figure so that can copy past other results.
+        
+        Parameters
+        ----------
+        seed : int, optional
+            Random seed.
+
+        is_single_row : bool, optional
+            Whether to have a single row with 3 images. Else has rows each with 7 columns.
+
+        add_standard : str, optional
+            Additional name to add to "Standard Compression""
+
+        add_invariant : str, optional
+            Additional name to add to "Invariant Compression"
+        """
+        labels = [
+            "Source",
+            "Standard Compression" + add_standard,
+            "Invariant Compression" + add_invariant,
+        ]
+
+        if is_single_row:
+            self.reconstruct_image_plot(
+                seed=seed,
+                n_samples=3,
+                is_plot_real=False,
+                y_labels="",
+                x_labels=labels,
+                filename="rec_imgs_allin1_singlerow.png",
+            )
+        else:
+            self.reconstruct_image_plot(
+                seed=seed,
+                n_samples=7 * 3,
+                n_rows=3,
+                is_plot_real=False,
+                y_labels=labels,
+                x_labels="",
+                filename="rec_imgs_allin1_multirow.png",
+            )
 
 
 if __name__ == "__main__":

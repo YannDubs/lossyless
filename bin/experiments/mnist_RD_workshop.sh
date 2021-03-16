@@ -73,6 +73,7 @@ python aggregate.py \
        +plot_all_RD_curves.rate_cols="${rate_cols}" \
        +plot_all_RD_curves.distortion_cols="${distortion_cols}" \
        +plot_all_RD_curves.hue=$compare \
+       +plot_all_RD_curves.logbase_x=2 \
        +plot_invariance_RD_curve.data="${data}" \
        +plot_invariance_RD_curve.noninvariant='vae' \
        +plot_invariance_RD_curve.logbase_x=2 \
@@ -81,14 +82,14 @@ python aggregate.py \
 
 
 # plot loaded model
-col_val_subset=""
-python load_pretrained.py \
-      load_pretrained.experiment=$experiment  \
-      $col_val_subset \
-      $kwargs  \
-      server=none \
-      trainer.gpus=0 \
-      $kwargs_multi \
-      distortion=vae,ivae \
-      load_pretrained.mode=[latent_traversals_plot,reconstruct_image_plot] \
-      -m 
+# col_val_subset=""
+# python load_pretrained.py \
+#       load_pretrained.experiment=$experiment  \
+#       $col_val_subset \
+#       $kwargs  \
+#       server=none \
+#       trainer.gpus=0 \
+#       $kwargs_multi \
+#       distortion=vae,ivae \
+#       load_pretrained.mode=[latent_traversals_plot,reconstruct_image_plot] \
+#       -m 

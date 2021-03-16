@@ -1,5 +1,9 @@
+import io
 import logging
 import math
+from contextlib import closing
+
+import numpy as np
 
 import compressai
 import einops
@@ -9,15 +13,8 @@ from compressai.models.utils import update_registered_buffers
 
 from .architectures import MLP
 from .distributions import get_marginalDist
-from .helpers import (
-    BASE_LOG,
-    Timer,
-    atleast_ndim,
-    kl_divergence,
-    mean,
-    orderedset,
-    weights_init,
-)
+from .helpers import (BASE_LOG, Timer, atleast_ndim, kl_divergence, mean,
+                      orderedset, to_numpy, weights_init)
 
 logger = logging.getLogger(__name__)
 __all__ = ["get_rate_estimator"]
@@ -25,7 +22,10 @@ __all__ = ["get_rate_estimator"]
 ### HELPERS ###
 def get_rate_estimator(name, z_dim=None, p_ZlX=None, n_z_samples=None, **kwargs):
     """Return the correct entropy coder."""
-    if "H_" in name:
+    if "lossless" in name:
+        return Lossless()
+
+    elif "H_" in name:
         if "fact" in name:
             return HRateFactorizedPrior(z_dim, n_z_samples=n_z_samples, **kwargs)
         elif "hyper" in name:
@@ -205,6 +205,43 @@ class RateEstimator(torch.nn.Module):
         These are all the parameters of the prior.
         """
         raise NotImplementedError()
+
+
+### No Compresssion CODERS ###
+class Lossless(RateEstimator):
+    """Model that does not performs lossless comrpession of representations."""
+
+    def update(self, force):
+        pass
+
+    def forward(self, z, _):
+        n_z, batch_size, z_dim = z.shape
+        z_hat = z
+
+        with closing(io.BytesIO()) as f:
+            np.savez_compressed(f, to_numpy(z_hat))
+            bit_rate = f.getbuffer().nbytes * 8 / (n_z * batch_size)
+
+        nats_rate = bit_rate * math.log(2)
+        # ensure that doesn't complain that no grad and put correct shape
+        # note that we only compute average and not acatually per example memory usage
+        # shape: [n_z_samples, batch_size]
+        rates = nats_rate + z.mean(dim=-1) * 0 # if bit_rate is large and 16 floating point might give inf
+
+        # in bits
+        logs = dict()
+        other = dict()
+
+        return z_hat, rates, logs, other
+
+    def parameters(self):
+        # all params
+        for m in self.children():
+            for p in m.parameters():
+                yield p
+
+    def aux_parameters(self):
+        return iter(())  # no parameters
 
 
 ### MUTUAL INFORMATION CODERS. Min I[X,Z] ###

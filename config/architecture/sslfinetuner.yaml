@@ -1,0 +1,6 @@
+name: sslfinetuner
+arch: mlp 
+arch_kwargs:
+  hid_dim: 1024
+  norm_layer: "batchnorm",
+  dropout_p: 0.

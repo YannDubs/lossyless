@@ -9,7 +9,7 @@ import random
 import numpy as np
 from PIL import Image, ImageEnhance, ImageOps
 
-
+__all__ = ["ImageNetPolicy", "CIFAR10Policy","SVHNPolicy"]
 class ImageNetPolicy(object):
     """ Randomly choose one of the best 24 Sub-policies on ImageNet.
         Example:

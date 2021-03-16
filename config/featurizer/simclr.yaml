@@ -1,0 +1,22 @@
+# @package _global_
+defaults:
+  - neural_feat@featurizer
+  - override /architecture@encoder: simclr
+  - override /distortion: ince
+  - override /rate: lossless
+
+featurizer:
+  name: bottlenecksimclr
+
+encoder:
+  zdim: 2048
+
+distortion:
+  kwargs:
+    temperature: 0.1
+    weight: 1
+    is_cosine: True
+    is_project: True
+    project_kwargs:
+      out_shape: 128
+      mode: simclr_projector

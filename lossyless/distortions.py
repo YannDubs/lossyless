@@ -5,10 +5,15 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from .architectures import get_Architecture
+from .architectures import MLP, get_Architecture
 from .distributions import Deterministic, DiagGaussian
-from .helpers import (BASE_LOG, UnNormalizer, is_colored_img, kl_divergence,
-                      mse_or_crossentropy_loss)
+from .helpers import (
+    BASE_LOG,
+    UnNormalizer,
+    is_colored_img,
+    kl_divergence,
+    mse_or_crossentropy_loss,
+)
 
 __all__ = ["get_distortion_estimator"]
 
@@ -174,11 +179,12 @@ class DirectDistortion(nn.Module):
                 neg_log_q_ylz = neg_log_q_ylz / n_tasks
 
         else:  # normal pred
+            agg_over_tasks = "sum" if self.is_sum_over_tasks else "mean"
             neg_log_q_ylz = mse_or_crossentropy_loss(
                 Y_hat,
                 aux_target,
                 self.is_classification,
-                is_sum_over_tasks=self.is_sum_over_tasks,
+                agg_over_tasks=agg_over_tasks,
             )
 
         # -log p(y|z). shape: [n_z_samples, batch_size]
@@ -236,6 +242,9 @@ class ContrastiveDistortion(nn.Module):
         as negatives is necesary to ensure the representations are not invariant. THis is used
         for nce (but not ince).
 
+    is_project : bool, optional
+        Whether to use a porjection head.
+
     References
     ----------
     [1] Song, Jiaming, and Stefano Ermon. "Multi-label contrastive predictive coding." Advances in
@@ -250,6 +259,9 @@ class ContrastiveDistortion(nn.Module):
         is_cosine=True,
         weight=1,
         is_invariant=True,
+        is_project=True,
+        project_kwargs={"out_shape": 128},
+        is_bolts_loss=False,
     ):
         super().__init__()
         self.p_ZlX = p_ZlX
@@ -258,6 +270,14 @@ class ContrastiveDistortion(nn.Module):
         self.is_cosine = is_cosine
         self.weight = weight
         self.is_invariant = is_invariant
+        self.is_project = is_project
+        if self.is_project:
+            Projector = get_Architecture(**project_kwargs)
+            self.projector = Projector(self.p_ZlX.out_dim)
+        else:
+            self.projector = torch.nn.Identity()
+
+        self.is_bolts_loss = is_bolts_loss  # DEV
 
     def forward(self, z_hat, x_pos, p_Zlx):
         """Compute the distortion.
@@ -284,15 +304,136 @@ class ContrastiveDistortion(nn.Module):
         other : dict
             Additional values to return.
         """
-        batch_size = z_hat.size(1)
-        new_batch_size = 2 * batch_size
-        device = z_hat.device
+        n_z, batch_size, z_dim = z_hat.shape
 
         # Distribution for positives. batch shape: [batch_size] ; event shape: [z_dim]
         p_Zlp = self.p_ZlX(x_pos)
 
-        # shape: [new_batch_size,new_batch_size]
+        # shape: [new_batch_size,z_dim]
+        #! logit should be after mult and shape [new_batch_size,new_batch_size]
         logits = self.compute_logits(p_Zlx, p_Zlp)
+
+        # shape: [2 * batch_size]
+        if self.is_bolts_loss:
+            hat_H_mlz, logs = self.nt_xent_loss(logits)
+        else:
+            hat_H_mlz, logs = self.compute_loss(logits)
+
+        # shape: [n_z, batch_size]
+        hat_H_mlz = (hat_H_mlz[:batch_size] + hat_H_mlz[batch_size:]) / 2
+        hat_H_mlz = einops.repeat(hat_H_mlz, "bz -> n_z bz", n_z=n_z)
+
+        other = dict()
+
+        return hat_H_mlz, logs, other
+
+    def nt_xent_loss(self, out, eps=1e-6):  # DEV just to check if gives similar results
+        """
+            assume out_1 and out_2 are normalized
+            out_1: [batch_size, dim]
+            out_2: [batch_size, dim]
+        """
+
+        # out: [2 * batch_size, dim]
+        # out_dist: [2 * batch_size * world_size, dim]
+        out = out
+        out_dist = out
+        bs2 = out.shape[0]
+        out_1 = out[: bs2 // 2, ...]
+        out_2 = out[bs2 // 2 :, ...]
+
+        # cov and sim: [2 * batch_size, 2 * batch_size * world_size]
+        # neg: [2 * batch_size]
+        cov = torch.mm(out, out_dist.t().contiguous())
+        sim = torch.exp(cov / self.temperature)
+        neg = sim.sum(dim=-1)
+
+        # from each row, subtract e^1 to remove similarity measure for x1.x1
+        row_sub = torch.Tensor(neg.shape).fill_(math.e).to(neg.device)
+        neg = torch.clamp(neg - row_sub, min=eps)  # clamp for numerical stability
+
+        # Positive similarity, pos becomes [2 * batch_size]
+        pos = torch.exp(torch.sum(out_1 * out_2, dim=-1) / self.temperature)
+        pos = torch.cat([pos, pos], dim=0)
+
+        loss = -torch.log(pos / (neg + eps))
+
+        return loss, {}
+
+    def compute_logits(self, p_Zlx, p_Zlp):
+        # TODO make it work for distributed training
+
+        if isinstance(p_Zlx, DiagGaussian):
+            assert not self.is_project
+
+            # use probabilistic InfoNCE
+            # not pytorch's kl divergence because want fast computation (kl between every and every element in batch)
+            mu_x, sigma_x = p_Zlx.base_dist.loc, p_Zlx.base_dist.scale
+            mu_p, sigma_p = p_Zlp.base_dist.loc, p_Zlp.base_dist.scale
+
+            # shape: [2*batch_size, z_dim]
+            mus = torch.cat([mu_x, mu_p], dim=0)
+            sigmas = torch.cat([sigma_x, sigma_p], dim=0)
+
+            N = mus.size(0)
+
+            # TODO: Should use torch.as_strided
+            # shape: [4*batch_size**2, z_dim]
+            # repeat: [1,2,3] -> [1,2,3,1,2,3,1,2,3]
+            r_mus = mus.repeat(N, 1)
+            r_sigmas = sigmas.repeat(N, 1)
+            # repeat interleave: [1,2,3] -> [1,1,1,2,2,2,3,3,3]
+            i_mus = mus.repeat_interleave(N, dim=0)
+            i_sigmas = sigmas.repeat_interleave(N, dim=0)
+
+            # batch shape: [4*batch_size**2] event shape: [z_dim]
+            r_gaus = DiagGaussian(r_mus, r_sigmas)
+            i_gaus = DiagGaussian(i_mus, i_sigmas)
+
+            # all possible pairs of KLs. shape: [2*batch_size, 2*batch_size]
+            kls = kl_divergence(r_gaus, i_gaus).view(N, N)
+            logits = -kls  # logits needs to be larger when more similar
+
+            if self.is_symmetric:
+                # equivalent to (kl(p||q) + kl(q||p))/2 for each pair
+                logits = (logits + logits.T) / 2
+
+        else:
+            # if you are using a deterministic representation then use standard InfoNCE
+            # because if not KL is none differentiable
+            # z,z_pos. shape: [batch_size,z_dim]
+            if isinstance(p_Zlx, Deterministic):
+                z = p_Zlx.base_dist.loc
+                z_pos = p_Zlp.base_dist.loc
+            else:
+                # assume outputs are tensors of shape: [n_z,batch_size,z_dim]
+                z = p_Zlx.squeeze(0)
+                z_pos = p_Zlp.squeeze(0)
+
+            z = self.projector(z)
+            z_pos = self.projector(z_pos)
+
+            # shape: [2*batch_size,z_dim]
+            zs = torch.cat([z, z_pos], dim=0)
+
+            if self.is_cosine:
+                # note that simclr head projector already normalizes, but not an issue to normalize
+                # twice
+                zs = F.normalize(zs, dim=1, p=2)
+
+            # shape: [2*batch_size,2*batch_size]
+            # logits = zs @ zs.T
+            # logits = torch.mm(zs, zs_parallel.t().contiguous())
+            logits = zs  # DEV
+
+        return logits
+
+    def compute_loss(self, logits):
+        new_batch_size = logits.size(0)
+        batch_size = new_batch_size // 2
+        device = logits.device
+
+        logits = logits @ logits.T  # DEV
         logits /= self.temperature
 
         if self.is_invariant:
@@ -331,66 +472,8 @@ class ContrastiveDistortion(nn.Module):
         # = log(N-1) - E[ crossentropy(z^Tz, p) ]
         # = \hat{H}[f(M(X))] - \hat{H}[f(M(X))|Z]
         hat_H_m = math.log(self.weight * n_classes)
-        hat_H_mlz = F.cross_entropy(logits, pos_idx, reduction="mean")
+        hat_H_mlz = F.cross_entropy(logits, pos_idx, reduction="none")
 
-        logs = dict(I_q_zm=(hat_H_m - hat_H_mlz) / math.log(BASE_LOG))
-        other = dict()
+        logs = dict(I_q_zm=(hat_H_m - hat_H_mlz.mean()) / math.log(BASE_LOG))
 
-        return hat_H_mlz, logs, other
-
-    def compute_logits(self, p_Zlx, p_Zlp):
-        if isinstance(p_Zlx, DiagGaussian):
-            # use probabilistic InfoNCE
-            # not pytorch's kl divergence because want fast computation (kl between every and every element in batch)
-            mu_x, sigma_x = p_Zlx.base_dist.loc, p_Zlx.base_dist.scale
-            mu_p, sigma_p = p_Zlp.base_dist.loc, p_Zlp.base_dist.scale
-
-            # shape: [2*batch_size, z_dim]
-            mus = torch.cat([mu_x, mu_p], dim=0)
-            sigmas = torch.cat([sigma_x, sigma_p], dim=0)
-
-            N = mus.size(0)
-
-            # TODO: Should use torch.as_strided
-            # shape: [4*batch_size**2, z_dim]
-            # repeat: [1,2,3] -> [1,2,3,1,2,3,1,2,3]
-            r_mus = mus.repeat(N, 1)
-            r_sigmas = sigmas.repeat(N, 1)
-            # repeat interleave: [1,2,3] -> [1,1,1,2,2,2,3,3,3]
-            i_mus = mus.repeat_interleave(N, dim=0)
-            i_sigmas = sigmas.repeat_interleave(N, dim=0)
-
-            # batch shape: [4*batch_size**2] event shape: [z_dim]
-            r_gaus = DiagGaussian(r_mus, r_sigmas)
-            i_gaus = DiagGaussian(i_mus, i_sigmas)
-
-            # all possible pairs of KLs. shape: [2*batch_size, 2*batch_size]
-            kls = kl_divergence(r_gaus, i_gaus).view(N, N)
-            logits = -kls  # logits needs to be larger when more similar
-
-            if self.is_symmetric:
-                # equivalent to (kl(p||q) + kl(q||p))/2 for each pair
-                logits = (logits + logits.T) / 2
-
-        else:
-            # if you are using a deterministic representation then use standard InfoNCE
-            # because if not KL is none differentiable
-            if isinstance(p_Zlx, Deterministic):
-                # shape: [batch_size,z_dim]
-                z = p_Zlx.base_dist.loc
-                z_pos = p_Zlp.base_dist.loc
-            else:
-                # suppose outputs are tensors of shape: [n_z,batch_size,z_dim]
-                z = p_Zlx.squeeze(0)
-                z_pos = p_Zlp.squeeze(0)
-
-            # shape: [2*batch_size,z_dim]
-            zs = torch.cat([z, z_pos], dim=0)
-
-            if self.is_cosine:
-                zs = F.normalize(zs, dim=1, p=2)
-
-            # shape: [2*batch_size,2*batch_size]
-            logits = zs @ zs.T
-
-        return logits
+        return hat_H_mlz, logs
