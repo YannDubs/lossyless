@@ -17,6 +17,7 @@ evaluation.is_est_entropies=True
 experiment=$experiment 
 timeout=$time
 $add_kwargs
+logger=tensorboard
 "
 
 # every arguments that you are sweeping over

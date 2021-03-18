@@ -5,7 +5,7 @@ defaults:
 data:
   kwargs:
     dataset_kwargs:
-      equivalence: [x_translation, y_translation,rotation,scale,color]
+      equivalence: [x_translation, y_translation, rotation, scale, hflip, vflip]
       is_normalize: False # TODO: test if better (I dont' think it will)
 
 evaluation:

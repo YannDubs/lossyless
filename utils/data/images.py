@@ -21,6 +21,7 @@ from torchvision.transforms import (
     RandomAffine,
     RandomErasing,
     RandomHorizontalFlip,
+    RandomVerticalFlip,
     RandomResizedCrop,
     RandomRotation,
 )
@@ -622,14 +623,18 @@ class GalaxyDataset(LossylessImgDataset):
         return dict(
             PIL={
                 "rotation": RandomRotation(360),
-                "y_translation": RandomAffine(0, translate=(0, 0.25)),
-                "x_translation": RandomAffine(0, translate=(0.25, 0)),
-                "scale": RandomAffine(0, scale=(0.8, 1.2)),
-                "color": ColorJitter(
-                    brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
-                ),
+                # in kaggle authors translate 69x69 images by /pm 4 pixel = 11.6%
+                "y_translation": RandomAffine(0, translate=(0, 0.116)),
+                "x_translation": RandomAffine(0, translate=(0.116, 0)),
+                "scale": RandomAffine(0, scale=(1.0/1.3, 1.3)),
+                "hflip": RandomHorizontalFlip(0.5),
+                "vflip": RandomVerticalFlip(0.5),
+                # color transforms where not used originally but could be a good idea
+                #"color": ColorJitter(
+                #    brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05
+                #),
             },
-            tensor={"erasing": RandomErasing(value=0.5),},
+            # tensor={"erasing": RandomErasing(value=0.5),},
         )
 
     @property
