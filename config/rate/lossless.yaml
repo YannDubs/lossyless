@@ -4,6 +4,7 @@ defaults:
   
 rate:
   name: lossless
+  mode: lossless
 
 encoder:
   fam: deterministic # has to use a deterministic encoder with entropy coding to ensure that H[Z|X]=0

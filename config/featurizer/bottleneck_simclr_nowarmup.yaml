@@ -6,17 +6,23 @@ defaults:
   - override /rate: H_simclr
 
 featurizer:
-  name: simclr_final
+  name: bottleneck_simclr_nowarmup
 
 encoder:
-  zdim: 2048
+  z_dim: 2048
 
 distortion:
   kwargs:
     temperature: 0.1
     weight: 1
     is_cosine: True
-    is_project: True
+    is_project: true
     project_kwargs:
       out_shape: 128
       mode: simclr_projector
+
+loss:
+  beta_anneal: geometric
+
+rate:
+  warmup_k_epoch: 0 

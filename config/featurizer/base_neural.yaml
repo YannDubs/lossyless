@@ -2,4 +2,6 @@ defaults:
   - base
   
 is_learnable: True 
-skip_first_k_epoch: 0 # whether to skip the first k epochs ofr the featurizer (the auxilary losses are still trained).
+
+loss:
+  beta_anneal: constant

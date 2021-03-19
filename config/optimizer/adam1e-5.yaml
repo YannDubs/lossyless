@@ -1,0 +1,5 @@
+name: adam1e-5
+mode: Adam
+kwargs:
+  lr: 0.00001 
+  weight_decay: 0

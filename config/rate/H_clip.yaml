@@ -1,9 +1,8 @@
 defaults:
-  - base_H
+  - H_hyper
 
-name: H_simclr
-mode: H_simclr
+name: H_clip
 kwargs:
-  is_pred_mean: True
+  side_z_dim: 128
   init_scale: 10 # input should be at initialization in [-init_scale, init_scale]. Larger might create overhead. You can use something like 10 for large images but smaller for smaller 
-  is_reinit: false
+  

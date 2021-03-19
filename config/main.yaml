@@ -77,11 +77,14 @@ evaluation:
     ckpt_path: "best"
     is_evaluate: ${predictor.is_train}
 
-callbacks: # callbacks for feat and pred
-  additional: [LearningRateMonitor] # can use any callback name of lossyless.calllbacks, pl_bolts.callbacks, pl.callbacks
-  # all callback kwargs should be here (loaded automatically if name corresponds)
+callbacks: # can use any callback name of lossyless.calllbacks, pl_bolts.callbacks, pl.callbacks
+  is_force_no_additional_callback: false # force empty callback
+
+  # all callback kwargs should be here (`is_use` just says whether to use that callback)
   LearningRateMonitor:
-    logging_interval : epoch
+    is_use : true
+    kwargs:
+      logging_interval : epoch
 
 trainer:
   #default_root_dir: ${paths.results}
@@ -89,15 +92,20 @@ trainer:
   terminate_on_nan: false # makes it slower if true
   progress_bar_refresh_rate: 0 # increase to show progress bar
   resume_from_checkpoint: null # string to checkpoint if want to resume
-  gradient_clip_val: 3 # 0 means no clip #TODO tune (1 seemed to be good in compressai)
+  gradient_clip_val: 3 # 0 means no clip #TODO tune (1 seemed to be good in compressai for clipo norm) https://github.com/InterDigitalInc/CompressAI/issues/19
   reload_dataloaders_every_epoch: False
   log_every_n_steps: 100
   val_check_interval: 1.0 # decrease for subepoch checkpoitint
+
+  # DEEP LEARNING
+  stochastic_weight_avg: False
 
   # ENGINEERING / SPEED #
   gpus: 1 
   num_nodes: 1  # number gpu nodes
   precision: 16 # use 16 bit for speed 
+  accumulate_grad_batches: 1
+  sync_batchnorm: false # whether to synchronize batch norm over GPUs
 
   # DEBUGGING #
   fast_dev_run: false # use true to make a quick test (not full epoch)
@@ -121,7 +129,6 @@ encoder:
 
 ### OPTIMIZER ###
 optimizer_feat: 
-  lr_rate_factor: 1 # mutlitply lr of all rate estimator parameters
   kwargs:
     is_lars: false # whether to use LARS optimizer, useful for large batches.
 scheduler_feat: {}

@@ -29,4 +29,5 @@ logger:
     project: tmp
 
 callbacks:
-  additional: ["GPUStatsMonitor","LearningRateMonitor"] # if add other callbacks through additional will be replaced
+  GPUStatsMonitor: 
+    is_use : true

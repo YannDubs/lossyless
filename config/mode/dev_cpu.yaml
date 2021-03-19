@@ -5,6 +5,3 @@ defaults:
 trainer:
   gpus: 0
   precision: 32 # 16 does not work for cpu
-
-callbacks:
-  additional: ["LearningRateMonitor"]

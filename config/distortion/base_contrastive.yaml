@@ -8,6 +8,7 @@ distortion:
     temperature: 0.1
     is_symmetric: true
     weight: ${data.neg_factor}
+    is_project: true
 
 data_feat:
   kwargs:

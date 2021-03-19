@@ -10,11 +10,13 @@ aux_shape: ???
 aux_is_clf: ??? 
 target_is_clf: ???
 neg_factor: ??? # useful for contrastive loss. should be len(train_dataset) / (2*batch_size-1)
+max_steps: ??? # max number of steps for training
 #########################################################
 
 kwargs:
   data_dir: ${paths.data}
   batch_size: 128
   reload_dataloaders_every_epoch: ${trainer.reload_dataloaders_every_epoch}
+  num_workers: 16
   dataset_kwargs:
     is_normalize: True
