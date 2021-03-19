@@ -1,4 +1,5 @@
 import math
+from typing import Hashable
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -11,7 +12,9 @@ import einops
 import torch
 import torchvision
 from pytorch_lightning.callbacks import Callback
+from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
+from pytorch_lightning.utilities import rank_zero_only
 
 from .helpers import (
     BASE_LOG,
@@ -73,6 +76,7 @@ class PlottingCallback(Callback):
         self.plot_interval = plot_interval
         self.plot_config_kwargs = plot_config_kwargs
 
+    @rank_zero_only  # only plot on one machine
     def on_epoch_end(self, trainer, pl_module):
         if is_plot(trainer, self.plot_interval):
             for fig, kwargs in self.yield_figs_kwargs(trainer, pl_module):
@@ -510,19 +514,91 @@ class MaxinvDistributionPlot(PlottingCallback):
         return fig
 
 
-# TODO add freeze unfreeze
-# class FeatureExtractorFreezeUnfreeze(BaseFinetuning):
-#     def __init__(self, unfreeze_at_epoch=10)
-#         self._unfreeze_at_epoch = unfreeze_at_epoch
-#     def freeze_before_training(self, pl_module):
-#         # freeze any module you want
-#         # Here, we are freezing ``feature_extractor``
-#         self.freeze(pl_module.feature_extractor)
-#     def finetune_function(self, pl_module, current_epoch, optimizer, optimizer_idx):
-#         # When `current_epoch` is 10, feature_extractor will start training.
-#         if current_epoch == self._unfreeze_at_epoch:
-#             self.unfreeze_and_add_param_group(
-#                 module=pl_module.feature_extractor,
-#                 optimizer=optimizer,
-#                 train_bn=True,
-#             )
+class ResnetFinetuning(BaseFinetuning):
+    """Finetuner for a resnet.
+
+    Parameters
+    ----------
+    resnet_name : string
+        Name of the resnet from pl module. Can use dots.
+
+    unfreeze_last : int, optional
+        Epoch at which to unfreeze last layer.
+
+    unfreeze_layer4 : int, optional
+        Epoch at which to unfreeze last resnet block.
+
+    lr_factor_last : int, optional
+        Learning rate factor (how much to decrease compared to normal lr) to use for last layer.
+
+    lr_factor_layer4 : int, optional
+        Learning rate factor (how much to decrease compared to normal lr) to use for last layer.
+
+    train_bn : bool, optional
+        Whether to unfreeze batchnorm.
+    """
+
+    def __init__(
+        self,
+        resnet_name,
+        unfreeze_last=0,
+        unfreeze_layer4=3,
+        lr_factor_last=10,
+        lr_factor_layer4=100,
+        train_bn=False,
+    ):
+        self.resnet_name = resnet_name.split(".")
+        self.unfreeze_last = unfreeze_last
+        self.unfreeze_layer4 = unfreeze_layer4
+        self.lr_factor_last = lr_factor_last
+        self.lr_factor_layer4 = lr_factor_layer4
+        self.train_bn = train_bn
+
+    def get_resnet(self, pl_module):
+        resnet = pl_module
+
+        for resnet_name in self.resnet_name:
+            resnet = getattr(resnet, resnet_name)
+
+        return resnet
+
+    def freeze_before_training(self, pl_module):
+        resnet = self.get_resnet(pl_module)
+        self.freeze(modules=resnet, train_bn=self.train_bn)
+
+    def finetune_function(self, pl_module, current_epoch, optimizer, optimizer_idx):
+        if optimizer_idx == 0 and current_epoch == self.unfreeze_last:
+            resnet = self.get_resnet(pl_module)
+
+            if hasattr(resnet, "attnpool"):
+                last_layer = resnet.attnpool
+            elif hasattr(resnet, "fc"):
+                last_layer = resnet.fc
+            else:
+                raise ValueError(
+                    f"Unkown resnet architecture {resnet} which has no attnpool nor fc."
+                )
+
+            self.unfreeze_and_add_param_group(
+                modules=last_layer,
+                optimizer=optimizer,
+                train_bn=self.train_bn,
+                initial_denom_lr=self.lr_factor_last,
+            )
+
+        if optimizer_idx == 0 and current_epoch == self.unfreeze_layer4:
+            resnet = self.get_resnet(pl_module)
+
+            if hasattr(resnet, "layer4"):
+                layer4 = resnet.layer4
+            else:
+                raise ValueError(
+                    f"Unkown resnet architecture {resnet} which has no layer4."
+                )
+
+            self.unfreeze_and_add_param_group(
+                modules=layer4,
+                optimizer=optimizer,
+                train_bn=self.train_bn,
+                initial_denom_lr=self.lr_factor_layer4,
+            )
