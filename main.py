@@ -5,6 +5,7 @@ the file `config/main.yaml` for details about the configs. or use `python main.p
 """
 import copy
 import logging
+import subprocess
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -16,30 +17,23 @@ import lossyless
 import omegaconf
 import pl_bolts
 import pytorch_lightning as pl
+import torch
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
-from lossyless.callbacks import (
-    CodebookPlot,
-    LatentDimInterpolator,
-    MaxinvDistributionPlot,
-    ReconstructImages,
-)
+from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
+                                 MaxinvDistributionPlot, ReconstructImages)
 from lossyless.distributions import MarginalVamp
-from lossyless.helpers import check_import, orderedset
+from lossyless.helpers import OrderedSet, check_import
 from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
+from pytorch_lightning.plugins import (DDPPlugin, DDPShardedPlugin,
+                                       DDPSpawnPlugin, DDPSpawnShardedPlugin)
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
-from utils.helpers import (
-    ModelCheckpoint,
-    get_latest_match,
-    getattr_from_oneof,
-    learning_rate_finder,
-    log_dict,
-    omegaconf2namespace,
-    replace_keys,
-    set_debug,
-)
+from utils.helpers import (DataParallelPlugin, ModelCheckpoint,
+                           get_latest_match, getattr_from_oneof,
+                           learning_rate_finder, log_dict, omegaconf2namespace,
+                           replace_keys, set_debug)
 
 try:
     import wandb
@@ -264,6 +258,11 @@ def instantiate_datamodule_(cfg, pre_featurizer=None):
         pass  # TODO (probabby give to datamodule)
 
     cfgd = cfg.data
+
+    # if cfg.trainer.gpus > 1 and cfg.trainer.get("accelerator", "ddp") == "ddp_spawn":
+    #     # ddp_spawn very slow with multi workers
+    #     cfgd.kwargs.num_workers = 0
+
     datamodule = get_datamodule(cfgd.dataset)(**cfgd.kwargs)
     datamodule.prepare_data()
     datamodule.setup()
@@ -275,6 +274,11 @@ def instantiate_datamodule_(cfg, pre_featurizer=None):
     cfgd.aux_shape = datamodule.aux_shape
     cfgd.mode = datamodule.mode
     cfgd.neg_factor = cfgd.length / (2 * cfgd.kwargs.batch_size - 1)
+
+    cfgt = cfg.trainer
+    total_devices = max(cfgt.gpus * cfgt.num_nodes, 1)
+    train_batches = cfgd.length // total_devices
+    cfgd.max_steps = (cfgt.max_epochs * train_batches) // cfgt.accumulate_grad_batches
 
     return datamodule
 
@@ -295,9 +299,9 @@ def initialize_compressor_(module, datamodule, trainer, cfg):
 
     # LOGGING
     # save number of parameters for the main model (not online optimizer but with coder)
-    aux_parameters = orderedset(module.rate_estimator.aux_parameters())
-    n_param = sum(p.numel() for p in aux_parameters if p.requires_grad)
-    n_param += sum(p.numel() for p in module.parameters() if p.requires_grad)
+    n_param = sum(
+        p.numel() for p in module.get_specific_parameters("all") if p.requires_grad
+    )
     log_dict(trainer, {"n_param": n_param}, is_param=True)
 
     # estimate interesting entropies
@@ -318,8 +322,13 @@ def get_callbacks(cfg, is_featurizer):
             if cfg.data.mode == "image" and is_reconstruct:
                 callbacks += [
                     LatentDimInterpolator(cfg.encoder.z_dim),
-                    ReconstructImages(),
+                    # ReconstructImages(),
                 ]
+
+                if cfg.trainer.gpus == 1:
+                    #! does not work (D)DP because of self.store
+                    callbacks += [ReconstructImages()]
+
             elif cfg.data.mode == "distribution":
                 callbacks += [
                     CodebookPlot(is_plot_codebook=is_reconstruct),
@@ -331,11 +340,16 @@ def get_callbacks(cfg, is_featurizer):
 
     callbacks += [ModelCheckpoint(**cfg.checkpoint.kwargs)]
 
-    for name in cfg.callbacks.additional:
-        cllbck_kwargs = cfg.callbacks.get(name, {})
-        modules = [lossyless.callbacks, pl.callbacks, pl_bolts.callbacks]
-        Callback = getattr_from_oneof(modules, name)
-        callbacks.append(Callback(**cllbck_kwargs))
+    if not cfg.callbacks.is_force_no_additional_callback:
+        for name, kwargs in cfg.callbacks.items():
+            try:
+                if kwargs.is_use:
+                    cllbck_kwargs = kwargs.get("kwargs", {})
+                    modules = [lossyless.callbacks, pl.callbacks, pl_bolts.callbacks]
+                    Callback = getattr_from_oneof(modules, name)
+                    callbacks.append(Callback(**cllbck_kwargs))
+            except AttributeError:
+                pass
 
     return callbacks
 
@@ -393,11 +407,57 @@ def get_trainer(cfg, module, is_featurizer):
     if last_chckpnt.exists():
         cfg.trainer.resume_from_checkpoint = str(last_chckpnt)
 
+    kwargs = dict(**cfg.trainer)
+
+    # PARALLEL PROCESSING
+    # cpu
+    accelerator = kwargs.get("accelerator", None)
+    if accelerator == "ddp_cpu_spawn":  # only for debug
+        kwargs["accelerator"] = "ddp_cpu"
+        kwargs["plugins"] = DDPSpawnPlugin(
+            parallel_devices=[], find_unused_parameters=True
+        )
+
+    # gpu
+    if kwargs["gpus"] > 1:
+        kwargs["sync_batchnorm"] = True
+        accelerator = kwargs.get("accelerator", "ddp")
+        parallel_devices = [torch.device(f"cuda:{i}") for i in range(kwargs["gpus"])]
+
+        #! ddp does not work yet with compressai https://github.com/InterDigitalInc/CompressAI/issues/30
+        if accelerator == "ddp":
+            kwargs["accelerator"] = "ddp"
+            kwargs["plugins"] = DDPPlugin(
+                parallel_devices=parallel_devices, find_unused_parameters=True
+            )
+
+        elif accelerator == "ddp_spawn":
+            kwargs["accelerator"] = "ddp"
+            kwargs["plugins"] = DDPSpawnPlugin(
+                parallel_devices=parallel_devices, find_unused_parameters=True,
+            )
+
+        elif accelerator == "ddp_sharded":
+            kwargs["accelerator"] = "ddp"
+            kwargs["plugins"] = DDPShardedPlugin(
+                parallel_devices=parallel_devices, find_unused_parameters=True,
+            )
+
+        elif accelerator == "ddp_sharded_spawn":
+            kwargs["accelerator"] = "ddp"
+            kwargs["plugins"] = DDPSpawnShardedPlugin(
+                parallel_devices=parallel_devices, find_unused_parameters=True,
+            )
+
+        elif accelerator == "dp":
+            kwargs["plugins"] = DataParallelPlugin(parallel_devices=parallel_devices)
+
+    # TRAINER
     trainer = pl.Trainer(
         logger=get_logger(cfg, module, is_featurizer),
         callbacks=get_callbacks(cfg, is_featurizer),
         checkpoint_callback=True,
-        **cfg.trainer,
+        **kwargs,
     )
 
     return trainer
@@ -483,7 +543,6 @@ def evaluate(
             )[0]
             train_res = replace_keys(train_res, "test", "testtrain")
             if is_est_entropies and is_featurizer:
-                # ? this can be slow on all training set, is it necessary ?
                 append_entropy_est_(train_res, trainer, datamodule, cfg, is_test=False)
             log_dict(trainer, train_res, is_param=False)
 
@@ -586,4 +645,10 @@ def finalize(modules, trainers, datamodules, cfgs):
 
 
 if __name__ == "__main__":
+    # Save git info for reproducibility purposes
+    git_hash = subprocess.check_output(["git", "rev-parse", "--verify", "HEAD"]).decode(
+        "utf-8"
+    )
+    git_diff = subprocess.check_output(["git", "diff"]).decode("utf-8")
+
     main()

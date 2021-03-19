@@ -11,9 +11,11 @@ from pathlib import Path
 import numpy as np
 
 import pytorch_lightning as pl
+import pytorch_lightning.plugins.training_type as train_plugins
 import torch
 from lossyless.callbacks import save_img
 from omegaconf import OmegaConf
+from pytorch_lightning.overrides.data_parallel import LightningParallelModule
 
 logger = logging.getLogger(__name__)
 
@@ -296,3 +298,24 @@ class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
         self.best_k_models = {}
         self.best_k_models[self.best_model_path] = self.best_model_score
         self.kth_best_model_path = self.best_model_path
+
+
+# credits : https://github.com/pytorch/pytorch/issues/16885
+class DataParallelPassthrough(torch.nn.DataParallel):
+    """Like dataparallel but enable accessing attributes as if there was no ``DataParallel``."""
+
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)
+
+
+class DataParallelPlugin(train_plugins.DataParallelPlugin):
+    def setup(self, model):
+        # model needs to be moved to the device before it is wrapped
+        model.to(self.root_device)
+        self._model = DataParallelPassthrough(
+            LightningParallelModule(model), self.parallel_devices
+        )
+

@@ -5,7 +5,7 @@ import random
 import sys
 import time
 import warnings
-from collections import OrderedDict
+from collections.abc import MutableSet
 from functools import reduce
 from numbers import Number
 
@@ -70,10 +70,28 @@ def dict_mean(dicts):
     return means
 
 
-def orderedset(l):
-    """Return a list of unique elements."""
-    # could use list(dict.fromkeys(l)) in python 3.6+
-    return [k for k, v in OrderedDict.fromkeys(l).items()]
+# requires python 3.7+
+# taken from https://github.com/bustawin/ordered-set-37
+class OrderedSet(MutableSet):
+    """A set that preserves insertion order by internally using a dict."""
+
+    def __init__(self, iterable):
+        self._d = dict.fromkeys(iterable)
+
+    def add(self, x):
+        self._d[x] = None
+
+    def discard(self, x):
+        self._d.pop(x)
+
+    def __contains__(self, x):
+        return self._d.__contains__(x)
+
+    def __len__(self):
+        return self._d.__len__()
+
+    def __iter__(self):
+        return self._d.__iter__()
 
 
 # modified from https://github.com/skorch-dev/skorch/blob/92ae54b/skorch/utils.py#L106
@@ -523,7 +541,17 @@ def append_optimizer_scheduler_(
     hparams_opt, hparams_sch, parameters, optimizers, schedulers
 ):
     """Return the correct optimzier and scheduler."""
-    optimizer = get_optimizer(parameters, hparams_opt.mode, **hparams_opt.kwargs)
+
+    # only use parameters that are trainable
+    train_params = parameters
+    if isinstance(train_params, list) and isinstance(train_params[0], dict):
+        # in case you have groups
+        for group in train_params:
+            group["params"] = list(filter(lambda p: p.requires_grad, group["params"]))
+    else:
+        train_params = list(filter(lambda p: p.requires_grad, train_params))
+
+    optimizer = get_optimizer(train_params, hparams_opt.mode, **hparams_opt.kwargs)
     optimizers += [optimizer]
 
     for mode in hparams_sch.modes:
@@ -704,3 +732,129 @@ def tensors_to_fig(
         plt.tight_layout()
 
     return fig
+
+
+class Annealer:
+    """Helper class to perform annealing
+
+    Parameter
+    ---------
+    initial_value : float
+        Start of annealing.
+
+    final_value : float
+        Final value after annealing.
+
+    n_steps_anneal : int
+        Number of steps before reaching `final_value`. If negative, will swap final and initial.
+
+    start_step : int, optional
+        Number of steps to wait for before starting annealing. During the waiting time, the 
+        hyperparameter will be `default`.
+
+    default : float, optional
+        Default hyperparameter value that will be used for the first `start_step`s. If `None` uses 
+        `initial_value`.
+
+    mode : {"linear", "geometric", "constant"}, optional
+        Interpolation mode. 
+    """
+
+    def __init__(
+        self,
+        initial_value,
+        final_value,
+        n_steps_anneal,
+        start_step=0,
+        default=None,
+        mode="geometric",
+    ):
+        if n_steps_anneal < 0:
+            # quick trick to swap final / initial
+            n_steps_anneal *= -1
+            initial_value, final_value = final_value, initial_value
+
+        self.initial_value = initial_value
+        self.final_value = final_value
+        self.n_steps_anneal = n_steps_anneal
+        self.start_step = start_step
+        self.default = default if default is not None else self.initial_value
+        self.mode = mode.lower()
+
+        if self.mode == "linear":
+            delta = self.final_value - self.initial_value
+            self.factor = delta / self.n_steps_anneal
+        elif self.mode == "constant":
+            self.factor = 1
+        elif self.mode == "geometric":
+            delta = self.final_value / self.initial_value
+            self.factor = delta ** (1 / self.n_steps_anneal)
+        else:
+            raise ValueError(f"Unkown mode : {mode}.")
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        """Reset the interpolator."""
+        self.n_training_calls = 0
+
+    def is_annealing(self, n_update_calls):
+        return (self.start_step < n_update_calls) and (
+            n_update_calls < (self.n_steps_anneal + self.start_step)
+        )
+
+    def __call__(self, is_update=False, n_update_calls=None):
+        """Return the current value of the hyperparameter.
+        
+        Parameter
+        ---------
+        is_update : bool, optional
+            Whether to update the value. 
+
+        n_update_calls : int, optional
+            Number of updated calls. If given then will override the default counter.
+        """
+        if is_update:
+            self.n_training_calls += 1
+
+        if n_update_calls is None:
+            n_update_calls = self.n_training_calls
+
+        if self.start_step >= n_update_calls:
+            return self.default
+
+        n_actual_training_calls = n_update_calls - self.start_step
+
+        if self.is_annealing:
+            current = self.initial_value
+            if self.mode == "geometric":
+                current *= self.factor ** n_actual_training_calls
+            elif self.mode in ["linear", "constant"]:
+                current += self.factor * n_actual_training_calls
+        else:
+            current = self.final_value
+
+        return current
+
+
+class GatherFromGpus(torch.autograd.Function):
+    """Gather tensors from all process, supporting backward propagation."""
+
+    @staticmethod
+    def forward(ctx, tensor):
+        ctx.save_for_backward(tensor)
+        gathered_tensor = [
+            torch.zeros_like(tensor) for _ in range(torch.distributed.get_world_size())
+        ]
+        torch.distributed.all_gather(gathered_tensor, tensor)
+        return tuple(gathered_tensor)
+
+    @staticmethod
+    def backward(ctx, *grads):
+        (tensor,) = ctx.saved_tensors
+        grad_out = torch.zeros_like(tensor)
+        grad_out[:] = grads[torch.distributed.get_rank()]
+        return grad_out
+
+
+gather_from_gpus = GatherFromGpus.apply

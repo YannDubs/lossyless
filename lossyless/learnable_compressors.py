@@ -8,7 +8,7 @@ from pytorch_lightning.core.decorators import auto_move_data
 from .architectures import get_Architecture
 from .distortions import get_distortion_estimator
 from .distributions import CondDist
-from .helpers import BASE_LOG, Timer, append_optimizer_scheduler_, orderedset
+from .helpers import BASE_LOG, Annealer, OrderedSet, Timer, append_optimizer_scheduler_
 from .predictors import OnlineEvaluator
 from .rates import get_rate_estimator
 
@@ -28,6 +28,15 @@ class LearnableCompressor(pl.LightningModule):
         self.rate_estimator = self.get_rate_estimator()
         self.distortion_estimator = self.get_distortion_estimator()
         self.online_evaluator = self.get_online_evaluator()
+
+        #! careful this is actually 1/beta from the paper (oops)
+        final_beta = self.final_beta_labda[0]
+        self.beta_annealer = Annealer(
+            final_beta * 1e-5,  # don't use 0 in case geometric
+            final_beta,
+            n_steps_anneal=1 / 10 * self.hparams.data.max_steps,  # arbitrarily 1/10th
+            mode=self.hparams.featurizer.loss.beta_anneal,
+        )
 
         # governs how the compressor acts when calling it directly
         self.is_features = self.hparams.featurizer.is_features
@@ -51,13 +60,16 @@ class LearnableCompressor(pl.LightningModule):
     def get_rate_estimator(self):
         """Return the correct rate estimator. Contains the prior and the coder."""
         cfg_rate = self.hparams.rate
-        return get_rate_estimator(
-            cfg_rate.name,
+        rate_estimator = get_rate_estimator(
+            cfg_rate.mode,
             z_dim=self.hparams.encoder.z_dim,
             p_ZlX=self.p_ZlX,
             n_z_samples=self.hparams.featurizer.loss.n_z_samples,
             **cfg_rate.kwargs,
         )
+        # ensure that pickable before DataDistributed
+        rate_estimator.make_pickable_()
+        return rate_estimator
 
     def get_distortion_estimator(self):
         """Return the correct distortion estimator. Contains the decoder."""
@@ -72,14 +84,13 @@ class LearnableCompressor(pl.LightningModule):
         because training as a callbackwas not well support by lightning. E.g. continuing training
         from checkpoint.
         """
-        # TODO maybe use same parameters as the actual downstream predictor
         return OnlineEvaluator(
             self.hparams.encoder.z_dim,
             self.hparams.data.target_shape,
             is_classification=self.hparams.data.target_is_clf,
         )
 
-    @auto_move_data  # move data on correct device for inference
+    # @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_compress=False, is_features=None):
         """Represents the data `x`.
 
@@ -104,7 +115,7 @@ class LearnableCompressor(pl.LightningModule):
                 Represented data.
         else:
             X_hat : torch.Tensor of shape=[batch_size,  *data.shape]
-                Reconstructed dataIf image it's the unormalized image in [0,1].
+                Reconstructed data. If image it's the unormalized image in [0,1].
         """
         if is_features is None:
             is_features = self.is_features
@@ -115,17 +126,9 @@ class LearnableCompressor(pl.LightningModule):
         # shape: [batch_size, z_dim]
         if is_compress:
             z = z.squeeze(0)
-            z_hat = self.rate_estimator.compress(z)
+            z_hat = self.rate_estimator.compress(z, self)
         else:
-            if self.hparams.rate.is_simclr:  # DEV
-                if self.current_epoch == 0:
-                    z_hat = z
-                else:
-                    projector = self.distortion_estimator.projector
-                    z_hat, *_ = self.rate_estimator(z, p_Zlx, h_a=projector)
-            else:
-                z_hat, *_ = self.rate_estimator(z, p_Zlx)
-
+            z_hat, *_ = self.rate_estimator(z, p_Zlx, self)
             z_hat = z_hat.squeeze(0)
 
         if is_features:
@@ -151,34 +154,8 @@ class LearnableCompressor(pl.LightningModule):
         # shape: [n_z, batch_size, z_dim]
         z = p_Zlx.rsample([n_z])
 
-        #! to clean or rm
-        if self.hparams.rate.is_simclr:
-            projector = self.distortion_estimator.projector
-            if self.current_epoch == 0:
-                if self.global_step == 0:
-                    logger.info(f"SimCLR.")
-                # train the rate but without changing the featuizer
-                z_detached = z.detach() + z * 0
-
-                z_hat, rates, r_logs, r_other = self.rate_estimator(
-                    z_detached, _, h_a=projector
-                )
-
-                # for first epoch let's just min deltas for rate param
-                deltas = torch.abs(z_hat - z_detached).mean()
-                r_logs["deltas"] = deltas
-
-                # but still want to plot rate => trick
-                rates = rates + deltas - deltas.detach()
-
-                z_hat = z  # actual z that you wil be using is the ral one
-
-            else:
-                z_hat, rates, r_logs, r_other = self.rate_estimator(z, _, h_a=projector)
-
-        else:
-            # z_hat. shape: [n_z, batch_size, z_dim]
-            z_hat, rates, r_logs, r_other = self.rate_estimator(z, p_Zlx)
+        # z_hat. shape: [n_z, batch_size, z_dim]
+        z_hat, rates, r_logs, r_other = self.rate_estimator(z, p_Zlx, self)
 
         distortions, d_logs, d_other = self.distortion_estimator(
             z_hat, aux_target, p_Zlx
@@ -207,24 +184,34 @@ class LearnableCompressor(pl.LightningModule):
 
         return loss, logs, other
 
-    def loss(self, rates, distortions):
-        n_z = rates.size(0)
-        cfg = self.hparams
-        #! careful this is actually 1/beta from the paper (oops)
-        beta = (
-            cfg.featurizer.loss.beta * cfg.rate.factor_beta * cfg.distortion.factor_beta
-        )
+    @property
+    def final_beta_labda(self):
+        """Return the final beta to use."""
 
         # you don't want to have values that explode
         # so instead of decreasing more rate just increase distortion
         labda = 1
-        min_beta = 1e-5  # chosen so that does not = 0 for float16
+
+        cfg = self.hparams
+        beta = (
+            cfg.featurizer.loss.beta * cfg.rate.factor_beta * cfg.distortion.factor_beta
+        )
+
+        min_beta = 1e-5  # put some lower bound to not be 0 with fp16
         if beta < min_beta:
             labda = min_beta / beta
             beta = min_beta
 
+        return beta, labda
+
+    def loss(self, rates, distortions):
+        n_z = rates.size(0)
+
+        curr_beta = self.beta_annealer(n_update_calls=self.global_step)
+        final_beta, labda = self.final_beta_labda
+
         # loose_loss for plotting. shape: []
-        loose_loss = (labda * distortions + beta * rates).mean()
+        loose_loss = (labda * distortions + final_beta * rates).mean().detach()
 
         # tightens bound using IWAE: log 1/k sum exp(loss). shape: [batch_size]
         if n_z > 1:
@@ -234,20 +221,16 @@ class LearnableCompressor(pl.LightningModule):
             distortions = distortions.squeeze(0)
             rates = rates.squeeze(0)
 
-        # TODO should use a beta scheduler
-        if self.current_epoch < self.hparams.rate.skip_first_k_epoch:
-            if self.global_step == 0:
-                logger.info(
-                    f"Skipping first {self.hparams.featurizer.skip_first_k_epoch} epochs of rate."
-                )
-            # setting beta to zero skips rate but still plots
-            rates = rates * 0 + rates.detach()
-
         # E_x[...]. shape: shape: []
         rate = rates.mean(0)
         distortion = distortions.mean(0)
 
-        loss = distortion + beta * rate
+        # use actual (annealed) beta for the gradients, but still want the loss to be in terms of
+        # final beta for plotting and checkpointing => use trick
+        beta_rate = curr_beta * rate  # actual gradients
+        beta_rate = beta_rate - beta_rate.detach() + (final_beta * rate.detach())
+
+        loss = distortion + beta_rate
 
         logs = dict(
             loose_loss=loose_loss / math.log(BASE_LOG),
@@ -261,8 +244,7 @@ class LearnableCompressor(pl.LightningModule):
 
         return loss, logs, other
 
-    def training_step(self, batch, batch_idx, optimizer_idx=0):
-
+    def training_step(self, batch, batch_idx, optimizer_idx=1):
         # MODEL
         if optimizer_idx == 0:
             loss, logs, other = self.step(batch)
@@ -271,25 +253,16 @@ class LearnableCompressor(pl.LightningModule):
             #! everyting in other should be detached
             self._save = other
 
-            # TODO should be a finteuner callback
-            if self.current_epoch < self.hparams.featurizer.skip_first_k_epoch:
-                if self.global_step == 0:
-                    logger.info(
-                        f"Skipping first {self.hparams.featurizer.skip_first_k_epoch} epochs."
-                    )
-                loss = loss * 0
-
         # ONLINE EVALUATOR
         elif optimizer_idx == 1:
             loss, logs = self.online_evaluator(batch, self)
 
         # CODER
         else:
-            # TODO make sure that ok if online evaluator is being run before getting coder_loss
             loss = self.rate_estimator.aux_loss()
             logs = dict(coder_loss=loss)
 
-        self.log_dict({f"train/feat/{k}": v for k, v in logs.items()})
+        self.log_dict({f"train/feat/{k}": v for k, v in logs.items()}, sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -299,7 +272,10 @@ class LearnableCompressor(pl.LightningModule):
         _, online_logs = self.online_evaluator(batch, self)
         logs.update(online_logs)
         self.log_dict(
-            {f"val/feat/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"val/feat/{k}": v for k, v in logs.items()},
+            on_epoch=True,
+            on_step=False,
+            sync_dist=True,
         )
         return loss
 
@@ -308,78 +284,69 @@ class LearnableCompressor(pl.LightningModule):
         _, online_logs = self.online_evaluator(batch, self)
         logs.update(online_logs)
         self.log_dict(
-            {f"test/feat/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"test/feat/{k}": v for k, v in logs.items()},
+            on_epoch=True,
+            on_step=False,
+            sync_dist=True,
         )
         return loss
 
-    # TODO update rate estimator once you figured out how to deal with loading checkpoints
-    # def on_test_epoch_start(self):
-    #     """Make sure that you can actually use the coder during eval."""
-    #     self.rate_estimator.update(force=True)
+    # DEV
+    def on_test_epoch_start(self):
+        # Make sure that you can actually use the coder during eval.
+        self.rate_estimator.prepare_compressor_()
 
-    def yield_parameters(self):
-        """Returns an iterator over the model parameters."""
-        for m in self.children():
-            # slightly different than default because calling .parameters() on each
-            # so can overide .parameters in submodules.
-            for p in m.parameters():
-                yield p
-
-    def parameters(self):
-        """Returns an iterator over the model parameters."""
-        # return a set to make sure  not counting parameters twice (e.g. P_ZlX can be in multiple child)
-        # but keep ordered which is needed for checkpointing
-        return orderedset(self.yield_parameters())
+    def get_specific_parameters(self, mode):
+        """Returns an iterator over the desired model parameters."""
+        all_param = OrderedSet(self.parameters())
+        coder_param = OrderedSet(self.rate_estimator.aux_parameters())
+        online_param = OrderedSet(self.online_evaluator.aux_parameters())
+        rate_param = OrderedSet(self.rate_estimator.parameters()) - coder_param
+        notrate_param = all_param - (coder_param | online_param | rate_param)
+        if mode == "all":
+            return all_param
+        elif mode == "coder":
+            return coder_param
+        elif mode == "rate":
+            return rate_param
+        elif mode == "online":
+            return online_param
+        elif mode == "main":
+            return notrate_param | rate_param
+        elif mode == "notrate":
+            return notrate_param
+        else:
+            raise ValueError(f"Unkown parameter mode={mode}.")
 
     def configure_optimizers(self):
 
         optimizers, schedulers = [], []
 
-        aux_parameters = orderedset(self.rate_estimator.aux_parameters())
-        online_parameters = orderedset(self.online_evaluator.aux_parameters())
-        is_optimize_coder = len(aux_parameters) > 0
-
         # COMPRESSOR OPTIMIZER
-        cfg_optf = self.hparams.optimizer_feat
-        if cfg_optf.lr_rate_factor == 1:  # DEV legacy for workshop
-            groups = self.parameters()
-        else:
-            nonerate_parameters = [
-                p
-                for p in self.parameters()
-                if p not in set(self.rate_estimator.parameters())
-            ]
-            rate_parameters = orderedset(self.rate_estimator.parameters())
-
-            groups = [
-                {"params": nonerate_parameters},
-                {
-                    "params": rate_parameters,
-                    # you can use a different learning rate for the rate estimator. This is useful when
-                    # finetuning models by just adding an entropy bottleneck
-                    "lr": cfg_optf.kwargs.lr * cfg_optf.lr_rate_factor,
-                },
-            ]
-
         append_optimizer_scheduler_(
             self.hparams.optimizer_feat,
             self.hparams.scheduler_feat,
-            groups,
+            self.get_specific_parameters("main"),
             optimizers,
             schedulers,
         )
 
         # ONLINE EVALUATOR
         # do not use scheduler for online eval because input (representation) is changing
-        online_optimizer = torch.optim.Adam(online_parameters, lr=1e-4)
+        online_optimizer = torch.optim.Adam(
+            self.get_specific_parameters("online"), lr=1e-4
+        )
         optimizers += [online_optimizer]
 
         # CODER OPTIMIZER
+        coder_parameters = self.get_specific_parameters("coder")
+        is_optimize_coder = len(coder_parameters) > 0
+
         if is_optimize_coder:
             append_optimizer_scheduler_(
                 self.hparams.optimizer_coder,
                 self.hparams.scheduler_coder,
-                aux_parameters,
+                coder_parameters,
                 optimizers,
                 schedulers,
             )
@@ -389,7 +356,7 @@ class LearnableCompressor(pl.LightningModule):
     def set_featurize_mode_(self):
         """Set as a featurizer."""
 
-        # this ensures that the nothing is persistent, i.e. will not be saved in checkpoint when
+        # this ensures that nothing is persistent, i.e. will not be saved in checkpoint when
         # part of predictor
         for model in self.modules():
             params = dict(model.named_parameters(recurse=False))
@@ -404,3 +371,4 @@ class LearnableCompressor(pl.LightningModule):
 
         self.freeze()
         self.eval()
+        self.rate_estimator.make_pickable_()

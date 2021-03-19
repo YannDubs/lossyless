@@ -165,11 +165,7 @@ class LossylessCLFDataset(LossylessDataset):
     """
 
     def __init__(
-        self,
-        *args,
-        n_per_target=None,
-        targets_drop=[],
-        **kwargs,
+        self, *args, n_per_target=None, targets_drop=[], **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
@@ -265,7 +261,7 @@ class LossylessDataModule(LightningDataModule):
         data_dir=DIR,
         val_size=0.1,
         test_size=None,
-        num_workers=16,
+        num_workers=16, 
         batch_size=128,
         val_batch_size=None,
         seed=123,

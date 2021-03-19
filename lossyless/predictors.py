@@ -1,13 +1,17 @@
+import logging
+
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning.core.decorators import auto_move_data
-from pytorch_lightning.metrics.functional import accuracy
+from torchmetrics.functional import accuracy
 
 from .architectures import FlattenMLP, get_Architecture
 from .distortions import mse_or_crossentropy_loss
 from .helpers import Normalizer, Timer, append_optimizer_scheduler_, is_img_shape
 
 __all__ = ["Predictor", "OnlineEvaluator"]
+
+logger = logging.getLogger(__name__)
 
 
 def get_featurizer_predictor(featurizer):
@@ -32,9 +36,9 @@ class Predictor(pl.LightningModule):
         self.is_clf = self.hparams.data.target_is_clf
 
         if featurizer is not None:
-            self.featurizer = featurizer
             # ensure not saved in checkpoint and frozen
-            self.featurizer.set_featurize_mode_()
+            featurizer.set_featurize_mode_()
+            self.featurizer = featurizer
             pred_in_shape = featurizer.out_shape
 
             is_normalize = self.hparams.data.kwargs.dataset_kwargs.is_normalize
@@ -53,7 +57,7 @@ class Predictor(pl.LightningModule):
         Architecture = get_Architecture(cfg_pred.arch, **cfg_pred.arch_kwargs)
         self.predictor = Architecture(pred_in_shape, self.hparams.data.target_shape)
 
-    @auto_move_data  # move data on correct device for inference
+    # @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_logits=True, is_return_logs=False):
         """Perform prediction for `x`.
 
@@ -139,22 +143,31 @@ class Predictor(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
-        self.log_dict({f"train/pred/{k}": v for k, v in logs.items()})
+        self.log_dict({f"train/pred/{k}": v for k, v in logs.items()}, sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
         self.log_dict(
-            {f"val/pred/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"val/pred/{k}": v for k, v in logs.items()},
+            on_epoch=True,
+            on_step=False,
+            sync_dist=True,
         )
         return loss
 
     def test_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
         self.log_dict(
-            {f"test/pred/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"test/pred/{k}": v for k, v in logs.items()},
+            on_epoch=True,
+            on_step=False,
+            sync_dist=True,
         )
         return loss
+
+    def on_test_epoch_start(self):
+        self.featurizer.on_test_epoch_start()
 
     def configure_optimizers(self):
 
@@ -215,10 +228,6 @@ class OnlineEvaluator(torch.nn.Module):
             dropout_p=dropout_p,
         )
         self.is_classification = is_classification
-
-    def parameters(self):
-        """No parameters should be trained by main optimizer."""
-        return iter(())
 
     def aux_parameters(self):
         """Return iterator over parameters."""

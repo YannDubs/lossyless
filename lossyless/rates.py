@@ -8,18 +8,24 @@ import numpy as np
 import compressai
 import einops
 import torch
-from compressai.entropy_models import GaussianConditional
+from compressai.entropy_models import EntropyBottleneck as CompressaiEntropyBottleneck
+from compressai.entropy_models.entropy_models import (
+    EntropyModel,
+    GaussianConditional,
+    _EntropyCoder,
+    default_entropy_coder,
+)
 from compressai.models.utils import update_registered_buffers
 
-from .architectures import MLP
+from .architectures import MLP, SimCLRProjector
 from .distributions import get_marginalDist
 from .helpers import (
     BASE_LOG,
+    OrderedSet,
     Timer,
     atleast_ndim,
     kl_divergence,
     mean,
-    orderedset,
     to_numpy,
     weights_init,
 )
@@ -28,31 +34,31 @@ logger = logging.getLogger(__name__)
 __all__ = ["get_rate_estimator"]
 
 ### HELPERS ###
-def get_rate_estimator(name, z_dim=None, p_ZlX=None, n_z_samples=None, **kwargs):
+def get_rate_estimator(mode, z_dim=None, p_ZlX=None, n_z_samples=None, **kwargs):
     """Return the correct entropy coder."""
-    #! don't do by name but with mode!
-    if "lossless" in name:
+    if mode == "lossless":
         return Lossless()
 
-    elif "H_" in name:
-        if "fact" in name:
-            return HRateFactorizedPrior(z_dim, n_z_samples=n_z_samples, **kwargs)
-        elif "hyper" in name:
-            return HRateHyperprior(z_dim, n_z_samples=n_z_samples, **kwargs)
-        elif "simclr" in name:
-            return HRateSimCLR(z_dim, n_z_samples=n_z_samples, **kwargs)
+    elif mode == "H_factorized":
+        return HRateFactorizedPrior(z_dim, n_z_samples=n_z_samples, **kwargs)
 
-    elif "MI_" in name:
+    elif mode == "H_hyper":
+        return HRateHyperprior(z_dim, n_z_samples=n_z_samples, **kwargs)
+
+    elif mode == "H_simclr":
+        return HRateSimCLR(z_dim, n_z_samples=n_z_samples, **kwargs)
+
+    elif mode == "MI":
         q_Z = get_marginalDist(
             kwargs.pop("prior_fam"), p_ZlX, **(kwargs.pop("prior_kwargs"))
         )
         return MIRate(q_Z, **kwargs)
 
-    raise ValueError(f"Unkown rate estimator={name}.")
+    raise ValueError(f"Unkown rate estimator={mode}.")
 
 
 # only difference is that works with flatten z (it needs 4D tensor not 2d)
-class EntropyBottleneck(compressai.entropy_models.EntropyBottleneck):
+class EntropyBottleneck(CompressaiEntropyBottleneck):
     def forward(self, z):
         # entropy bottleneck takes 4 dim as inputs (as if images, where dim is channel)
         n_z = z.size(0)
@@ -78,17 +84,31 @@ class EntropyBottleneck(compressai.entropy_models.EntropyBottleneck):
 
 ### BASE ###
 class RateEstimator(torch.nn.Module):
-    """Base class for a coder, i.e. a model that perform entropy/MI coding."""
+    """Base class for a coder, i.e. a model that perform entropy/MI coding.
+    
+    Parameters
+    ----------
+    warmup_k_epoch : int, optional
+        Number of epochs not to backprop through the featurizer => warming up of the rate estimator.
+        The output will be z instead of z_hat, but the estimator will be warmed up by trying to 
+        reconstruct z.
+
+    is_endToEnd : bool, optional
+        Whether to train all the model in an end to end fashion. If not then the rate will not be 
+        backproped through the featurizer (you will just try to reconstruct Z).
+    """
 
     is_can_compress = False  # wether can compress
 
-    def __init__(self):
+    def __init__(self, warmup_k_epoch=0, is_endToEnd=True):
         super().__init__()
+        self.warmup_k_epoch = warmup_k_epoch
+        self.is_endToEnd = is_endToEnd
 
     def reset_parameters(self):
         weights_init(self)
 
-    def forward(self, z, p_Zlx):
+    def forward(self, z, p_Zlx, parent=None):
         """Performs the approx compression and returns loss.
 
         Parameters
@@ -98,6 +118,58 @@ class RateEstimator(torch.nn.Module):
 
         p_Zlx : torch.Distribution batch_shape=[batch_size] event_shape=[z_dim]
             Encoder which should be used to perform compression.
+
+        parent : LearnableCompressor, optional
+            Parent module. This is useful for some rates if they need access to other parts of the 
+            model.
+
+        Returns
+        -------
+        z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
+            Representation after compression.
+
+        rates : torch.Tensor shape=[n_z_dim, batch_shape]
+            Theoretical number of bits (rate) needed for compression.
+
+        logs : dict
+            Additional values to log.
+
+        other : dict
+            Additional values to return.
+        """
+        if (not self.is_endToEnd) or (parent.current_epoch < self.warmup_k_epoch):
+            # make sure not changing featurizer. *0 to make sure pytorch does not complain about no grad
+            z_detached = z.detach() + z * 0
+
+        z_hat, rates, r_logs, r_other = self.forward_help(z, p_Zlx, parent)
+
+        if (not self.is_endToEnd) or (parent.current_epoch < self.warmup_k_epoch):
+            # if you are not using z_hat then still want some type of loss to warm up rate => MAE
+            deltas = torch.abs(z_hat - z_detached).mean()
+
+            # backprop rates but still want to plot rate => trick
+            rates = rates + deltas - deltas.detach()
+
+            z_hat = z  # actual z that you wil be using is the real one
+
+        r_logs["deltas_z"] = torch.abs(z_hat - z).mean().detach()
+
+        return z_hat, rates, r_logs, r_other
+
+    def forward_help(self, z, p_Zlx, parent=None):
+        """Performs the approx compression and returns loss.
+
+        Parameters
+        ----------
+        z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
+            Representation to compress.
+
+        p_Zlx : torch.Distribution batch_shape=[batch_size] event_shape=[z_dim]
+            Encoder which should be used to perform compression.
+
+        parent : LearnableCompressor, optional
+            Parent module. This is useful for some rates if they need access to other parts of the 
+            model.
 
         Returns
         -------
@@ -115,13 +187,17 @@ class RateEstimator(torch.nn.Module):
         """
         raise NotImplementedError()
 
-    def compress(self, z):
+    def compress(self, z, parent=None):
         """Performs the actual compression.
 
         Parameters
         ----------
         z : torch.Tensor shape=[batch_shape, z_dim]
             Representation to compress. Note that there's no n_z_dim!
+
+        parent : LearnableCompressor, optional
+            Parent module. This is useful for some rates if they need access to other parts of the 
+            model.
 
         Returns
         -------
@@ -147,7 +223,7 @@ class RateEstimator(torch.nn.Module):
         """
         raise NotImplementedError()
 
-    def real_rate(self, z, is_return_logs=False):
+    def real_rate(self, z, is_return_logs=False, parent=None):
         """Compute actual number of bits (rate), necessary for encoding z.
 
         Parameters
@@ -157,6 +233,10 @@ class RateEstimator(torch.nn.Module):
 
         is_return_logs : bool, optional 
             Whether to return a dictionnary to log in addition to n_bits.
+
+        parent : LearnableCompressor, optional
+            Parent module. This is useful for some rates if they need access to other parts of the 
+            model.
 
         Returns
         -------
@@ -171,7 +251,7 @@ class RateEstimator(torch.nn.Module):
         z = einops.rearrange(z, "n_z b d -> (n_z b) d", n_z=n_z)
 
         with Timer() as compress_timer:
-            all_strings = self.compress(z)
+            all_strings = self.compress(z, parent=parent)
 
         if is_return_logs:
             with Timer() as decompress_timer:
@@ -191,23 +271,8 @@ class RateEstimator(torch.nn.Module):
 
         return n_bits
 
-    def update(self, force):
-        """Updates the entropy model values. Needs to be called once after training to be able to 
-        later perform the evaluation with an actual entropy coder.
-        
-        Parameters
-        ----------
-        force : bool, optional
-            Overwrite previous values.
-        """
-        raise NotImplementedError()
-
     def aux_loss(self, force):
         """Auxilary loss for the rate estimator / coders. This will be called separately from main loss."""
-        raise NotImplementedError()
-
-    def parameters(self):
-        """Returns an iterator over the model parameters that should be trained by main optimizer."""
         raise NotImplementedError()
 
     def aux_parameters(self):
@@ -217,15 +282,55 @@ class RateEstimator(torch.nn.Module):
         """
         raise NotImplementedError()
 
+    def make_pickable_(self):
+        """Ensure that the Estimator is pickable, which is necessary for distributed training."""
+        for m in self.modules():  # recursive iteration over all
+            if isinstance(m, EntropyModel):
+                m.entropy_coder = None
+
+    def undo_pickable_(self):
+        """Undo `make_pickable_`, e.g. ensures that the coder is available."""
+        for m in self.modules():
+            if isinstance(m, EntropyModel):
+                # TODO : allow resetting non default coder
+                m.entropy_coder = _EntropyCoder(default_entropy_coder())
+
+    def update(self, force=False):
+        """Updates the entropy model values. Needs to be called once after training to be able to 
+        later perform the evaluation with an actual entropy coder.
+        
+        Parameters
+        ----------
+        force : bool, optional
+            Overwrite previous values.
+        """
+        updated = True
+
+        for m in self.children():  # recursive iteration over all
+            if isinstance(m, CompressaiEntropyBottleneck):
+                rv = m.update(force=force)
+                updated &= rv
+            elif isinstance(m, GaussianConditional):
+                scale_table = get_scale_table()
+                rv = m.update_scale_table(scale_table, force=force)
+                updated &= rv
+        return updated
+
+    def prepare_compressor_(self):
+        """Ensure that the model can be used for compression"""
+
+        # make sure that the coder is available
+        self.undo_pickable_()
+
+        # mae sure that the parameters for compressing are available
+        self.update(force=True)
+
 
 ### No Compresssion CODERS ###
 class Lossless(RateEstimator):
     """Model that does not performs lossless comrpession of representations."""
 
-    def update(self, force):
-        pass
-
-    def forward(self, z, _):
+    def forward_help(self, z, _, parent=None):
         n_z, batch_size, z_dim = z.shape
         z_hat = z
 
@@ -246,12 +351,6 @@ class Lossless(RateEstimator):
         other = dict()
 
         return z_hat, rates, logs, other
-
-    def parameters(self):
-        # all params
-        for m in self.children():
-            for p in m.parameters():
-                yield p
 
     def aux_parameters(self):
         return iter(())  # no parameters
@@ -278,10 +377,7 @@ class MIRate(RateEstimator):
         self.q_Z = q_Z
         self.reset_parameters()
 
-    def update(self, force):
-        pass
-
-    def forward(self, z, p_Zlx):
+    def forward_help(self, z, p_Zlx, parent=None):
         # batch shape: [] ; event shape: [z_dim]
         q_Z = self.q_Z()
 
@@ -300,12 +396,6 @@ class MIRate(RateEstimator):
 
         return z_hat, kl, logs, other
 
-    def parameters(self):
-        # all params
-        for m in self.children():
-            for p in m.parameters():
-                yield p
-
     def aux_parameters(self):
         return iter(())  # no parameters
 
@@ -317,7 +407,6 @@ class MIRate(RateEstimator):
 class HRateEstimator(RateEstimator):
     """Base class for a coder, i.e. a model that perform entropy/MI coding."""
 
-    update = compressai.models.CompressionModel.update
     aux_loss = compressai.models.CompressionModel.aux_loss
 
     def _load_from_state_dict(
@@ -355,20 +444,38 @@ class HRateEstimator(RateEstimator):
             error_msgs,
         )
 
-    def parameters(self):
-        return orderedset(
-            p for n, p in self.named_parameters() if not n.endswith(".quantiles")
-        )
-
     def aux_parameters(self):
         # all parameters of the CDF
-        return orderedset(
+        return OrderedSet(
             p for n, p in self.named_parameters() if n.endswith(".quantiles")
         )
 
     @property
-    def is_updated(self):
-        return self.entropy_bottleneck._offset.numel() > 0
+    def is_coder_updated(self):
+        """Whether the coder is updated => can be used."""
+        is_coder_updated = True
+
+        for m in self.modules():  # recursive iteration over all
+            if isinstance(m, EntropyModel):
+                is_coder_updated &= m._offset.numel() > 0
+
+        return is_coder_updated
+
+    @property
+    def is_coder_present(self):
+        """Whether the coder is present => can be used."""
+        is_coder_present = True
+
+        for m in self.modules():  # recursive iteration over all
+            if isinstance(m, EntropyModel):
+                is_coder_present &= m.entropy_coder is not None
+
+        return is_coder_present
+
+    @property
+    def is_compute_real_rate(self):
+        """Whether compute the real rate."""
+        return (not self.training) and self.is_coder_updated and self.is_coder_present
 
 
 class HRateFactorizedPrior(HRateEstimator):
@@ -396,8 +503,9 @@ class HRateFactorizedPrior(HRateEstimator):
         super().__init__()
         self.entropy_bottleneck = EntropyBottleneck(z_dim, **kwargs)
         self.is_can_compress = n_z_samples == 1
+        self.reset_parameters()
 
-    def forward(self, z, _):
+    def forward_help(self, z, _, parent=None):
 
         z_hat, q_z = self.entropy_bottleneck(z)
 
@@ -406,7 +514,7 @@ class HRateFactorizedPrior(HRateEstimator):
 
         logs = dict(H_q_Z=neg_log_q_z.mean() / math.log(BASE_LOG), H_ZlX=0)
 
-        if not self.training and self.is_updated:
+        if self.is_compute_real_rate:
             n_bits, logs2 = self.real_rate(z, is_return_logs=True)
             logs.update(logs2)
             logs["n_bits"] = n_bits
@@ -415,7 +523,7 @@ class HRateFactorizedPrior(HRateEstimator):
 
         return z_hat, neg_log_q_z, logs, other
 
-    def compress(self, z):
+    def compress(self, z, parent=None):
         # list for generality when hyperprior
         return [self.entropy_bottleneck.compress(z)]
 
@@ -440,17 +548,15 @@ class HRateHyperprior(HRateEstimator):
     factor_dim : int, optional
         By how much to decrease the dimensionality of the side information.
 
+    side_z_dim : int, optional
+        SIze of the side representations, if give will overwrite `factor_dim`.
+
     is_pred_mean : bool, optional
         Whether to learn the mean of the gaussian for the side information (as in mean scale hyper
         prior of [2]).
 
     n_z_samples : int, optional
         Number of z samples. Currently if > 1 cannot perform actual compress.
-
-    is_train_side_encoder : bool, optional
-        Whether to train the side encoder. If not will have to be given in the forward function.
-        Not training is useful if there's some additional side information which makes sense to be
-        used instead of trained, e.g. the additonal head in SimCLR.
 
     kwargs:
         Additional arguments to `EntropyBottleneck`.
@@ -467,29 +573,37 @@ class HRateHyperprior(HRateEstimator):
         self,
         z_dim,
         factor_dim=5,
+        side_z_dim=None,
         is_pred_mean=True,
         n_z_samples=1,
-        is_train_side_encoder=True,
         **kwargs,
     ):
         super().__init__()
-        side_z_dim = z_dim // factor_dim
 
+        if side_z_dim is None:
+            side_z_dim = z_dim // factor_dim
+
+        self.z_dim = z_dim
+        self.side_z_dim = side_z_dim
         self.is_can_compress = n_z_samples == 1
         self.is_pred_mean = is_pred_mean
         self.entropy_bottleneck = EntropyBottleneck(side_z_dim, **kwargs)
         self.gaussian_conditional = GaussianConditional(None)
-        self.is_train_side_encoder = is_train_side_encoder
+        self.side_encoder, self.z_encoder = self.get_encoders()
+        self.reset_parameters()
 
-        kwargs_mlp = dict(n_hid_layers=2, hid_dim=max(z_dim, 256))
+    def get_encoders(self):
+        kwargs_mlp = dict(n_hid_layers=2, hid_dim=max(self.z_dim, 256))
 
-        if self.is_train_side_encoder:
-            self.side_encoder = MLP(z_dim, side_z_dim, **kwargs_mlp)
+        side_encoder = MLP(self.z_dim, self.side_z_dim, **kwargs_mlp)
 
+        z_dim = self.z_dim
         if self.is_pred_mean:
             z_dim *= 2  # predicting mean and var
 
-        self.z_encoder = MLP(side_z_dim, z_dim, **kwargs_mlp)
+        z_encoder = MLP(self.side_z_dim, z_dim, **kwargs_mlp)
+
+        return side_encoder, z_encoder
 
     def chunk_params(self, gaussian_params):
         if self.is_pred_mean:
@@ -498,12 +612,9 @@ class HRateHyperprior(HRateEstimator):
             scales_hat, means_hat = gaussian_params, None
         return scales_hat, means_hat
 
-    def forward(self, z, _, side_encoder=None):
-        if not self.is_train_side_encoder:
-            side_encoder = self.side_encoder
-
+    def forward_help(self, z, _, __):
         # shape: [n_z_dim, batch_shape, side_z_dim]
-        side_z = side_encoder(z)
+        side_z = self.side_encoder(z)
         side_z_hat, q_s = self.entropy_bottleneck(side_z)
 
         # scales_hat and means_hat (if not None). shape: [n_z_dim, batch_shape, z_dim]
@@ -530,7 +641,7 @@ class HRateHyperprior(HRateEstimator):
             H_ZlX=0,
         )
 
-        if not self.training and self.is_updated:
+        if self.is_compute_real_rate:
             n_bits, logs2 = self.real_rate(z, is_return_logs=True)
             logs.update(logs2)
             logs["n_bits"] = n_bits
@@ -556,12 +667,10 @@ class HRateHyperprior(HRateEstimator):
 
         return indexes, means_hat
 
-    def compress(self, z, side_encoder=None):
-        if not self.is_train_side_encoder:
-            side_encoder = self.side_encoder
+    def compress(self, z, parent=None):
 
         # side_z and side_z_hat. shape: [batch_shape, side_z_dim]
-        side_z = side_encoder(z)
+        side_z = self.side_encoder(z)
         # len n_z_dim list of bytes
         side_z_strings = self.entropy_bottleneck.compress(side_z)
 
@@ -618,27 +727,31 @@ class HRateHyperprior(HRateEstimator):
             error_msgs,
         )
 
-    def update(self, scale_table=None, force=False):
-        if scale_table is None:
-            scale_table = get_scale_table()
-        updated = self.gaussian_conditional.update_scale_table(scale_table, force=force)
-        updated |= super().update(force=force)
-        return updated
 
-
-# DEV
 class HRateSimCLR(HRateHyperprior):
-    def __init__(self, z_dim, is_pred_mean=True, n_z_samples=1, **kwargs):
-        HRateEstimator.__init__(self)
+    """
+    HRateHyperprior but initializes side information encoder with simclr projection head.
+    """
+
+    def __init__(self, z_dim, is_reinit=False, **kwargs):
         assert z_dim == 2048
-        side_z_dim = 128
+        self.is_reinit = is_reinit  # wheter to start from pretraiend
+        super().__init__(
+            2048, side_z_dim=128, **kwargs,
+        )
 
-        self.is_can_compress = n_z_samples == 1
-        self.is_pred_mean = is_pred_mean
-        self.entropy_bottleneck = EntropyBottleneck(side_z_dim, **kwargs)
-        self.gaussian_conditional = GaussianConditional(None)
+    def get_encoders(self):
+        side_encoder = SimCLRProjector(self.z_dim, self.side_z_dim)
+        if self.is_reinit:
+            weights_init(side_encoder)
 
-        if self.is_pred_mean:
-            z_dim *= 2  # predicting mean and var
+        _, z_encoder = super().get_encoders()
+        return side_encoder, z_encoder
 
-        self.h_s = MLP(side_z_dim, z_dim, n_hid_layers=2, hid_dim=512)
+    def reset_parameters(self):
+        weights_init(self.z_encoder)
+
+        if self.is_reinit:
+            weights_init(self.side_encoder)
+        else:
+            self.side_encoder.load_weights_()  # reload pretrained weights
