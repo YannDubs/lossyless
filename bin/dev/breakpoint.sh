@@ -13,7 +13,6 @@ kwargs="
 experiment=$experiment 
 +mode=dev
 logger=none
-callbacks.additional=[]
 architecture@encoder=mlp
 architecture@predictor=mlp
 distortion=ivae
@@ -21,6 +20,7 @@ rate=H_hyper
 data@data_feat=cifar10
 featurizer=neural_feat
 trainer.max_epochs=100
+callbacks.is_force_no_additional_callback=True
 timeout=$time
 $add_kwargs
 "
