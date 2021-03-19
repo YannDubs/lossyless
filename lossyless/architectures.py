@@ -10,6 +10,12 @@ from pl_bolts.models.self_supervised import SimCLR
 
 from .helpers import batch_flatten, batch_unflatten, is_pow2, prod, weights_init
 
+try:
+    import clip
+except ImportError:
+    pass
+
+
 __all__ = ["get_Architecture"]
 
 
@@ -245,6 +251,55 @@ class Resnet(nn.Module):
             weights_init(self.resnet.fc)
 
 
+class CLIPResnet50(nn.Module):
+    """Pretrained Resnet50 using multimodal self supervised learning (CLIP).
+
+    Parameters
+    ----------
+    in_shape : tuple of int
+        Size of the inputs (channels first). This is used to see whether to change the underlying
+        resnet or not. If first dim < 100, then will decrease the kernel size  and stride of the
+        first conv, and remove the max pooling layer as done (for cifar10) in
+        https://gist.github.com/y0ast/d91d09565462125a1eb75acc65da1469.
+
+    out_shape : int or tuple, optional
+        Size of the output.
+
+    kwargs : 
+        Additional argument to clip.load model.
+    """
+
+    def __init__(self, in_shape, out_shape, **kwargs):
+        super().__init__()
+        self.in_shape = in_shape
+        self.out_shape = [out_shape] if isinstance(out_shape, int) else out_shape
+        self.out_dim = prod(self.out_shape)
+        self.kwargs = kwargs
+
+        self.load_weights_()
+
+        if self.out_dim != 1024:
+            self.resizer = nn.Linear(1024, self.out_dim)
+        else:
+            self.resizer = nn.Identity()
+
+        self.reset_parameters()
+
+    def forward(self, X):
+        z = self.resnet(X)
+        z = self.resizer(z)
+        z = z.unflatten(dim=-1, sizes=self.out_shape)
+        return z
+
+    def load_weights_(self):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model, _ = clip.load("RN50", device, jit=False, **self.kwargs)
+        self.resnet = model.visual  # only keep the image model
+
+    def reset_parameters(self):
+        self.load_weights_()
+
+
 class SimCLRResnet50(nn.Module):
     """Pretrained Resnet50 using self supervised learning (simclr).
 
@@ -259,9 +314,6 @@ class SimCLRResnet50(nn.Module):
     out_shape : int or tuple, optional
         Size of the output.
 
-    is_pretrained : bool, optional
-        Whether to load a model pretrained on imagenet.
-
     is_post_project : bool, optional
         Whether to return the output after projection head instead of before.
 
@@ -269,49 +321,15 @@ class SimCLRResnet50(nn.Module):
         Additional argument to the pl_bolts model.
     """
 
-    def __init__(
-        self, in_shape, out_shape, is_pretrained=True, is_post_project=False, **kwargs
-    ):
+    def __init__(self, in_shape, out_shape, is_post_project=False, **kwargs):
         super().__init__()
         self.in_shape = in_shape
         self.out_shape = [out_shape] if isinstance(out_shape, int) else out_shape
         self.out_dim = prod(self.out_shape)
         self.is_post_project = is_post_project
-        self.is_pretrained = is_pretrained
+        self.kwargs = kwargs
 
-        if self.in_shape[1] < 100:
-            maxpool1 = False
-            first_conv = False
-
-            # resnet for smaller images
-            self.resnet.conv1 = nn.Conv2d(
-                in_shape[0], 64, kernel_size=3, stride=1, padding=1, bias=False
-            )
-            self.resnet.maxpool = nn.Identity()
-        else:
-            maxpool1 = True
-            first_conv = True
-
-        module = SimCLR(
-            gpus=0,
-            nodes=1,
-            num_samples=1,
-            batch_size=64,
-            maxpool1=maxpool1,
-            first_conv=first_conv,
-            dataset="",  # not importnant,
-        )
-
-        if self.is_pretrained:
-            ckpt_path = "https://pl-bolts-weights.s3.us-east-2.amazonaws.com/simclr/bolts_simclr_imagenet/simclr_imagenet.ckpt"
-            module = module.load_from_checkpoint(ckpt_path, strict=False)
-
-        self.resnet = module.encoder
-
-        if self.is_post_project:
-            self.projector = module.projection
-        else:
-            self.projector = nn.Identity()
+        self.load_weights_()
 
         if self.is_post_project and self.out_dim != 128:
             self.resizer = nn.Linear(128, self.out_dim)
@@ -333,18 +351,47 @@ class SimCLRResnet50(nn.Module):
         z = z.unflatten(dim=-1, sizes=self.out_shape)
         return z
 
+    def load_weights_(self):
+        if self.in_shape[1] < 100:
+            maxpool1 = False
+            first_conv = False
+        else:
+            maxpool1 = True
+            first_conv = True
+
+        module = SimCLR(
+            gpus=0,
+            nodes=1,
+            num_samples=1,
+            batch_size=64,
+            maxpool1=maxpool1,
+            first_conv=first_conv,
+            dataset="",  # not importnant,
+            **self.kwargs,
+        )
+
+        ckpt_path = "https://pl-bolts-weights.s3.us-east-2.amazonaws.com/simclr/bolts_simclr_imagenet/simclr_imagenet.ckpt"
+        module = module.load_from_checkpoint(ckpt_path, strict=False)
+
+        self.resnet = module.encoder
+
+        if self.is_post_project:
+            self.projector = module.projection
+        else:
+            self.projector = nn.Identity()
+
     def reset_parameters(self):
         weights_init(self.resizer)
-        if not self.is_pretrained:
-            weights_init(self.projector)
-            weights_init(self.resnet)
+        self.load_weights_()
 
 
 class SimCLRProjector(nn.Module):
     """Pretrained simclr projector head."""
 
-    def __init__(self, in_shape, out_shape):
+    def __init__(self, in_shape, out_shape, **kwargs):
         super().__init__()
+        self.kwargs = kwargs
+
         if isinstance(in_shape, int):
             in_shape = [in_shape]
         if isinstance(out_shape, int):
@@ -352,11 +399,8 @@ class SimCLRProjector(nn.Module):
         assert in_shape[0] == prod(in_shape) == 2048
         assert out_shape[0] == prod(out_shape) == 128
 
-        # give random non important args
-        module = SimCLR(gpus=0, nodes=1, num_samples=1, batch_size=64, dataset="",)
-        ckpt_path = "https://pl-bolts-weights.s3.us-east-2.amazonaws.com/simclr/bolts_simclr_imagenet/simclr_imagenet.ckpt"
-        module.load_from_checkpoint(ckpt_path, strict=False)
-        self.projection = module.projection
+        self.load_weights_()
+        self.reset_parameters()
 
     def forward(self, X):
         #  make sure only 2 dims
@@ -364,6 +408,18 @@ class SimCLRProjector(nn.Module):
         X = self.projection(X)
         X = batch_unflatten(X, shape)
         return X
+
+    def load_weights_(self):
+        # give random non important args
+        module = SimCLR(
+            gpus=0, nodes=1, num_samples=1, batch_size=64, dataset="", **self.kwargs
+        )
+        ckpt_path = "https://pl-bolts-weights.s3.us-east-2.amazonaws.com/simclr/bolts_simclr_imagenet/simclr_imagenet.ckpt"
+        module.load_from_checkpoint(ckpt_path, strict=False)
+        self.projection = module.projection
+
+    def reset_parameters(self):
+        self.load_weights_()
 
 
 class CNN(nn.Module):
