@@ -370,10 +370,13 @@ class MIRate(RateEstimator):
     ----------
     q_Z : nn.Module
         Prior to use for compression
+
+    kwargs : 
+        Additional arguemnts to `RateEstimator`.
     """
 
-    def __init__(self, q_Z):
-        super().__init__()
+    def __init__(self, q_Z, **kwargs):
+        super().__init__(**kwargs)
         self.q_Z = q_Z
         self.reset_parameters()
 
@@ -490,8 +493,11 @@ class HRateFactorizedPrior(HRateEstimator):
     n_z_samples : int, optional
         Number of z samples. Currently if > 1 cannot perform actual compress.
 
-    kwargs:
+    kwargs_ent_bottleneck : dict, optional
         Additional arguments to `EntropyBottleneck`.
+
+    kwargs :
+        Additional arguments to `HRateEstimator`
 
     References
     ----------
@@ -499,9 +505,9 @@ class HRateFactorizedPrior(HRateEstimator):
     preprint arXiv:1802.01436 (2018).
     """
 
-    def __init__(self, z_dim, n_z_samples=1, **kwargs):
-        super().__init__()
-        self.entropy_bottleneck = EntropyBottleneck(z_dim, **kwargs)
+    def __init__(self, z_dim, n_z_samples=1, kwargs_ent_bottleneck={}, **kwargs):
+        super().__init__(**kwargs)
+        self.entropy_bottleneck = EntropyBottleneck(z_dim, **kwargs_ent_bottleneck)
         self.is_can_compress = n_z_samples == 1
         self.reset_parameters()
 
@@ -558,8 +564,11 @@ class HRateHyperprior(HRateEstimator):
     n_z_samples : int, optional
         Number of z samples. Currently if > 1 cannot perform actual compress.
 
-    kwargs:
+    kwargs_ent_bottleneck : dict, optional
         Additional arguments to `EntropyBottleneck`.
+
+    kwargs :
+        Additional arguments to `HRateEstimator`
 
     References
     ----------
@@ -576,9 +585,10 @@ class HRateHyperprior(HRateEstimator):
         side_z_dim=None,
         is_pred_mean=True,
         n_z_samples=1,
+        kwargs_ent_bottleneck={},
         **kwargs,
     ):
-        super().__init__()
+        super().__init__(**kwargs)
 
         if side_z_dim is None:
             side_z_dim = z_dim // factor_dim
@@ -587,7 +597,7 @@ class HRateHyperprior(HRateEstimator):
         self.side_z_dim = side_z_dim
         self.is_can_compress = n_z_samples == 1
         self.is_pred_mean = is_pred_mean
-        self.entropy_bottleneck = EntropyBottleneck(side_z_dim, **kwargs)
+        self.entropy_bottleneck = EntropyBottleneck(side_z_dim, **kwargs_ent_bottleneck)
         self.gaussian_conditional = GaussianConditional(None)
         self.side_encoder, self.z_encoder = self.get_encoders()
         self.reset_parameters()

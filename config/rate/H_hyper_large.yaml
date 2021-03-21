@@ -6,4 +6,5 @@ mode: H_hyper
 kwargs:
   factor_dim: 128
   is_pred_mean: True
-  init_scale: 10 # input should be at initialization in [-init_scale, init_scale]. Larger might create overhead. You can use something like 10 for large images but smaller for smaller 
+  kwargs_ent_bottleneck:
+    init_scale: 10 # input should be at initialization in [-init_scale, init_scale]. Larger might create overhead. You can use something like 10 for large images but smaller for smaller 

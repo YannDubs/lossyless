@@ -2,6 +2,6 @@ name: ???
 mode: ???
 range_coder: null
 factor_beta : 1 # factor that multiplies beta 
-warmup_k_epoch: 0 # stop gradients to the encoder for the first k epoch for the rate
-is_endToEnd: true
-kwargs: {}
+kwargs: 
+  warmup_k_epoch: 0 # stop gradients to the encoder for the first k epoch for the rate
+  is_endToEnd: true
