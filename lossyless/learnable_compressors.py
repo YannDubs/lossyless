@@ -237,6 +237,7 @@ class LearnableCompressor(pl.LightningModule):
             loss=loss / math.log(BASE_LOG),
             rate=rate / math.log(BASE_LOG),
             distortion=distortion / math.log(BASE_LOG),
+            beta=curr_beta,
         )
         # if both are entropies this will say how good the model is
         logs["ratedist"] = logs["rate"] + logs["distortion"]
@@ -291,7 +292,6 @@ class LearnableCompressor(pl.LightningModule):
         )
         return loss
 
-    # DEV
     def on_test_epoch_start(self):
         # Make sure that you can actually use the coder during eval.
         self.rate_estimator.prepare_compressor_()
@@ -332,11 +332,13 @@ class LearnableCompressor(pl.LightningModule):
         )
 
         # ONLINE EVALUATOR
-        # do not use scheduler for online eval because input (representation) is changing
-        online_optimizer = torch.optim.Adam(
-            self.get_specific_parameters("online"), lr=1e-4
+        append_optimizer_scheduler_(
+            self.hparams.optimizer_online,
+            self.hparams.scheduler_online,
+            self.get_specific_parameters("online"),
+            optimizers,
+            schedulers,
         )
-        optimizers += [online_optimizer]
 
         # CODER OPTIMIZER
         coder_parameters = self.get_specific_parameters("coder")

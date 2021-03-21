@@ -15,6 +15,8 @@ defaults:
   - scheduler@scheduler_feat: expdecay
   - optimizer@optimizer_coder: adam3e-3
   - scheduler@scheduler_coder: expdecay
+  - optimizer@optimizer_online: adam1e-4 
+  - scheduler@scheduler_online: none # representation is changing so don't use a scheduler
   - distortion: ivae
   - rate: H_factorized
   - featurizer: neural_rec
@@ -128,13 +130,15 @@ encoder:
   fam_kwargs: {}
 
 ### OPTIMIZER ###
-optimizer_feat: 
-  kwargs:
-    is_lars: false # whether to use LARS optimizer, useful for large batches.
+optimizer_feat: {}
 scheduler_feat: {}
 
 optimizer_coder: {}
 scheduler_coder: {}
+
+optimizer_online: {}
+scheduler_online: {}
+
 
 ### RUNNING ###
 checkpoint_feat: {}
