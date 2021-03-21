@@ -19,21 +19,37 @@ import pl_bolts
 import pytorch_lightning as pl
 import torch
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
-from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
-                                 MaxinvDistributionPlot, ReconstructImages)
+from lossyless.callbacks import (
+    CodebookPlot,
+    LatentDimInterpolator,
+    MaxinvDistributionPlot,
+    ReconstructImages,
+)
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import OrderedSet, check_import
 from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
+from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
-from pytorch_lightning.plugins import (DDPPlugin, DDPShardedPlugin,
-                                       DDPSpawnPlugin, DDPSpawnShardedPlugin)
+from pytorch_lightning.plugins import (
+    DDPPlugin,
+    DDPShardedPlugin,
+    DDPSpawnPlugin,
+    DDPSpawnShardedPlugin,
+)
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
-from utils.helpers import (DataParallelPlugin, ModelCheckpoint,
-                           get_latest_match, getattr_from_oneof,
-                           learning_rate_finder, log_dict, omegaconf2namespace,
-                           replace_keys, set_debug)
+from utils.helpers import (
+    DataParallelPlugin,
+    ModelCheckpoint,
+    get_latest_match,
+    getattr_from_oneof,
+    learning_rate_finder,
+    log_dict,
+    omegaconf2namespace,
+    replace_keys,
+    set_debug,
+)
 
 try:
     import wandb
@@ -182,6 +198,13 @@ def begin(cfg):
 
     cfg.paths.work = str(Path.cwd())
 
+    try:
+        git_hash = subprocess.check_output(["git", "rev-parse", "--verify", "HEAD"])
+        cfg.other.git_hash = git_hash.decode("utf-8")
+    except:
+        logger.exception("Failed to save git hash with error:")
+        pass
+
     if cfg.rate.range_coder is not None:
         compressai.set_entropy_coder(cfg.rate.range_coder)
 
@@ -258,27 +281,28 @@ def instantiate_datamodule_(cfg, pre_featurizer=None):
         pass  # TODO (probabby give to datamodule)
 
     cfgd = cfg.data
+    cfgt = cfg.trainer
 
-    # if cfg.trainer.gpus > 1 and cfg.trainer.get("accelerator", "ddp") == "ddp_spawn":
-    #     # ddp_spawn very slow with multi workers
-    #     cfgd.kwargs.num_workers = 0
+    if cfg.trainer.gpus > 1 and cfg.trainer.get("accelerator", "ddp") == "ddp_spawn":
+        # ddp_spawn very slow with multi workers
+        cfgd.kwargs.num_workers = 0  # TODO test if true
 
     datamodule = get_datamodule(cfgd.dataset)(**cfgd.kwargs)
     datamodule.prepare_data()
     datamodule.setup()
     cfgd.aux_is_clf = datamodule.aux_is_clf
-    cfgd.length = len(datamodule.train_dataset)
+    limit_train_batches = cfgt.get("limit_train_batches", 1)
+    cfgd.length = int(len(datamodule.train_dataset) * limit_train_batches)
     cfgd.shape = datamodule.shape
     cfgd.target_is_clf = datamodule.target_is_clf
     cfgd.target_shape = datamodule.target_shape
     cfgd.aux_shape = datamodule.aux_shape
     cfgd.mode = datamodule.mode
-    cfgd.neg_factor = cfgd.length / (2 * cfgd.kwargs.batch_size - 1)
 
-    cfgt = cfg.trainer
-    total_devices = max(cfgt.gpus * cfgt.num_nodes, 1)
-    train_batches = cfgd.length // total_devices
-    cfgd.max_steps = (cfgt.max_epochs * train_batches) // cfgt.accumulate_grad_batches
+    n_devices = max(cfgt.gpus * cfgt.num_nodes, 1)
+    eff_batch_size = n_devices * cfgd.kwargs.batch_size * cfgt.accumulate_grad_batches
+    train_batches = cfgd.length // eff_batch_size
+    cfgd.max_steps = cfgt.max_epochs * train_batches
 
     return datamodule
 
@@ -347,7 +371,12 @@ def get_callbacks(cfg, is_featurizer):
                     cllbck_kwargs = kwargs.get("kwargs", {})
                     modules = [lossyless.callbacks, pl.callbacks, pl_bolts.callbacks]
                     Callback = getattr_from_oneof(modules, name)
-                    callbacks.append(Callback(**cllbck_kwargs))
+                    new_callback = Callback(**cllbck_kwargs)
+
+                    if not is_featurizer and isinstance(new_callback, BaseFinetuning):
+                        # don't add finetuner during prediciton
+                        callbacks.append(new_callback)
+
             except AttributeError:
                 pass
 
@@ -645,10 +674,4 @@ def finalize(modules, trainers, datamodules, cfgs):
 
 
 if __name__ == "__main__":
-    # Save git info for reproducibility purposes
-    git_hash = subprocess.check_output(["git", "rev-parse", "--verify", "HEAD"]).decode(
-        "utf-8"
-    )
-    git_diff = subprocess.check_output(["git", "diff"]).decode("utf-8")
-
     main()

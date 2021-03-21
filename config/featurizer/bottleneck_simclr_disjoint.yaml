@@ -14,7 +14,6 @@ encoder:
 distortion:
   kwargs:
     temperature: 0.1
-    weight: 1
     is_cosine: True
     is_project: true
     project_kwargs:
@@ -25,5 +24,6 @@ loss:
   beta_anneal: geometric
 
 rate:
-  warmup_k_epoch: 1 
-  is_endToEnd: false
+  kwargs: 
+    warmup_k_epoch: 1 
+    is_endToEnd: false

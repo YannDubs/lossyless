@@ -5,10 +5,14 @@ defaults:
 distortion:
   mode: contrastive
   kwargs:
-    temperature: 0.1
+    temperature: 0.1 # decreasing temperature seems to help distortion but worst accuracy !
     is_symmetric: true
-    weight: ${data.neg_factor}
-    is_project: true
+    effective_batch_size: ${data.length} # new but seems to work better use `null` if want to deactivate
+    is_project: true # strongly recommended
+    is_cosine: true # recommended
+    project_kwargs:
+      mode: mlp
+      out_shape: 128
 
 data_feat:
   kwargs:
@@ -19,3 +23,11 @@ data_feat:
 optimizer_feat:
   kwargs:
     is_lars: false # true is usefull if have to use large batch sizes (but currently bug)
+
+optimizer_coder:
+  kwargs:
+    is_lars: ${optimizer_feat.kwargs.is_lars} # will usually use same batch size => also LARS for pred
+
+optimizer_online:
+  kwargs:
+    is_lars: ${optimizer_feat.kwargs.is_lars} # will usually use same batch size => also LARS for pred

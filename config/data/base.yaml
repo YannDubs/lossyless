@@ -9,7 +9,6 @@ target_shape: ???
 aux_shape: ???
 aux_is_clf: ??? 
 target_is_clf: ???
-neg_factor: ??? # useful for contrastive loss. should be len(train_dataset) / (2*batch_size-1)
 max_steps: ??? # max number of steps for training
 #########################################################
 

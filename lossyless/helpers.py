@@ -749,15 +749,15 @@ class Annealer:
         Number of steps before reaching `final_value`. If negative, will swap final and initial.
 
     start_step : int, optional
-        Number of steps to wait for before starting annealing. During the waiting time, the 
+        Number of steps to wait for before starting annealing. During the waiting time, the
         hyperparameter will be `default`.
 
     default : float, optional
-        Default hyperparameter value that will be used for the first `start_step`s. If `None` uses 
+        Default hyperparameter value that will be used for the first `start_step`s. If `None` uses
         `initial_value`.
 
     mode : {"linear", "geometric", "constant"}, optional
-        Interpolation mode. 
+        Interpolation mode.
     """
 
     def __init__(
@@ -785,7 +785,7 @@ class Annealer:
             delta = self.final_value - self.initial_value
             self.factor = delta / self.n_steps_anneal
         elif self.mode == "constant":
-            self.factor = 1
+            pass
         elif self.mode == "geometric":
             delta = self.final_value / self.initial_value
             self.factor = delta ** (1 / self.n_steps_anneal)
@@ -799,17 +799,17 @@ class Annealer:
         self.n_training_calls = 0
 
     def is_annealing(self, n_update_calls):
-        return (self.start_step < n_update_calls) and (
-            n_update_calls < (self.n_steps_anneal + self.start_step)
-        )
+        not_const = self.mode != "constant"
+        is_not_finised = n_update_calls < (self.n_steps_anneal + self.start_step)
+        return not_const and is_not_finised
 
     def __call__(self, is_update=False, n_update_calls=None):
         """Return the current value of the hyperparameter.
-        
+
         Parameter
         ---------
         is_update : bool, optional
-            Whether to update the value. 
+            Whether to update the value.
 
         n_update_calls : int, optional
             Number of updated calls. If given then will override the default counter.
@@ -820,17 +820,19 @@ class Annealer:
         if n_update_calls is None:
             n_update_calls = self.n_training_calls
 
-        if self.start_step >= n_update_calls:
+        if self.start_step > n_update_calls:
             return self.default
 
         n_actual_training_calls = n_update_calls - self.start_step
 
-        if self.is_annealing:
+        if self.is_annealing(n_update_calls):
             current = self.initial_value
             if self.mode == "geometric":
                 current *= self.factor ** n_actual_training_calls
-            elif self.mode in ["linear", "constant"]:
+            elif self.mode == "linear":
                 current += self.factor * n_actual_training_calls
+            else:
+                raise ValueError(f"Unkown mode : {self.mode}.")
         else:
             current = self.final_value
 
