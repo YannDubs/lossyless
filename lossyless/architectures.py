@@ -44,6 +44,9 @@ def get_Architecture(mode, complexity=None, **kwargs):
             kwargs["hid_dim"] = 8 * (4 ** (complexity))
         return partial(FlattenMLP, **kwargs)
 
+    elif mode == "linear":
+        return partial(FlattenLinear, **kwargs)
+
     elif mode == "resnet":
         if complexity is not None:
             base = ["resnet18", "resnet34", "resnet50", "resnet101", "resnet150"]
@@ -62,6 +65,8 @@ def get_Architecture(mode, complexity=None, **kwargs):
         return partial(SimCLRResnet50, **kwargs)
     elif mode == "simclr_projector":
         return partial(SimCLRProjector, **kwargs)
+    elif mode == "clip":
+        return partial(CLIPResnet50, **kwargs)
     else:
         raise ValueError(f"Unkown mode={mode}.")
 
@@ -168,6 +173,38 @@ class FlattenMLP(MLP):
         in_dim = prod(self.in_shape)
         out_dim = prod(self.out_shape)
         super().__init__(in_dim=in_dim, out_dim=out_dim, **kwargs)
+
+    def forward(self, X):
+        # flattens in_shape
+        X = X.flatten(start_dim=X.ndim - len(self.in_shape))
+        X = super().forward(X)
+        # unflattens out_shape
+        X = X.unflatten(dim=-1, sizes=self.out_shape)
+        return X
+
+
+class FlattenLinear(torch.nn.Linear):
+    """
+    Linear that can take a multi dimensional array as input and output . E.g. for predicting an image use
+    `out_shape=(32,32,3)` and this will predict 32*32*3 and then reshape.
+
+    Parameters
+    ----------
+    in_shape : tuple or int
+
+    out_shape : tuple or int
+
+    kwargs :
+        Additional arguments to `torch.nn.Linear`.
+    """
+
+    def __init__(self, in_shape, out_shape, **kwargs):
+        self.in_shape = [in_shape] if isinstance(in_shape, int) else in_shape
+        self.out_shape = [out_shape] if isinstance(out_shape, int) else out_shape
+
+        in_dim = prod(self.in_shape)
+        out_dim = prod(self.out_shape)
+        super().__init__(in_features=in_dim, out_features=out_dim, **kwargs)
 
     def forward(self, X):
         # flattens in_shape
