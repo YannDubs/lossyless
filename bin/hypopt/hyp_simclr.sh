@@ -37,7 +37,7 @@ trainer.limit_val_batches=0.1
 trainer.limit_train_batches=0.1
 trainer.limit_test_batches=1.0
 featurizer.loss.beta=0.001
-hydra.launcher.partition=rtx6000
+hydra.launcher.partition=t4v2
 $add_kwargs
 "
 #
@@ -50,7 +50,7 @@ kwargs_multi="
 " 
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in  "featurizer=bottleneck_simclr,bottleneck_simclr_disjoint,bottleneck_simclr_postproj,simclr_lossless,bottleneck_simclr_nowarmup,bottleneck_simclr_noanneal,bottleneck_simclr_reinit trainer.gpus=4 +trainer.accelerator=ddp_spawn" "featurizer=bottleneck_simclr trainer.gpus=4" 
+  for kwargs_dep in  "featurizer=bottleneck_simclr,bottleneck_simclr_disjoint,bottleneck_simclr_postproj,simclr_lossless,bottleneck_simclr_nowarmup,bottleneck_simclr_noanneal,bottleneck_simclr_reinit,bottleneck_simclr_lars trainer.gpus=8 +trainer.accelerator=ddp_spawn" "featurizer=bottleneck_simclr trainer.gpus=8" 
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &

@@ -1,0 +1,7 @@
+name: multistep100
+modes: ["MultiStepLR"] # list of scheduler to use
+kwargs:
+  # all kwargs
+  MultiStepLR:
+    milestones: [35,60,80]
+    gamma: 0.1

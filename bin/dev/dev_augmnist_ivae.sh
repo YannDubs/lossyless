@@ -18,6 +18,7 @@ is_only_feat=False
 featurizer=neural_rec
 architecture@encoder=resnet18
 architecture@predictor=resnet18
+distortion.kwargs.arch_kwargs.complexity=3
 encoder.z_dim=128
 data@data_feat=augmnist
 evaluation.is_est_entropies=True

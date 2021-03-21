@@ -3,8 +3,6 @@ callbacks:
   ResnetFinetuning:
     is_use: true
     kwargs:
+      resnet_name: p_ZlX.mapper.resnet
       unfreeze_last: 0
       unfreeze_layer4: 2
-
- 
-  

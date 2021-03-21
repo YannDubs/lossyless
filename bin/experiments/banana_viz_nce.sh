@@ -29,7 +29,7 @@ encoder.z_dim=2
 # Distortion
 distortion_kwargs="
 distortion.factor_beta=1
-distortion.kwargs.weight=1
+distortion.kwargs.effective_batch_size=null
 distortion.kwargs.is_symmetric=True
 "
 
