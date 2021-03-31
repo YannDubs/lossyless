@@ -74,7 +74,8 @@ class CIFAR10Policy(object):
         >>>     CIFAR10Policy(),
         >>>     transforms.ToTensor()])
     """
-    def __init__(self, fillcolor=(128, 128, 128)):
+    def __init__(self, keep_prob=1, fillcolor=(128, 128, 128)):
+        self.keep_prob = keep_prob
         self.policies = [
             SubPolicy(0.1, "invert", 7, 0.2, "contrast", 6, fillcolor),
             SubPolicy(0.7, "rotate", 2, 0.3, "translateX", 9, fillcolor),
@@ -109,8 +110,12 @@ class CIFAR10Policy(object):
 
 
     def __call__(self, img):
-        policy_idx = random.randint(0, len(self.policies) - 1)
-        return self.policies[policy_idx](img)
+        if random.random() < self.keep_prob:
+            policy_idx = random.randint(0, len(self.policies) - 1)
+            return self.policies[policy_idx](img)
+        else:
+            return img
+
 
     def __repr__(self):
         return "AutoAugment CIFAR10 Policy"

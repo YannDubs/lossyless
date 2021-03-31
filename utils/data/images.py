@@ -33,6 +33,7 @@ from .augmentations import (
     SVHNPolicy,
     get_finetune_augmentations,
     get_simclr_augmentations,
+    InvariantRotation
 )
 from .base import LossylessCLFDataset, LossylessDataModule
 from .helpers import int_or_ratio
@@ -78,14 +79,18 @@ class LossylessImgDataset(LossylessCLFDataset):
     """
 
     def __init__(
-        self, *args, equivalence={}, is_augment_val=False, is_normalize=True, **kwargs,
+        self, *args, equivalence={}, is_augment_val=False, val_equivalence={}, label_change_prob=0.0, is_normalize=True, **kwargs,
     ):
         super().__init__(*args, is_normalize=is_normalize, **kwargs)
         self.equivalence = equivalence
-        self.is_augment_val = is_augment_val
+        self.is_augment_val = True if val_equivalence != {} else is_augment_val
+
+        self.val_equivalence = val_equivalence
+        self.label_change_prob = 0.
 
         self.base_tranform = self.get_base_transform()
-        self.PIL_augment, self.tensor_augment = self.get_curr_augmentations()
+        self.PIL_augment, self.tensor_augment = self.get_curr_augmentations(self.augmentations)
+        self.jPIL_augment, self.jtensor_augment = self.get_curr_augmentations(self.joint_augmentations)
 
     @property
     @abc.abstractmethod
@@ -107,10 +112,16 @@ class LossylessImgDataset(LossylessCLFDataset):
     def get_x_target_Mx(self, index):
         """Return the correct example, target, and maximal invariant."""
         img, target = self.get_img_target(index)
+
         img = self.PIL_augment(img)
+        img, target = self.jPIL_augment((img, target))
+
         img = self.base_tranform(img)
+
         img = self.tensor_augment(img)
+        img, target = self.jtensor_augment((img, target))
         max_inv = index
+
         return img, target, max_inv
 
     @property
@@ -137,7 +148,11 @@ class LossylessImgDataset(LossylessCLFDataset):
                 ),
                 "hflip": RandomHorizontalFlip(),
                 "resizecrop": RandomResizedCrop(size=(shape[1], shape[2])),
-                "auto_cifar10": CIFAR10Policy(),
+                "auto_cifar10": CIFAR10Policy(keep_prob=1.0),
+                "auto_cifar10_0.7": CIFAR10Policy(keep_prob=0.7),
+                "auto_cifar10_0.5": CIFAR10Policy(keep_prob=0.5),
+                "auto_cifar10_0.2": CIFAR10Policy(keep_prob=0.2),
+                "auto_cifar10_0": CIFAR10Policy(keep_prob=0),
                 "auto_imagenet": ImageNetPolicy(),
                 "auto_svhn": SVHNPolicy(),
                 # NB you should use those 3 also at eval time
@@ -150,6 +165,22 @@ class LossylessImgDataset(LossylessCLFDataset):
                 "simclr_finetune": get_finetune_augmentations(shape[-1], self.is_train),
             },
             tensor={"erasing": RandomErasing(value=0.5),},
+        )
+
+    @property
+    def joint_augmentations(self):
+        """
+        Return a dictortionary of dictionaries containing all possible augmentations of interest.
+        first dictionary say which kind of data they act on. Augmentations for (img,label).
+        """
+        return dict(
+            PIL={
+                "inv_rotation_0": InvariantRotation(30, 0),
+                "inv_rotation_0.05": InvariantRotation(30, 0.05),
+                "inv_rotation_0.2": InvariantRotation(30, 0.2),
+                "inv_rotation_0.5": InvariantRotation(30, 0.5),
+            },
+            tensor={"erasing": RandomErasing(value=0.5), },
         )
 
     def get_equiv_x(self, x, index):
@@ -191,27 +222,36 @@ class LossylessImgDataset(LossylessCLFDataset):
 
         return transform_lib.Compose(trnsfs)
 
-    def get_augmentations(self):
-        """Return the augmentations transorms (tuple for PIL and tensor)."""
+    def get_augmentations(self, augmentations):
+        """Return the augmentations transforms (tuple for PIL and tensor)."""
+        if self.is_augment_val and (self.val_equivalence is not {}):
+            # augmentations at test time are different from train
+            equivalence = self.val_equivalence
+        else:
+            equivalence = self.equivalence
+            label_change = False
+
         PIL_augment, tensor_augment = [], []
-        for equiv in self.equivalence:
-            if equiv in self.augmentations["PIL"]:
-                PIL_augment += [self.augmentations["PIL"][equiv]]
-            elif equiv in self.augmentations["tensor"]:
-                tensor_augment += [self.augmentations["tensor"][equiv]]
+        for equiv in equivalence:
+            if equiv in augmentations["PIL"]:
+                aug = augmentations["PIL"][equiv]
+                PIL_augment += [*aug] if isinstance(aug, list) else [aug]
+            elif equiv in augmentations["tensor"]:
+                aug = augmentations["tensor"][equiv]
+                tensor_augment += [*aug] if isinstance(aug, list) else [aug]
             else:
-                raise ValueError(f"Unkown `equivalence={equiv}`.")
+                print(f"Warning; Unkown `equivalence={equiv}`.")
 
         return transform_lib.Compose(PIL_augment), transform_lib.Compose(tensor_augment)
 
-    def get_curr_augmentations(self):
+    def get_curr_augmentations(self, augmentations):
         """Return the current augmentations transorms (tuple for PIL and tensor)."""
         if self.is_augment_val or self.is_train:
-            PIL_augment, tensor_augment = self.get_augmentations()
+            PIL_augment, tensor_augment= self.get_augmentations(augmentations)
             return PIL_augment, tensor_augment
         else:
             identity = transform_lib.Compose([])
-            return identity, identity
+            return identity, identity, False
 
     def __len__(self):
         return len(self.data)

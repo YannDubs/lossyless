@@ -234,6 +234,8 @@ class ResultAggregator(PostPlotter):
         """
 
         data = merge_rate_distortions(data, rate_cols, distortion_cols)
+        print(data)
+        print("data.keys()")
 
         is_single_col = len(distortion_cols) == 1
         is_single_row = len(rate_cols) == 1

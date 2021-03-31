@@ -1,7 +1,7 @@
 name: fancymlp
 arch: mlp 
 arch_kwargs:
-  hid_dim: 1024
+  hid_dim: 1024 # 2/3K
   norm_layer: batchnorm
   n_hid_layers: 2
-  activation: Softplus
+  activation: Softplus # relu ?

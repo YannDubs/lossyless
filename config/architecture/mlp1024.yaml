@@ -2,3 +2,4 @@ name: mlp1024
 arch: mlp 
 arch_kwargs:
   hid_dim: 1024
+  n_hid_layers: 2

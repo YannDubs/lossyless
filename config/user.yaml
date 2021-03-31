@@ -3,5 +3,5 @@
 ### USER SPECIFIC ###
 #! change for your usecase
 user: ${env:USER} # automatically change if USER is not defined
-wandb_entity: lossyless # team name or user
+wandb_entity: karenu # team name or user
 #####################
