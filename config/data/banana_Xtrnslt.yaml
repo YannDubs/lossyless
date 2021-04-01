@@ -1,7 +1,7 @@
 defaults:
   - base_banana
 
-name: bananaXtrnslt
+name: banana_Xtrnslt
 
 kwargs:
   dataset_kwargs:

@@ -1,0 +1,8 @@
+defaults:
+  - cifar10
+
+name: cifar10_aug
+
+kwargs:
+  dataset_kwargs:
+    is_augment_val: True

@@ -1,7 +1,7 @@
 defaults:
-  - cifar10
+  - stl10
 
-name: augcifar10
+name: stl10_aug
 
 kwargs:
   dataset_kwargs:

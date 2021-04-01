@@ -1,7 +1,7 @@
 defaults:
   - base_banana
 
-name: bananaRot
+name: banana_rot
 
 kwargs:
   dataset_kwargs:

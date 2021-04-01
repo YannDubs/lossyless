@@ -1,13 +1,9 @@
 defaults:
-  - base
+  - base_mnist
 
-name: augmnist
-dataset: mnist
+name: mnist_aug
 
 kwargs:
-  # make sure you use entire training set
-  val_size: 0.05
   dataset_kwargs:
     equivalence: [x_translation, y_translation,rotation,scale,shear] # don't use color changin because black and white
-    is_normalize: False
     is_augment_val: True

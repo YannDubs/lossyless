@@ -1,7 +1,7 @@
 defaults:
-  - augmnist
+  - mnist_aug
 
-name: trainaugmnist
+name: mnist_trainaug
 
 kwargs:
   dataset_kwargs:

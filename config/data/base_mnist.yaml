@@ -1,0 +1,9 @@
+defaults:
+  - base
+
+dataset: mnist
+
+kwargs:
+  val_size: 0.05
+  dataset_kwargs:
+    is_normalize: False
