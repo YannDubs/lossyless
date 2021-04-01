@@ -5,6 +5,7 @@ the file `config/main.yaml` for details about the configs. or use `python main.p
 """
 import copy
 import logging
+import math
 import subprocess
 from pathlib import Path
 
@@ -19,42 +20,28 @@ import pl_bolts
 import pytorch_lightning as pl
 import torch
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
-from lossyless.callbacks import (
-    CodebookPlot,
-    LatentDimInterpolator,
-    MaxinvDistributionPlot,
-    ReconstructImages,
-)
+from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
+                                 MaxinvDistributionPlot, ReconstructImages)
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import OrderedSet, check_import
 from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
-from pytorch_lightning.plugins import (
-    DDPPlugin,
-    DDPShardedPlugin,
-    DDPSpawnPlugin,
-    DDPSpawnShardedPlugin,
-)
+from pytorch_lightning.plugins import (DDPPlugin, DDPShardedPlugin,
+                                       DDPSpawnPlugin, DDPSpawnShardedPlugin)
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
-from utils.helpers import (
-    DataParallelPlugin,
-    ModelCheckpoint,
-    get_latest_match,
-    getattr_from_oneof,
-    learning_rate_finder,
-    log_dict,
-    omegaconf2namespace,
-    replace_keys,
-    set_debug,
-)
+from utils.helpers import (DataParallelPlugin, ModelCheckpoint, cfg_save,
+                           format_resolver, get_latest_match,
+                           getattr_from_oneof, learning_rate_finder, log_dict,
+                           omegaconf2namespace, replace_keys, set_debug)
 
 try:
     import wandb
 except ImportError:
     pass
+
 
 logger = logging.getLogger(__name__)
 COMPRESSOR_CHCKPNT = "best_compressor.ckpt"
@@ -63,6 +50,15 @@ LAST_CHCKPNT = "last.ckpt"
 COMPRESSOR_RES = "results_compressor.csv"
 PREDICTOR_RES = "results_predictor.csv"
 FILE_END = "end.txt"
+CONFIG_FILE = "config.yaml"
+
+try:
+    GIT_HASH = subprocess.check_output(["git", "rev-parse", "--verify", "HEAD"]).decode(
+        "utf-8"
+    ).strip()
+except:
+    logger.exception("Failed to save git hash with error:")
+    GIT_HASH = None
 
 
 @hydra.main(config_name="main", config_path="config")
@@ -102,7 +98,7 @@ def main(cfg):
 
     if comp_cfg.evaluation.featurizer.is_evaluate:
         logger.info("Evaluate compressor ...")
-        evaluate(
+        feat_res = evaluate(
             comp_trainer,
             comp_datamodule,
             comp_cfg,
@@ -111,6 +107,8 @@ def main(cfg):
             ckpt_path=comp_cfg.evaluation.featurizer.ckpt_path,
             is_featurizer=True,
         )
+    else:
+        feat_res = dict()
 
     finalize_stage(comp_cfg, compressor, comp_trainer)
     if comp_cfg.is_only_feat:
@@ -119,6 +117,7 @@ def main(cfg):
             trainers=dict(featurizer=comp_trainer),
             datamodules=dict(featurizer=comp_datamodule),
             cfgs=dict(featurizer=comp_cfg),
+            results=dict(featurizer=feat_res),
         )
     if not comp_cfg.is_return:
         comp_datamodule = None  # not used anymore and can be large
@@ -165,7 +164,7 @@ def main(cfg):
 
     if pred_cfg.evaluation.predictor.is_evaluate:
         logger.info("Evaluate predictor ...")
-        evaluate(
+        pred_res = evaluate(
             pred_trainer,
             pred_datamodule,
             pred_cfg,
@@ -174,6 +173,8 @@ def main(cfg):
             ckpt_path=pred_cfg.evaluation.predictor.ckpt_path,
             is_featurizer=False,
         )
+    else:
+        pred_res = dict()
 
     finalize_stage(
         pred_cfg, predictor, pred_trainer, is_save_best=pred_cfg.predictor.is_save_best
@@ -186,6 +187,7 @@ def main(cfg):
         trainers=dict(featurizer=comp_trainer, predictor=pred_trainer),
         datamodules=dict(featurizer=comp_datamodule, predictor=pred_datamodule),
         cfgs=dict(featurizer=comp_cfg, predictor=pred_cfg),
+        results=dict(featurizer=feat_res, predictor=pred_res),
     )
 
 
@@ -197,13 +199,7 @@ def begin(cfg):
     pl.seed_everything(cfg.seed)
 
     cfg.paths.work = str(Path.cwd())
-
-    try:
-        git_hash = subprocess.check_output(["git", "rev-parse", "--verify", "HEAD"])
-        cfg.other.git_hash = git_hash.decode("utf-8")
-    except:
-        logger.exception("Failed to save git hash with error:")
-        pass
+    cfg.other.git_hash = GIT_HASH
 
     if cfg.rate.range_coder is not None:
         compressai.set_entropy_coder(cfg.rate.range_coder)
@@ -218,6 +214,11 @@ def begin(cfg):
             cfg.data_pred = OmegaConf.merge(cfg.data_feat, cfg.data_pred)
 
 
+def get_stage_name(mode):
+    """Return the correct stage name given the mode (feturizer, predictor, ...)"""
+    return mode[:4]
+
+
 def set_cfg(cfg, mode):
     """Set the configurations for a specific mode."""
     cfg = copy.deepcopy(cfg)  # not inplace
@@ -225,7 +226,7 @@ def set_cfg(cfg, mode):
     with omegaconf.open_dict(cfg):
         if mode == "featurizer":
 
-            cfg.stage = "feat"
+            cfg.stage = get_stage_name(mode)
             cfg.long_name = cfg.long_name_feat
 
             cfg.data = OmegaConf.merge(cfg.data, cfg.data_feat)
@@ -235,7 +236,7 @@ def set_cfg(cfg, mode):
             logger.info(f"Name : {cfg.long_name}.")
 
         elif mode == "predictor":
-            cfg.stage = "pred"
+            cfg.stage = get_stage_name(mode)
             cfg.long_name = cfg.long_name_pred
 
             cfg.data = OmegaConf.merge(cfg.data, cfg.data_pred)
@@ -373,8 +374,9 @@ def get_callbacks(cfg, is_featurizer):
                     Callback = getattr_from_oneof(modules, name)
                     new_callback = Callback(**cllbck_kwargs)
 
-                    if not is_featurizer and isinstance(new_callback, BaseFinetuning):
-                        # don't add finetuner during prediciton
+                    if isinstance(new_callback, BaseFinetuning) and not is_featurizer:
+                        pass  # don't add finetuner during prediciton
+                    else:
                         callbacks.append(new_callback)
 
             except AttributeError:
@@ -399,7 +401,7 @@ def get_logger(cfg, module, is_featurizer):
         try:
             pllogger = WandbLogger(**kwargs)
         except Exception:
-            cfg.logger.wandb.offline = True
+            cfg.logger.kwargs.offline = True
             pllogger = WandbLogger(**kwargs)
 
         if cfg.trainer.track_grad_norm == 2:
@@ -561,8 +563,8 @@ def evaluate(
             append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
         log_dict(trainer, test_res, is_param=False)
 
-        test_res = replace_keys(test_res, "test/", "")
-        tosave = dict(test=test_res)
+        test_res_rep = replace_keys(test_res, "test/", "")
+        tosave = dict(test=test_res_rep)
 
         # Evaluation on train
         if cfg.data.length < 1e5:
@@ -585,7 +587,9 @@ def evaluate(
         logger.info(f"Logging results to {path}.")
     except:
         logger.exception("Failed to evaluate. Skipping this error:")
-        pass
+        test_res = dict()
+
+    return test_res
 
 
 def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
@@ -644,15 +648,18 @@ def finalize_stage(cfg, module, trainer, is_save_best=True):
     if not is_save_best:
         dest_path = Path(cfg.paths.pretrained.save)
         for checkpoint in dest_path.glob("*.ckpt"):
-            checkpoint.unlink()  # remove all chacpoints
+            checkpoint.unlink()  # remove all checkpoints
 
     if not cfg.is_no_save:
-        # save end fiel to make sure that you don't retrain if preemption
+        # save end file to make sure that you don't retrain if preemption
         file_end = Path(cfg.paths.logs) / f"{cfg.stage}_{FILE_END}"
         file_end.touch(exist_ok=True)
 
+        # save config to results
+        cfg_save(cfg, Path(cfg.paths.results) / f"{cfg.stage}_{CONFIG_FILE}")
 
-def finalize(modules, trainers, datamodules, cfgs):
+
+def finalize(modules, trainers, datamodules, cfgs, results):
     """Finalizes the script."""
     cfg = cfgs["featurizer"]  # this is always in
 
@@ -667,11 +674,39 @@ def finalize(modules, trainers, datamodules, cfgs):
     logger.info("Finished.")
     logging.shutdown()
 
+    all_results = dict()
+    for partial_results in results.values():
+        all_results.update(partial_results)
+
     if cfg.is_return:
         return modules, trainers, datamodules, cfgs
     else:
-        return 0
+        return get_hypopt_monitor(cfg, all_results)
+
+
+def get_hypopt_monitor(cfg, all_results):
+    """Return the corret monitor for hyperparameter tuning."""
+    out = []
+    for i, result_key in enumerate(cfg.monitor_return):
+        res = all_results[result_key]
+        try:
+            direction = cfg.monitor_direction[i]
+            if not math.isfinite(res):
+                # make sure that infinte or nan monitor are not selected by hypopt
+                if direction == "minimize":
+                    res = float("inf")
+                else:
+                    res = -float("inf")
+        except IndexError:
+            pass
+
+        out.append(res)
+
+    if len(out) == 1:
+        return out[0]  # return single value rather than tuple
+    return tuple(out)
 
 
 if __name__ == "__main__":
+    OmegaConf.register_new_resolver("format", format_resolver)
     main()

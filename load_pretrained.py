@@ -10,10 +10,18 @@ from pathlib import Path
 import einops
 import hydra
 import torch
-from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
-                                 MaxinvDistributionPlot)
-from lossyless.helpers import (UnNormalizer, is_colored_img, plot_config,
-                               tensors_to_fig, tmp_seed)
+from lossyless.callbacks import (
+    CodebookPlot,
+    LatentDimInterpolator,
+    MaxinvDistributionPlot,
+)
+from lossyless.helpers import (
+    UnNormalizer,
+    is_colored_img,
+    plot_config,
+    tensors_to_fig,
+    tmp_seed,
+)
 from main import main as main_training
 from omegaconf import OmegaConf
 from utils.helpers import all_logging_disabled
@@ -130,10 +138,7 @@ class PretrainedAnalyser(PostPlotter):
         used_plot_config = dict(self.plot_config_kwargs, **plot_config_kwargs)
 
         for k, v in kwargs_from_cfg.items():
-            val = cfg
-            for subselect in v.split("."):
-                val = val[subselect]
-            kwargs[k] = val
+            kwargs[k] = cfg.select(v)
 
         plotter = Callback(plot_config_kwargs=used_plot_config, **kwargs)
 
@@ -207,8 +212,8 @@ class PretrainedAnalyser(PostPlotter):
         is_train=False,
         is_plot_real=True,
         n_rows=None,
-        x_labels=None, 
-        y_labels=None,  
+        x_labels=None,
+        y_labels=None,
         filename="rec_imgs.png",
     ):
         """Reconstruct the desired image.

@@ -4,6 +4,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+
 import torch
 from lossyless.helpers import to_numpy
 
@@ -83,7 +84,7 @@ def save_fig(fig, filename, dpi, is_tight=True):
             fig = plt.imshow(to_numpy(x))
         plt.axis("off")
 
-    if isinstance(fig, matplotlib.image.AxesImage):
+    if isinstance(fig, matplotlib.artist.Artist):  # any type of axes
         fig = fig.get_figure()
 
     if isinstance(fig, matplotlib.figure.Figure):
