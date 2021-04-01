@@ -28,6 +28,13 @@ sklearn
 # only needed for parallel ddp_sharded
 fairscale
 
+# hyperparameter tuning
+hydra-optuna-sweeper
+
+# transfer learning datasets
+tensorflow
+tensorflow_datasets
+
 # CLIP
 ftfy 
 regex 
