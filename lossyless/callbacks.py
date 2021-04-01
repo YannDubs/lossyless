@@ -1,3 +1,4 @@
+import logging
 import math
 from typing import Hashable
 
@@ -31,6 +32,8 @@ try:
     import wandb
 except ImportError:
     pass
+
+logger = logging.getLogger(__name__)
 
 
 def save_img(pl_module, trainer, img, name, caption):
@@ -79,12 +82,15 @@ class PlottingCallback(Callback):
     @rank_zero_only  # only plot on one machine
     def on_epoch_end(self, trainer, pl_module):
         if is_plot(trainer, self.plot_interval):
-            for fig, kwargs in self.yield_figs_kwargs(trainer, pl_module):
-                if "caption" not in kwargs:
-                    kwargs["caption"] = f"ep: {trainer.current_epoch}"
+            try:
+                for fig, kwargs in self.yield_figs_kwargs(trainer, pl_module):
+                    if "caption" not in kwargs:
+                        kwargs["caption"] = f"ep: {trainer.current_epoch}"
 
-                save_img(pl_module, trainer, fig, **kwargs)
-                plt.close(fig)
+                    save_img(pl_module, trainer, fig, **kwargs)
+                    plt.close(fig)
+            except:
+                logger.exception(f"Couldn't plot for {type(PlottingCallback)}, error:")
 
     def yield_figs_kwargs(self, trainer, pl_module):
         raise NotImplementedError()
@@ -514,6 +520,37 @@ class MaxinvDistributionPlot(PlottingCallback):
         return fig
 
 
+class Freezer(BaseFinetuning):
+    """Freeze entire model.
+
+    Parameters
+    ----------
+    model_name : string
+        Name of the module to freeze from pl module. Can use dots.
+    """
+
+    def __init__(
+        self, model_name,
+    ):
+        super().__init__()
+        self.model_name = model_name.split(".")
+
+    def get_model(self, pl_module):
+        model = pl_module
+
+        for model_name in self.model_name:
+            model = getattr(model, model_name)
+
+        return model
+
+    def freeze_before_training(self, pl_module):
+        model = self.get_model(pl_module)
+        self.freeze(modules=model, train_bn=False)
+
+    def finetune_function(self, pl_module, current_epoch, optimizer, optimizer_idx):
+        pass
+
+
 class ResnetFinetuning(BaseFinetuning):
     """Finetuner for a resnet.
 
@@ -528,11 +565,17 @@ class ResnetFinetuning(BaseFinetuning):
     unfreeze_layer4 : int, optional
         Epoch at which to unfreeze last resnet block.
 
+    unfreeze_layer3 : int, optional
+        Epoch at which to unfreeze penultimate resnet block.
+
     lr_factor_last : int, optional
         Learning rate factor (how much to decrease compared to normal lr) to use for last layer.
 
     lr_factor_layer4 : int, optional
-        Learning rate factor (how much to decrease compared to normal lr) to use for last layer.
+        Learning rate factor (how much to decrease compared to normal lr) to use for last block.
+
+    lr_factor_layer3 : int, optional
+        Learning rate factor (how much to decrease compared to normal lr) to use for penultimate layer.
 
     train_bn : bool, optional
         Whether to unfreeze batchnorm.
@@ -543,15 +586,20 @@ class ResnetFinetuning(BaseFinetuning):
         resnet_name,
         unfreeze_last=0,
         unfreeze_layer4=3,
+        unfreeze_layer3=5,
         lr_factor_last=10,
         lr_factor_layer4=100,
+        lr_factor_layer3=1000,
         train_bn=False,
     ):
+        super().__init__()
         self.resnet_name = resnet_name.split(".")
         self.unfreeze_last = unfreeze_last
         self.unfreeze_layer4 = unfreeze_layer4
+        self.unfreeze_layer3 = unfreeze_layer3
         self.lr_factor_last = lr_factor_last
         self.lr_factor_layer4 = lr_factor_layer4
+        self.lr_factor_layer3 = lr_factor_layer3
         self.train_bn = train_bn
 
     def get_resnet(self, pl_module):
@@ -601,4 +649,21 @@ class ResnetFinetuning(BaseFinetuning):
                 optimizer=optimizer,
                 train_bn=self.train_bn,
                 initial_denom_lr=self.lr_factor_layer4,
+            )
+
+        if optimizer_idx == 0 and current_epoch == self.unfreeze_layer3:
+            resnet = self.get_resnet(pl_module)
+
+            if hasattr(resnet, "layer3"):
+                layer3 = resnet.layer3
+            else:
+                raise ValueError(
+                    f"Unkown resnet architecture {resnet} which has no layer3."
+                )
+
+            self.unfreeze_and_add_param_group(
+                modules=layer3,
+                optimizer=optimizer,
+                train_bn=self.train_bn,
+                initial_denom_lr=self.lr_factor_layer3,
             )

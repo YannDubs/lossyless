@@ -1,4 +1,7 @@
 # @package _global_
+finetune: 
+  name: clip
+  
 callbacks:
   ResnetFinetuning:
     is_use: true
@@ -6,6 +9,7 @@ callbacks:
       resnet_name: p_ZlX.mapper.resnet
       unfreeze_last: 0
       unfreeze_layer4: 2
+      unfreeze_layer3: 4
       
       
 
