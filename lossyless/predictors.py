@@ -112,7 +112,6 @@ class Predictor(pl.LightningModule):
 
         # Shape: [batch, 1]
         loss, loss_logs = self.loss(Y_hat, y)
-        # breakpoint()
 
         # Shape: []
         loss = loss.mean()
@@ -121,6 +120,7 @@ class Predictor(pl.LightningModule):
         logs["loss"] = loss
         if self.is_clf:
             logs["acc"] = accuracy(Y_hat.argmax(dim=-1), y)
+            logs["err"] = 1 - logs["acc"]
 
         return loss, logs
 
@@ -179,6 +179,7 @@ class Predictor(pl.LightningModule):
             self.parameters(),
             optimizers,
             schedulers,
+            name="lr_predictor",
         )
 
         return optimizers, schedulers
@@ -201,6 +202,9 @@ class OnlineEvaluator(torch.nn.Module):
     y_shape : tuple of in
         Shape of the output
 
+    Architecture : nn.Module
+        Module to be instantiated by `Architecture(in_shape, out_dim)`.
+
     is_classification : bool, optional
         Whether or not the task is a classification one.
 
@@ -209,25 +213,11 @@ class OnlineEvaluator(torch.nn.Module):
     """
 
     def __init__(
-        self,
-        in_dim,
-        out_dim,
-        is_classification=True,
-        n_hid_layers=1,
-        hid_dim=1024,
-        norm_layer="batchnorm",
-        dropout_p=0.2,
+        self, in_dim, out_dim, Architecture, is_classification=True,
     ):
         super().__init__()
-        self.model = FlattenMLP(
-            in_dim,
-            out_dim,
-            n_hid_layers=n_hid_layers,
-            hid_dim=hid_dim,
-            norm_layer=norm_layer,
-            dropout_p=dropout_p,
-        )
         self.is_classification = is_classification
+        self.model = Architecture(in_dim, out_dim)
 
     def aux_parameters(self):
         """Return iterator over parameters."""
@@ -236,7 +226,10 @@ class OnlineEvaluator(torch.nn.Module):
                 yield p
 
     def forward(self, batch, encoder):
-        x, (y, _) = batch  # only return the real label
+        x, y = batch
+
+        if isinstance(y, (tuple, list)):
+            y = y[0]  # only return the real label assumed to be first
 
         with torch.no_grad():
             # Shape: [batch, z_dim]
@@ -257,5 +250,6 @@ class OnlineEvaluator(torch.nn.Module):
         logs = dict(online_loss=loss, inference_time=inference_timer.duration)
         if self.is_classification:
             logs["online_acc"] = accuracy(Y_hat.argmax(dim=-1), y)
+            logs["online_err"] = 1 - logs["online_acc"]
 
         return loss, logs

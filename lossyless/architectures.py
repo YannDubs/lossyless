@@ -47,6 +47,9 @@ def get_Architecture(mode, complexity=None, **kwargs):
     elif mode == "linear":
         return partial(FlattenLinear, **kwargs)
 
+    elif mode == "identity":
+        return torch.nn.Identity
+
     elif mode == "resnet":
         if complexity is not None:
             base = ["resnet18", "resnet34", "resnet50", "resnet101", "resnet150"]
@@ -331,6 +334,7 @@ class CLIPResnet50(nn.Module):
     def load_weights_(self):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model, _ = clip.load("RN50", device, jit=False, **self.kwargs)
+        model.float()
         self.resnet = model.visual  # only keep the image model
 
     def reset_parameters(self):

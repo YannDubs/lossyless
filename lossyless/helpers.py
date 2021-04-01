@@ -265,12 +265,14 @@ MEANS = dict(
     cifar10=[0.4914009, 0.48215896, 0.4465308],
     galaxy64=[0.03341029, 0.04443058, 0.05051352],
     galaxy128=[0.03294565, 0.04387402, 0.04995899],
+    clip=[0.48145466, 0.4578275, 0.40821073],
 )
 STDS = dict(
     imagenet=[0.229, 0.224, 0.225],
     cifar10=[0.24703279, 0.24348423, 0.26158753],
     galaxy64=[0.06985303, 0.07943781, 0.09557958],
     galaxy128=[0.07004886, 0.07964786, 0.09574898],
+    clip=[0.26862954, 0.26130258, 0.27577711],
 )
 
 
@@ -483,37 +485,65 @@ def mse_or_crossentropy_loss(Y_hat, y, is_classification, agg_over_tasks="mean")
     return loss
 
 
-def get_lr_scheduler(optimizer, mode, epochs=None, decay_factor=None, **kwargs):
-    """Return the correct learning rate scheduler.
+def get_lr_scheduler(
+    optimizer,
+    scheduler_type,
+    epochs=None,
+    decay_factor=1000,
+    k_steps=3,
+    name=None,
+    kwargs_config_scheduler={},
+    **kwargs,
+):
+    """Return the correct lr scheduler as a dictionary as required by pytorhch lightning.
 
     Parameters
     ----------
     optimizer : Optimizer
         Optimizer to wrap.
 
-    mode : {None, "expdecay"}U{any torch lr_scheduler}
-        Name of the optimizer to use. "expdecay" uses an exponential decay scheduler where the lr
-        is decayed by `decay_factor` during training. Needs to be given `epochs`. If another `str`
-        it must be a `torch.optim.lr_scheduler` in which case the arguments are given by `kwargs`.
+    scheduler_type : {None, "expdecay","UniformMultiStepLR"}U{any torch lr_scheduler}
+        Name of the scheduler to use. "expdecay" uses an exponential decay scheduler where the lr
+        is decayed by `decay_factor` during training. Needs to be given `epochs`. "UniformMultiStepLR"
+        decreases learning by `decay_factor` but as step functions where `k_steps` is number of steps.
+        If another `str` it must be a `torch.optim.lr_scheduler` in which case the arguments are given by `kwargs`.
 
     epochs : int, optional
         Number of epochs during training.
 
     decay_factor : int, optional
-        By how much to reduce learning rate during training. Only if `name = "expdecay"`.
+        By how much to reduce learning rate during training. Only if 
+        `name in ["expdecay","UniformMultiStepLR"]`.
+
+    k_steps : int, optional 
+        Number of steps for decreasing the learning rate in `"UniformMultiStepLR"`. 
+
+    name : str, optional    
+        Name of the scheduler for logging.
+
+    kwargs_config_scheduler : dict, optional
+        Additional kwargs to be passed to pytorch lightning, e.g., monitor / interval / frequency...
 
     kwargs :
         Additional arguments to any `torch.optim.lr_scheduler`.
-
     """
-    if mode is None:
-        return None
-    elif mode == "expdecay":
+    if scheduler_type is None:
+        scheduler = None
+    elif scheduler_type == "expdecay":
         gamma = (1 / decay_factor) ** (1 / epochs)
-        return torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma)
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma)
+    elif scheduler_type == "UniformMultiStepLR":
+        delta_epochs = epochs // (k_steps + 1)
+        milestones = [delta_epochs * i for i in range(1, k_steps + 1)]
+        gamma = (1 / decay_factor) ** (1 / k_steps)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer, milestones=milestones, gamma=gamma
+        )
     else:
-        Scheduler = getattr(torch.optim.lr_scheduler, mode)
-        return Scheduler(optimizer, **kwargs)
+        Scheduler = getattr(torch.optim.lr_scheduler, scheduler_type)
+        scheduler = Scheduler(optimizer, **kwargs)
+
+    return dict(scheduler=scheduler, name=name, **kwargs_config_scheduler)
 
 
 def get_optimizer(parameters, mode, is_lars=False, **kwargs):
@@ -531,6 +561,8 @@ def get_optimizer(parameters, mode, is_lars=False, **kwargs):
         Additional arguments to the optimzier.
     """
     Optimizer = getattr(torch.optim, mode)
+    if "lr_factor" in kwargs:
+        kwargs["lr"] = kwargs["lr"] * kwargs.pop("lr_factor")
     optimizer = Optimizer(parameters, **kwargs)
     if is_lars:
         optimizer = LARSWrapper(optimizer)
@@ -538,7 +570,7 @@ def get_optimizer(parameters, mode, is_lars=False, **kwargs):
 
 
 def append_optimizer_scheduler_(
-    hparams_opt, hparams_sch, parameters, optimizers, schedulers
+    hparams_opt, hparams_sch, parameters, optimizers, schedulers, name=None
 ):
     """Return the correct optimzier and scheduler."""
 
@@ -556,7 +588,7 @@ def append_optimizer_scheduler_(
 
     for mode in hparams_sch.modes:
         sch_kwargs = hparams_sch.kwargs.get(mode, {})
-        scheduler = get_lr_scheduler(optimizer, mode, **sch_kwargs)
+        scheduler = get_lr_scheduler(optimizer, mode, name=name, **sch_kwargs)
         schedulers += [scheduler]
 
     return optimizers, schedulers
