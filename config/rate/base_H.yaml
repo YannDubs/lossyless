@@ -4,8 +4,8 @@ defaults:
   
 rate:
   kwargs:
-    is_adaptive_noise: true
     n_z_samples: ${featurizer.loss.n_z_samples}
+    invertible_processing: diag
     kwargs_ent_bottleneck:
       init_scale: 10 # input should be at initialization in [-init_scale, init_scale]. Larger might create overhead. You can use something like 10 for large images but smaller for smaller 
       filters: [3, 3, 3, 3] # size of the entropy model (quite robust to that)

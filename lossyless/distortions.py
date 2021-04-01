@@ -219,8 +219,7 @@ class ContrastiveDistortion(nn.Module):
         Instantiated conditional distribution. Used to represent all the other positives.
 
     temperature : float, optional
-        Temperature scaling in InfoNCE. Recommended less than 1. Very temperature seems to lower accuracy even though
-        the distortion also decreases!
+        Temperature scaling in InfoNCE. Recommended less than 1. 
 
     is_symmetric : bool, optional
         Whether to use symmetric logits in the case of probabilistic InfoNCE.

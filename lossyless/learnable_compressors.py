@@ -8,8 +8,7 @@ from pytorch_lightning.core.decorators import auto_move_data
 from .architectures import get_Architecture
 from .distortions import get_distortion_estimator
 from .distributions import CondDist
-from .helpers import (BASE_LOG, Annealer, OrderedSet, Timer,
-                      append_optimizer_scheduler_)
+from .helpers import BASE_LOG, Annealer, OrderedSet, Timer, append_optimizer_scheduler_
 from .predictors import OnlineEvaluator
 from .rates import get_rate_estimator
 
@@ -149,6 +148,8 @@ class LearnableCompressor(pl.LightningModule):
         x, (_, aux_target) = batch
         n_z = self.hparams.featurizer.loss.n_z_samples
 
+        breakpoint()
+
         with Timer() as encoder_timer:
             # batch shape: [batch_size] ; event shape: [z_dim]
             p_Zlx = self.p_ZlX(x)
@@ -277,7 +278,7 @@ class LearnableCompressor(pl.LightningModule):
         elif curr_step == "coder":
             loss = self.rate_estimator.aux_loss()
             logs = dict(coder_loss=loss)
-        
+
         else:
             raise ValueError(f"Unkown curr_step={curr_step}.")
 
@@ -288,8 +289,11 @@ class LearnableCompressor(pl.LightningModule):
 
         # TODO for some reason validation step for wandb logging after resetting is not correct
         loss, logs, _ = self.step(batch)
-        _, online_logs = self.online_evaluator(batch, self)
-        logs.update(online_logs)
+
+        if self.hparams.evaluation.featurizer.is_online:
+            _, online_logs = self.online_evaluator(batch, self)
+            logs.update(online_logs)
+
         self.log_dict(
             {f"val/feat/{k}": v for k, v in logs.items()},
             on_epoch=True,
@@ -300,8 +304,11 @@ class LearnableCompressor(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         loss, logs, _ = self.step(batch)
-        _, online_logs = self.online_evaluator(batch, self)
-        logs.update(online_logs)
+
+        if self.hparams.evaluation.featurizer.is_online:
+            _, online_logs = self.online_evaluator(batch, self)
+            logs.update(online_logs)
+
         self.log_dict(
             {f"test/feat/{k}": v for k, v in logs.items()},
             on_epoch=True,

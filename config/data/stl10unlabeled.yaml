@@ -1,17 +1,12 @@
-# @package _global_
 defaults:
-  - base@data
+  - base
+  - base_unlabeled
 
-data:
-  name: stl10unlabeled
-  dataset: stl10unlabeled
+name: stl10unlabeled
+dataset: stl10unlabeled
 
-  kwargs:
-    val_size: 0.05 #! very little labels so that might make an impact ? 
-    dataset_kwargs:
-      equivalence: [x_translation, y_translation,rotation,scale,color] #! to tune 
-      is_augment_val: True # if you don't augment test set then SSL validation distortion is meaningleass
-
-evaluation:
-  featurizer:
-    is_online: false # there are no meaningful labels for the unlabeled data (will get -1)
+kwargs:
+  val_size: 0.05 #! very little labels so that might make an impact ? 
+  dataset_kwargs:
+    equivalence: [x_translation, y_translation,rotation,scale,color] #! to tune 
+    is_augment_val: True # if you don't augment test set then SSL validation distortion is meaningleass

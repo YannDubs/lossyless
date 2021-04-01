@@ -482,7 +482,7 @@ class HRateEstimator(RateEstimator):
         # and don't allow autocasting
         z_in, kwargs = self.process_z_in(z)
         z_hat, rates, r_logs, r_other = super().forward(z_in, p_Zlx, parent=parent)
-        z_hat = self.process_z_in(z_hat, **kwargs)
+        z_hat = self.process_z_out(z_hat, **kwargs)
 
         return z_hat, rates, r_logs, r_other
 
@@ -495,6 +495,8 @@ class HRateEstimator(RateEstimator):
             z = (z + self.biasing) * self.scaling.exp()
 
         elif self.invertible_processing == "psd":
+            # not working : getting size issue
+            # TODO DEBUG
             mat = torch.mm(self.scaling, self.scaling.T) + 1e-1 * self.eye
             z = z + self.biasing
             z = torch.matmul(mat, z.T).T

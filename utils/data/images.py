@@ -188,7 +188,7 @@ class LossylessImgDataset(LossylessDataset):
                 # NB you should use those 3 also at eval time
                 "simclr_cifar10": get_simclr_augmentations("cifar10", shape[-1]),
                 "simclr_imagenet": get_simclr_augmentations("imagenet", shape[-1]),
-                "simclr_finetune": get_finetune_augmentations(shape[-1]),
+                "simclr_finetune": get_finetune_augmentations(),
             },
             tensor={"erasing": RandomErasing(value=0.5),},
         )
@@ -254,6 +254,9 @@ class LossylessImgDataset(LossylessDataset):
             trnsfs += [self.normalizer()]
 
         return transform_lib.Compose(trnsfs)
+
+    def normalizer(self):
+        return Normalizer(self.dataset_name, is_raise=True)
 
     def get_augmentations(self):
         """Return the augmentations transorms (tuple for PIL and tensor)."""

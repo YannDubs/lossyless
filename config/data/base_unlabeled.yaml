@@ -1,0 +1,4 @@
+# @package _global_
+evaluation:
+  featurizer:
+    is_online: false # there are no meaningful labels for the unlabeled data (will get -1)

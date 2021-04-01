@@ -168,6 +168,7 @@ class ResultAggregator(PostPlotter):
             (using dots). E.g. {"lr": "optimizer.lr"}. The config file should be saved at the same
             place as the results file.
         """
+        # TODO test params_to_add
         paths = list(self.base_dir.glob(pattern))
         if len(paths) == 0:
             raise ValueError(f"No files found for your pattern={pattern}")

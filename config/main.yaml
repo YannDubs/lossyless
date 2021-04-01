@@ -26,6 +26,7 @@ defaults:
   - featurizer: neural_rec
 
   # PREDICTOR #
+  - data@data_pred: data_feat # use same as data_feat
   - architecture@predictor: resnet18
   - checkpoint@checkpoint_pred: bestValLoss 
   - optimizer@optimizer_pred: SGD_lr3e-1_w1e-4
@@ -44,7 +45,7 @@ timeout: 1440 # 24 hours
 time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is not when job runs
 long_name_feat: exp_${experiment}/datafeat_${data_feat.name}/feat_${featurizer.name}/dist_${distortion.name}/enc_${encoder.name}/rate_${rate.name}/optfeat_${optimizer_feat.name}/schedfeat_${scheduler_feat.name}/zdim_${encoder.z_dim}/zs_${featurizer.loss.n_z_samples}/beta_${format:${featurizer.loss.beta},.1e}/seed_${seed}/addfeat_${other.add_feat}
 long_name_pred: ${long_name_feat}/datapred_${data_pred.name}/optpred_${optimizer_pred.name}/schedpred_${scheduler_pred.name}/addpred_${other.add_pred}
-is_only_feat: false # don't run any prediction
+is_only_feat: false # run rpredicotr?
 is_return: false # will return everything (the data, the models, ...)
 monitor_return: [] # normal return of the functio. THis is especially useful for hyperparameter tuning
 monitor_direction: [] # whether the monitor should be maximized or minimized. usefule for hyperparameter tuning
