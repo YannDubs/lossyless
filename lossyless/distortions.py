@@ -219,7 +219,7 @@ class ContrastiveDistortion(nn.Module):
         Instantiated conditional distribution. Used to represent all the other positives.
 
     temperature : float, optional
-        Temperature scaling in InfoNCE. Very temperature seems to lower accuracy even though
+        Temperature scaling in InfoNCE. Recommended less than 1. Very temperature seems to lower accuracy even though
         the distortion also decreases!
 
     is_symmetric : bool, optional
@@ -235,7 +235,7 @@ class ContrastiveDistortion(nn.Module):
     is_cosine : bool, optional
         Whether to use cosine similarity instead of dot products fot the logits of deterministic functions.
         This seems necessary for training, probably because if not norm of Z matters++ and then
-        large loss in entropy bottleneck.
+        large loss in entropy bottleneck. Recommended True.
 
     is_invariant : bool, optional
         Want to be invariant => same orbit / positive element. If not then the positive is the element itself
@@ -278,7 +278,7 @@ class ContrastiveDistortion(nn.Module):
         if self.is_project:
             z_dim = self.p_ZlX.out_dim
             if project_kwargs["out_shape"] <= 1:
-                project_kwargs["out_shape"] = int(z_dim * project_kwargs["out_shape"])
+                project_kwargs["out_shape"] = max(10, int(z_dim * project_kwargs["out_shape"]))
 
             Projector = get_Architecture(**project_kwargs)
             self.projector = Projector(z_dim)

@@ -37,7 +37,7 @@ __all__ = ["get_rate_estimator"]
 def get_rate_estimator(mode, z_dim=None, p_ZlX=None, n_z_samples=None, **kwargs):
     """Return the correct entropy coder."""
     if mode == "lossless":
-        return Lossless()
+        return Lossless(z_dim)
 
     elif mode == "H_factorized":
         return HRateFactorizedPrior(z_dim, n_z_samples=n_z_samples, **kwargs)
@@ -52,7 +52,7 @@ def get_rate_estimator(mode, z_dim=None, p_ZlX=None, n_z_samples=None, **kwargs)
         q_Z = get_marginalDist(
             kwargs.pop("prior_fam"), p_ZlX, **(kwargs.pop("prior_kwargs"))
         )
-        return MIRate(q_Z, **kwargs)
+        return MIRate(z_dim, q_Z, **kwargs)
 
     raise ValueError(f"Unkown rate estimator={mode}.")
 
@@ -85,25 +85,31 @@ class EntropyBottleneck(CompressaiEntropyBottleneck):
 ### BASE ###
 class RateEstimator(torch.nn.Module):
     """Base class for a coder, i.e. a model that perform entropy/MI coding.
-    
+
     Parameters
     ----------
+    z_dim : int, optional
+        Dimensionality of the representation.
+
     warmup_k_epoch : int, optional
         Number of epochs not to backprop through the featurizer => warming up of the rate estimator.
-        The output will be z instead of z_hat, but the estimator will be warmed up by trying to 
+        The output will be z instead of z_hat, but the estimator will be warmed up by trying to
         reconstruct z.
 
     is_endToEnd : bool, optional
-        Whether to train all the model in an end to end fashion. If not then the rate will not be 
-        backproped through the featurizer (you will just try to reconstruct Z).
+        Whether to train all the model in an end to end fashion. If not then the rate will not be
+        backproped through the featurizer (you will just try to reconstruct Z without too much distortion).
     """
 
     is_can_compress = False  # wether can compress
 
-    def __init__(self, warmup_k_epoch=0, is_endToEnd=True):
+    def __init__(self, z_dim, warmup_k_epoch=0, is_endToEnd=True):
         super().__init__()
+        self.z_dim = z_dim
         self.warmup_k_epoch = warmup_k_epoch
         self.is_endToEnd = is_endToEnd
+
+        self.reset_parameters()
 
     def reset_parameters(self):
         weights_init(self)
@@ -120,7 +126,7 @@ class RateEstimator(torch.nn.Module):
             Encoder which should be used to perform compression.
 
         parent : LearnableCompressor, optional
-            Parent module. This is useful for some rates if they need access to other parts of the 
+            Parent module. This is useful for some rates if they need access to other parts of the
             model.
 
         Returns
@@ -137,22 +143,17 @@ class RateEstimator(torch.nn.Module):
         other : dict
             Additional values to return.
         """
-        if (not self.is_endToEnd) or (parent.current_epoch < self.warmup_k_epoch):
-            # make sure not changing featurizer. *0 to make sure pytorch does not complain about no grad
-            z_detached = z.detach() + z * 0
-
         z_hat, rates, r_logs, r_other = self.forward_help(z, p_Zlx, parent)
 
         if (not self.is_endToEnd) or (parent.current_epoch < self.warmup_k_epoch):
-            # if you are not using z_hat then still want some type of loss to warm up rate => MAE
-            deltas = torch.abs(z_hat - z_detached).mean()
+            # during disjoint training z_hat will still be returned but the rate is computed on
+            # without backpropagating throught the encoder => only train rate_estimator parameters
 
-            # backprop rates but still want to plot rate => trick
-            rates = rates + deltas - deltas.detach()
+            # make sure not changing featurizer. *0 to make sure pytorch does not complain about no grad
+            z_detached = z.detach() + z * 0
+            p_Zlx_detached = p_Zlx.detach(is_grad_flow=True)
 
-            z_hat = z  # actual z that you wil be using is the real one
-
-        r_logs["deltas_z"] = torch.abs(z_hat - z).mean().detach()
+            _, rates, *_ = self.forward_help(z_detached, p_Zlx_detached, parent)
 
         return z_hat, rates, r_logs, r_other
 
@@ -168,7 +169,7 @@ class RateEstimator(torch.nn.Module):
             Encoder which should be used to perform compression.
 
         parent : LearnableCompressor, optional
-            Parent module. This is useful for some rates if they need access to other parts of the 
+            Parent module. This is useful for some rates if they need access to other parts of the
             model.
 
         Returns
@@ -196,7 +197,7 @@ class RateEstimator(torch.nn.Module):
             Representation to compress. Note that there's no n_z_dim!
 
         parent : LearnableCompressor, optional
-            Parent module. This is useful for some rates if they need access to other parts of the 
+            Parent module. This is useful for some rates if they need access to other parts of the
             model.
 
         Returns
@@ -231,11 +232,11 @@ class RateEstimator(torch.nn.Module):
         z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
             Representation to compress. Note that there's n_z_dim!
 
-        is_return_logs : bool, optional 
+        is_return_logs : bool, optional
             Whether to return a dictionnary to log in addition to n_bits.
 
         parent : LearnableCompressor, optional
-            Parent module. This is useful for some rates if they need access to other parts of the 
+            Parent module. This is useful for some rates if they need access to other parts of the
             model.
 
         Returns
@@ -245,7 +246,7 @@ class RateEstimator(torch.nn.Module):
 
         if is_return_logs:
             logs : dict
-                Additional values that can be useful to log. 
+                Additional values that can be useful to log.
         """
         n_z, batch, z_dim = z.shape
         z = einops.rearrange(z, "n_z b d -> (n_z b) d", n_z=n_z)
@@ -276,7 +277,7 @@ class RateEstimator(torch.nn.Module):
         raise NotImplementedError()
 
     def aux_parameters(self):
-        """	
+        """
         Returns an iterator over the model parameters that should be trained by auxilary optimizer.
         These are all the parameters of the prior.
         """
@@ -296,9 +297,9 @@ class RateEstimator(torch.nn.Module):
                 m.entropy_coder = _EntropyCoder(default_entropy_coder())
 
     def update(self, force=False):
-        """Updates the entropy model values. Needs to be called once after training to be able to 
+        """Updates the entropy model values. Needs to be called once after training to be able to
         later perform the evaluation with an actual entropy coder.
-        
+
         Parameters
         ----------
         force : bool, optional
@@ -328,7 +329,7 @@ class RateEstimator(torch.nn.Module):
 
 ### No Compresssion CODERS ###
 class Lossless(RateEstimator):
-    """Model that does not performs lossless comrpession of representations."""
+    """Model that performs lossless comrpession of representations."""
 
     def forward_help(self, z, _, parent=None):
         n_z, batch_size, z_dim = z.shape
@@ -371,12 +372,12 @@ class MIRate(RateEstimator):
     q_Z : nn.Module
         Prior to use for compression
 
-    kwargs : 
+    kwargs :
         Additional arguemnts to `RateEstimator`.
     """
 
-    def __init__(self, q_Z, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, z_dim, q_Z, **kwargs):
+        super().__init__(z_dim, **kwargs)
         self.q_Z = q_Z
         self.reset_parameters()
 
@@ -408,9 +409,111 @@ class MIRate(RateEstimator):
 # minor differences from and credits to them https://github.com/InterDigitalInc/CompressAI/blob/edd62b822186d81903c4a53c3f9b0806e9d7f388/compressai/models/priors.py
 # a little messy for reshaping as compressai assumes 4D image as inputs (but we compress 2D vectors)
 class HRateEstimator(RateEstimator):
-    """Base class for a coder, i.e. a model that perform entropy/MI coding."""
+    """Base class for a coder, i.e. a model that perform entropy/MI coding.
+
+    Parameters
+    ----------
+    z_dim : int
+        Size of the representation.
+
+    n_z_samples : int, optional
+        Number of z samples. Currently if > 1 cannot perform actual compress.
+
+    kwargs_ent_bottleneck : dict, optional
+        Additional arguments to `EntropyBottleneck`.
+
+    invertible_processing : {None, "psd", "diag"}, optional
+        Wether to apply an invertible linear layer before the bottleneck and then undo it (apply inverse).
+        This is especially important when the encoder is pretrained, indeed the entropy bottleneck 
+        adds  noise in [-0.5,0.5] to z and treats all dimensions as independent. THis is theoretically 
+        fine as the previous layer can learn to perform all processing that is needed such that those 
+        2 (arbitrary) conventions are met. But in practice this can (1) make learning harder for 
+        the distortion; (2) cannot be changed when the encoder is pretrained. "diag" applies a
+        diagonal matrix. "psd" applies a positive definite matrix (better but a little slower).
+        None doesn't apply anything.
+
+    kwargs :
+        Additional arguments to `RateEstimator`
+    """
+
+    def __init__(
+        self,
+        z_dim,
+        n_z_samples=1,
+        kwargs_ent_bottleneck={},
+        invertible_processing="diag",
+        **kwargs,
+    ):
+        self.invertible_processing = invertible_processing
+        super().__init__(z_dim, **kwargs)
+
+        self.kwargs_ent_bottleneck = kwargs_ent_bottleneck
+        self.is_can_compress = n_z_samples == 1
+
+        if self.invertible_processing == "diag":
+            self.scaling = torch.nn.Parameter(torch.ones(z_dim))
+            self.biasing = torch.nn.Parameter(torch.zeros(z_dim))
+        elif self.invertible_processing == "psd":
+            self.scaling = torch.nn.Parameter(torch.randn(z_dim, z_dim))
+            self.biasing = torch.nn.Parameter(torch.zeros(z_dim))
+            self.register_buffer("eye", torch.eye(512), persistent=False)
+        elif self.invertible_processing is None:
+            pass
+        else:
+            raise ValueError(
+                f"Unkown invertible_processing={self.invertible_processing}."
+            )
 
     aux_loss = compressai.models.CompressionModel.aux_loss
+
+    def reset_parameters(self):
+        weights_init(self)
+
+        if self.invertible_processing == "diag":
+            self.scaling = torch.nn.Parameter(torch.ones(self.z_dim))
+            self.biasing = torch.nn.Parameter(torch.zeros(self.z_dim))
+        elif self.invertible_processing == "psd":
+            self.scaling = torch.nn.Parameter(torch.randn(self.z_dim, self.z_dim))
+            self.biasing = torch.nn.Parameter(torch.zeros(self.z_dim))
+
+    @torch.cuda.amp.autocast(False)
+    def forward(self, z, p_Zlx, parent=None):
+        # precison here is important and the following is not memory intensive => use float32
+        # and don't allow autocasting
+        z_in, kwargs = self.process_z_in(z)
+        z_hat, rates, r_logs, r_other = super().forward(z_in, p_Zlx, parent=parent)
+        z_hat = self.process_z_in(z_hat, **kwargs)
+
+        return z_hat, rates, r_logs, r_other
+
+    def process_z_in(self, z):
+        z = z.float()
+        kwargs = dict()
+
+        # TODO remove flag and only keep the simple "diag" if work well
+        if self.invertible_processing == "diag":
+            z = (z + self.biasing) * self.scaling.exp()
+
+        elif self.invertible_processing == "psd":
+            mat = torch.mm(self.scaling, self.scaling.T) + 1e-1 * self.eye
+            z = z + self.biasing
+            z = torch.matmul(mat, z.T).T
+            kwargs["mat"] = mat
+
+        return z, kwargs
+
+    def process_z_out(self, z_hat, mat=None):
+        if self.invertible_processing == "diag":
+            z_hat = (z_hat / self.scaling.exp()) - self.biasing
+
+        elif self.invertible_processing == "psd":
+            if mat is None:
+                mat = torch.mm(self.scaling, self.scaling.T) + 1e-1 * self.eye
+            chol = torch.cholesky(mat)
+            z_hat = torch.cholesky_solve(z_hat.T, chol).T
+            z_hat = z_hat - self.biasing
+
+        return z_hat
 
     def _load_from_state_dict(
         self,
@@ -488,13 +591,7 @@ class HRateFactorizedPrior(HRateEstimator):
     Parameters
     ----------
     z_dim : int
-        Size of the representation.
-
-    n_z_samples : int, optional
-        Number of z samples. Currently if > 1 cannot perform actual compress.
-
-    kwargs_ent_bottleneck : dict, optional
-        Additional arguments to `EntropyBottleneck`.
+        Size of the representation..
 
     kwargs :
         Additional arguments to `HRateEstimator`
@@ -505,10 +602,11 @@ class HRateFactorizedPrior(HRateEstimator):
     preprint arXiv:1802.01436 (2018).
     """
 
-    def __init__(self, z_dim, n_z_samples=1, kwargs_ent_bottleneck={}, **kwargs):
-        super().__init__(**kwargs)
-        self.entropy_bottleneck = EntropyBottleneck(z_dim, **kwargs_ent_bottleneck)
-        self.is_can_compress = n_z_samples == 1
+    def __init__(self, z_dim, **kwargs):
+        super().__init__(z_dim, **kwargs)
+        self.entropy_bottleneck = EntropyBottleneck(
+            self.z_dim, **self.kwargs_ent_bottleneck
+        )
         self.reset_parameters()
 
     def forward_help(self, z, _, parent=None):
@@ -530,12 +628,14 @@ class HRateFactorizedPrior(HRateEstimator):
         return z_hat, neg_log_q_z, logs, other
 
     def compress(self, z, parent=None):
+        z_in, _ = self.process_z_in(z)
         # list for generality when hyperprior
-        return [self.entropy_bottleneck.compress(z)]
+        return [self.entropy_bottleneck.compress(z_in)]
 
     def decompress(self, all_strings):
         assert isinstance(all_strings, list) and len(all_strings) == 1
-        return self.entropy_bottleneck.decompress(all_strings[0])
+        z_hat = self.entropy_bottleneck.decompress(all_strings[0])
+        return self.process_z_out(z_hat)
 
 
 def get_scale_table(min=0.11, max=256, levels=64):
@@ -561,12 +661,6 @@ class HRateHyperprior(HRateEstimator):
         Whether to learn the mean of the gaussian for the side information (as in mean scale hyper
         prior of [2]).
 
-    n_z_samples : int, optional
-        Number of z samples. Currently if > 1 cannot perform actual compress.
-
-    kwargs_ent_bottleneck : dict, optional
-        Additional arguments to `EntropyBottleneck`.
-
     kwargs :
         Additional arguments to `HRateEstimator`
 
@@ -579,25 +673,18 @@ class HRateHyperprior(HRateEstimator):
     """
 
     def __init__(
-        self,
-        z_dim,
-        factor_dim=5,
-        side_z_dim=None,
-        is_pred_mean=True,
-        n_z_samples=1,
-        kwargs_ent_bottleneck={},
-        **kwargs,
+        self, z_dim, factor_dim=5, side_z_dim=None, is_pred_mean=True, **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(z_dim, **kwargs)
 
         if side_z_dim is None:
-            side_z_dim = z_dim // factor_dim
+            side_z_dim = self.z_dim // factor_dim
 
-        self.z_dim = z_dim
         self.side_z_dim = side_z_dim
-        self.is_can_compress = n_z_samples == 1
         self.is_pred_mean = is_pred_mean
-        self.entropy_bottleneck = EntropyBottleneck(side_z_dim, **kwargs_ent_bottleneck)
+        self.entropy_bottleneck = EntropyBottleneck(
+            side_z_dim, **self.kwargs_ent_bottleneck
+        )
         self.gaussian_conditional = GaussianConditional(None)
         self.side_encoder, self.z_encoder = self.get_encoders()
         self.reset_parameters()
@@ -678,17 +765,18 @@ class HRateHyperprior(HRateEstimator):
         return indexes, means_hat
 
     def compress(self, z, parent=None):
+        z_in, _ = self.process_z_in(z)
 
         # side_z and side_z_hat. shape: [batch_shape, side_z_dim]
-        side_z = self.side_encoder(z)
+        side_z = self.side_encoder(z_in)
         # len n_z_dim list of bytes
         side_z_strings = self.entropy_bottleneck.compress(side_z)
 
         # shape: [batch_shape, z_dim, 1, 1]
         indexes, means_hat = self.get_indexes_means_hat(side_z_strings)
-        z = atleast_ndim(z, 4)
+        z_in = atleast_ndim(z_in, 4)
 
-        z_strings = self.gaussian_conditional.compress(z, indexes, means=means_hat)
+        z_strings = self.gaussian_conditional.compress(z_in, indexes, means=means_hat)
         return [z_strings, side_z_strings]
 
     def decompress(self, all_strings):
@@ -701,7 +789,7 @@ class HRateHyperprior(HRateEstimator):
             z_strings, indexes, means=means_hat
         )
         z_hat = einops.rearrange(z_hat, "b c e1 e2 -> b (c e1 e2)", e1=1, e2=1)
-        return z_hat
+        return self.process_z_out(z_hat)
 
     def _load_from_state_dict(
         self,
@@ -765,3 +853,10 @@ class HRateSimCLR(HRateHyperprior):
             weights_init(self.side_encoder)
         else:
             self.side_encoder.load_weights_()  # reload pretrained weights
+
+        if self.invertible_processing == "diag":
+            self.scaling = torch.nn.Parameter(torch.ones(self.z_dim))
+            self.biasing = torch.nn.Parameter(torch.zeros(self.z_dim))
+        elif self.invertible_processing == "psd":
+            self.scaling = torch.nn.Parameter(torch.randn(self.z_dim, self.z_dim))
+            self.biasing = torch.nn.Parameter(torch.zeros(self.z_dim))
