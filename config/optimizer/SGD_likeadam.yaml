@@ -1,0 +1,5 @@
+# name is automatic
+mode: SGD
+kwargs:
+  momentum: 0.9
+  lr_factor: 100 # makes it easier for sweeps by having the save order of magnitude of lr for adam and sgd

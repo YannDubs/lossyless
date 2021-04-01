@@ -4,9 +4,12 @@ defaults:
   - override /architecture@encoder: simclr
   - override /distortion: ince
   - override /rate: H_simclr
+  - override /finetune: simclr
 
 featurizer:
   name: bottleneck_simclr_disjoint
+  loss:
+    beta_anneal: geometric
 
 encoder:
   z_dim: 2048
@@ -20,10 +23,7 @@ distortion:
       out_shape: 128
       mode: simclr_projector
 
-loss:
-  beta_anneal: geometric
-
 rate:
   kwargs: 
     warmup_k_epoch: 1 
-    is_endToEnd: false
+    is_endToEnd: True

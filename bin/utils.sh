@@ -20,12 +20,12 @@ while getopts ':s:p:m:t:v:a:c:' flag; do
     c )
       id="${OPTARG}"
       mode="continue"
-      add_kwargs="${add_kwargs} +mode=continue continue_job=${id}"
+      add_kwargs="${add_kwargs} mode=continue continue_job=${id}"
       echo "Continuing job $id (Only if slurm) ..."
       ;; 
     m ) 
       mode="${OPTARG}"
-      add_kwargs="${add_kwargs} +mode=$mode"
+      add_kwargs="${add_kwargs} mode=$mode"
       echo "$mode mode ..."
 
       if  [[ "$mode" != "cpu" ]]; then
@@ -83,9 +83,9 @@ if  [[ "$mode" == "dev" || "$mode" == "test" || "$mode" == "debug" || "$mode" ==
 fi
 
 experiment="${prfx}""$experiment"
+results="results/exp_$experiment"
 
 if [[ "$is_plot_only" = false && "$mode" != "continue" ]] ; then
-  results="results/exp_$experiment"
   if [ -d "$results" ]; then
 
     echo -n "$results exist. Should I delete it (y/n) ? "
@@ -97,3 +97,6 @@ if [[ "$is_plot_only" = false && "$mode" != "continue" ]] ; then
     fi
   fi  
 fi
+
+# make sure that result folder exist for when you are saving a hypopt optuna database
+mkdir -p $results 

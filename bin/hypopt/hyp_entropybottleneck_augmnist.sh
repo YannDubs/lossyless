@@ -34,7 +34,7 @@ kwargs_multi="
 " 
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in  "rate.kwargs.kwargs_ent_bottleneck.init_scale=5,10,50" "rate.kwargs.kwargs_ent_bottleneck.filters='[3,3,3]','[3,3]','[3,3,3,3,3]'" 
+  for kwargs_dep in   "rate.kwargs.kwargs_ent_bottleneck.filters=[3,3,3],[3,3],[3,3,3,3,3]"  #"rate.kwargs.kwargs_ent_bottleneck.init_scale=5,10,50"
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &

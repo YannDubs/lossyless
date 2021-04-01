@@ -3,13 +3,11 @@ defaults:
   - neural_feat@featurizer
   - override /architecture@encoder: clip
   - override /distortion: ince
-  - override /rate: H_hyper
-  - override /finetune: clip
+  - override /rate: lossless
+  - override /finetune: freezer
 
 featurizer:
-  name: bottleneck_clip
-  loss:
-    beta_anneal: geometric
+  name: clip_freeze
 
 encoder:
   z_dim: 1024
@@ -18,8 +16,4 @@ distortion:
   kwargs:
     temperature: 0.01
     is_cosine: True
-    is_project: False
-
-rate:
-  kwargs: 
-    warmup_k_epoch: 1 # really important to warmup
+    is_project: True # puts true so that some parameters exist (trick / bad practice)

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-experiment="hyp_simclr"
+experiment="hyp_clip_imgs"
 notes="
-**Goal**: Pretrained SimCLR model
+**Goal**: Pretrained CLIP model using only augmented images
 "
 
 # e.g. command: bin/experiments/cifar10_RD_compare_rates.sh -s vector -t 1440
@@ -14,17 +14,18 @@ source `dirname $0`/../utils.sh
 kwargs="
 experiment=$experiment 
 timeout=$time
-logger=none
-optimizer@optimizer_feat=adam1e-4
+logger.kwargs.project=hypopt
+is_only_feat=True
 checkpoint@checkpoint_feat=bestTrainLoss
+optimizer@optimizer_feat=adam1e-4
 scheduler@scheduler_feat=expdecay
 data@data_feat=simclr_imagenet
 evaluation.is_est_entropies=False
-+data@data_pred=imagenet
-data_pred.kwargs.dataset_kwargs.equivalence=[simclr_finetune]
-optimizer@optimizer_pred=sslfinetuner
-architecture@predictor=mlp1024
-callbacks.is_force_no_additional_callback=true
+data_feat.kwargs.batch_size=128
+trainer.max_epochs=4
+trainer.val_check_interval=0.1
+featurizer.loss.beta=0.00001
+featurizer=bottleneck_clip
 $add_kwargs
 "
 #
@@ -34,32 +35,15 @@ $add_kwargs
 
 # every arguments that you are sweeping over
 kwargs_multi="
-seed=1
-data_pred.kwargs.batch_size=128
-data_feat.kwargs.batch_size=128
-+update_trainer_pred.max_epochs=2
-trainer.max_epochs=2
-scheduler@scheduler_pred=multistep
-scheduler_pred.kwargs.MultiStepLR.milestones=[1,2]
-trainer.val_check_interval=0.5
-+mode=dev
-trainer.limit_val_batches=0.1
-trainer.limit_train_batches=0.01
-trainer.limit_test_batches=0.1
-featurizer=bottleneck_simclr 
-featurizer.loss.beta=0.1
-trainer.gpus=3
-+trainer.accelerator=ddp_spawn
-hydra.launcher.partition=rtx6000
 " 
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in  "" 
+  for kwargs_dep in "featurizer=clip_freeze" #"featurizer=bottleneck_clip_disjoint" "distortion.kwargs.temperature=0.1" "distortion.kwargs.is_project=true"  "trainer.max_epochs=3,5" "data_feat.kwargs.batch_size=64,256" "optimizer_feat.kwargs.is_lars=true" "optimizer@optimizer_feat=sslfinetuner1e-3,wadam1e-5,wadam1e-4,wadam1e-3,pretrained" "featurizer.loss.beta=1e-10,1e-7,1e-5,1e-3,0.1" "distortion.kwargs.effective_batch_size=1000,10000,100000"    
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
 
-    sleep 3
+    sleep 7
     
   done
 fi

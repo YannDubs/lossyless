@@ -1,6 +1,0 @@
-defaults:
-  - H_simclr
-
-name: H_simclr_reinit
-kwargs:
-  is_reinit: true

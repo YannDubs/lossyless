@@ -1,0 +1,4 @@
+# name is automatic
+mode: SGD
+kwargs:
+  momentum: 0.9

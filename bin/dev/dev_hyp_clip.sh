@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-experiment="hyp_simclr"
+experiment="dev_hyp_clip"
 notes="
-**Goal**: Pretrained SimCLR model
+**Goal**: Pretrained CLIP model
 "
 
 # e.g. command: bin/experiments/cifar10_RD_compare_rates.sh -s vector -t 1440
@@ -21,14 +21,19 @@ optimizer@optimizer_feat=adam1e-4
 scheduler@scheduler_feat=expdecay
 data@data_feat=simclr_imagenet
 evaluation.is_est_entropies=False
-data_feat.kwargs.batch_size=128
-trainer.max_epochs=4
-trainer.val_check_interval=0.1
+data_feat.kwargs.batch_size=32
 featurizer.loss.beta=0.00001
-featurizer=bottleneck_simclr
-callbacks.LearningRateMonitor.is_use=False
+featurizer=clip_freeze
+finetune=clip
+trainer.max_epochs=1
+trainer.val_check_interval=1.0
++mode=dev
+trainer.limit_val_batches=0.005
+trainer.limit_train_batches=0.00005
+trainer.limit_test_batches=0.005
 $add_kwargs
 "
+#
 #scheduler@scheduler_pred=cosine
 # trainer.max_epochs=20 is because little time
 # checkpoint@checkpoint_feat=bestTrainLoss because you are not augmenting validation set => only consider train
@@ -38,10 +43,10 @@ kwargs_multi="
 " 
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in  "featurizer=bottleneck_simclr_disjoint,simclr_freeze" "optimizer_feat.kwargs.is_lars=true" "optimizer@optimizer_feat=wadam1e-6,wadam1e-5,wadam1e-7,wadam1e-4" "featurizer.loss.beta=1e-7,1e-6,1e-5,1e-4,1e-3,1e-2"   "featurizer=bottleneck_simclr_disjoint" 
+  for kwargs_dep in  "" 
   do
 
-    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
+    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep 
 
     sleep 7
     

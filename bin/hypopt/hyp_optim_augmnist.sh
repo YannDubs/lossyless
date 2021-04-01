@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-experiment="hyp_ince_augmnist"
+experiment="hyp_optim_augmnist"
 notes="
-**Goal**: Hyperparameter tuning for ince on augmented mnist
+**Goal**: Tuning learning rate / scheduler / optimizer of the online for ivae / ince on augmented mnist
 "
 
 
@@ -23,25 +23,28 @@ evaluation.is_est_entropies=False
 rate=H_factorized
 trainer.max_epochs=100
 data_feat.kwargs.batch_size=128
-distortion=ince
-featurizer.loss.beta=0.01
+featurizer.loss.beta=0.1
 seed=1
 $add_kwargs
 "
 
 # every arguments that you are sweeping over
 kwargs_multi="
+optimizer@optimizer_online=wadam3e-3,sgd
+optimizer@optimizer_feat=wadam3e-3,sgd,sgd005
+scheduler@scheduler_feat=cosine,expdecay,plateau_quick,expdecay_plateau
+optimizer@optimizer_coder=wadam3e-3,sgd
+distortion=ivae,ince
 " 
 
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in  "data_feat.kwargs.batch_size=32,64,256,512,1024" "encoder.z_dim=32,512" "distortion.kwargs.project_kwargs.out_shape=0.1,0.5,1" "distortion.kwargs.temperature=0.01,1" "distortion.kwargs.effective_batch_size=null,1000,10000" "distortion.kwargs.is_cosine=False" "optimizer_feat.kwargs.is_lars=True data_feat.kwargs.batch_size=128,1024" "optimizer@optimizer_feat=adam1e-3,adam3e-3,adam1e-4,sgd"  "featurizer.loss.beta=0.1,0.03,0.003,0.001" "optimizer@optimizer_coder=adam3e-3,sgd"  "optimizer@optimizer_coder=adam3e-3,sgd"  "featurizer.loss.beta_anneal=geometric,linear" "rate.kwargs.is_endToEnd=False" "rate.kwargs.warmup_k_epoch=1,10"      
+  for kwargs_dep in  "" 
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
 
     sleep 7
-
     
   done
 fi
@@ -57,6 +60,7 @@ data="featurizer" # want to access both ther featurizer data and the  predictor 
 python aggregate.py \
        experiment=$experiment  \
        $col_val_subset \
+       collect_data.predictor=null \
        +summarize_RD_curves.data="${data}" \
        +summarize_RD_curves.rate_cols="${rate_cols}" \
        +summarize_RD_curves.distortion_cols="${distortion_cols}" \

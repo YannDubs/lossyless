@@ -11,7 +11,6 @@ source `dirname $0`/../utils.sh
 # define all the arguments modified or added to `conf`. If they are added use `+`
 kwargs="
 experiment=$experiment 
-+mode=dev
 logger=none
 architecture@encoder=mlp
 architecture@predictor=mlp
@@ -21,6 +20,7 @@ data@data_feat=cifar10
 featurizer=neural_feat
 trainer.max_epochs=100
 callbacks.is_force_no_additional_callback=True
+mode=dev
 timeout=$time
 $add_kwargs
 "

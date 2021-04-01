@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-experiment="dev_simclr"
+experiment="dev_simclr_finetune"
 notes="
 **Goal**: Pretrained SimCLR model
 "
@@ -41,11 +41,12 @@ scheduler@scheduler_pred=multistep
 scheduler_pred.kwargs.MultiStepLR.milestones=[1,2]
 trainer.val_check_interval=1.0
 +mode=dev
-trainer.limit_val_batches=0.01
-trainer.limit_train_batches=0.0001
-trainer.limit_test_batches=0.01
+trainer.limit_val_batches=0.005
+trainer.limit_train_batches=0.00005
+trainer.limit_test_batches=0.005
 featurizer=bottleneck_simclr 
 featurizer.loss.beta=0.1
+finetune=simclr_all
 " 
 
 if [ "$is_plot_only" = false ] ; then

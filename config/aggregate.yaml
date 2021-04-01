@@ -11,6 +11,10 @@ collect_data:
   featurizer: "results/exp_${experiment}/**/results_compressor.csv"
   predictor: "results/exp_${experiment}/**/results_predictor.csv"
 
+plot_optuna_hypopt:
+  storage: sqlite:///${kwargs.base_dir}/results/exp_${experiment}/optuna.db
+  study_name: main
+
 kwargs:
   base_dir: ${hydra:runtime.cwd}
   save_dir: results/exp_${experiment}/

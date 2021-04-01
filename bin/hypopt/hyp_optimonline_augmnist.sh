@@ -31,8 +31,8 @@ $add_kwargs
 
 # every arguments that you are sweeping over
 kwargs_multi="
-optimizer@optimizer_coder=adam1e-3,adam3e-3,adam1e-4,sgd,sgd05,sgd005
-scheduler@scheduler_coder=multistep100,cosine,expdecay,plateau,none
+optimizer@optimizer_online=adam1e-3,adam3e-3,adam1e-4,sgd,sgd05,sgd005,wadam1e-2
+scheduler@scheduler_online=multistep100,cosine,expdecay,plateau,none,expdecay_plateau
 " 
 
 
@@ -58,6 +58,7 @@ data="featurizer" # want to access both ther featurizer data and the  predictor 
 python aggregate.py \
        experiment=$experiment  \
        $col_val_subset \
+       collect_data.predictor=null \
        +summarize_RD_curves.data="${data}" \
        +summarize_RD_curves.rate_cols="${rate_cols}" \
        +summarize_RD_curves.distortion_cols="${distortion_cols}" \

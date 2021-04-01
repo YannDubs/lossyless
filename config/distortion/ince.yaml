@@ -2,4 +2,4 @@ defaults:
   - base_contrastive
 
 name: ince # usual (invariant) NCE: try to classify augmented image
-factor_beta: 0.01 # compared to ivae gives importance ++ to rate so decrease it (value taken empirically)
+factor_beta: 0.003 # compared to ivae gives importance ++ to rate so decrease it (value taken empirically)

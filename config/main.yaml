@@ -6,26 +6,30 @@ defaults:
   
   - logger: wandb
   - server: none
+  - hypopt: none 
+  - mode: none
 
   # FEATURIZER #
   - data@data_feat: mnist
   - architecture@encoder: resnet
+  - architecture@online_evaluator: mlp_probe
   - checkpoint@checkpoint_feat: bestValLoss # NB : will not be able to use Val loss for vib because validation is meaningless for distortion. Nor for INCE in the case where you don't use data augmentations at test time
-  - optimizer@optimizer_feat: adam1e-3
-  - scheduler@scheduler_feat: expdecay
-  - optimizer@optimizer_coder: adam3e-3
-  - scheduler@scheduler_coder: expdecay
-  - optimizer@optimizer_online: adam1e-4 
-  - scheduler@scheduler_online: none # representation is changing so don't use a scheduler
+  - optimizer@optimizer_feat: Adam_lr1e-3_w1e-4 # larger learning rate gives smaller rate but smaller acc. should stick to using adam if not changing the  beta will effectively change the lr
+  - scheduler@scheduler_feat: expdecay100 # expdecay also works well
+  - optimizer@optimizer_coder: Adam_lr1e-3_w1e-4 # quite robust to this but lr shouldn't be to small
+  - scheduler@scheduler_coder: cosine
+  - optimizer@optimizer_online: SGD_lr3e-1_w1e-4
+  - scheduler@scheduler_online: cosine # ensure that can always keep up with the chaning representation
   - distortion: ivae
   - rate: H_factorized
+  - finetune: none # change if using pretrained featurizer.
   - featurizer: neural_rec
 
   # PREDICTOR #
   - architecture@predictor: resnet18
   - checkpoint@checkpoint_pred: bestValLoss 
-  - optimizer@optimizer_pred: adam1e-3
-  - scheduler@scheduler_pred: expdecay
+  - optimizer@optimizer_pred: SGD_lr3e-1_w1e-4
+  - scheduler@scheduler_pred: cosine_restart
 
   # OVERIDES #
   - override hydra/job_logging: colorlog
@@ -38,10 +42,12 @@ job_id: ??? # unique identifier
 seed: 123
 timeout: 1440 # 24 hours
 time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is not when job runs
-long_name_feat: exp_${experiment}/datafeat_${data_feat.name}/feat_${featurizer.name}/dist_${distortion.name}/enc_${encoder.name}/rate_${rate.name}/optfeat_${optimizer_feat.name}/schedfeat_${scheduler_feat.name}/zdim_${encoder.z_dim}/zs_${featurizer.loss.n_z_samples}/beta_${featurizer.loss.beta}/seed_${seed}/addfeat_${other.add_feat}
+long_name_feat: exp_${experiment}/datafeat_${data_feat.name}/feat_${featurizer.name}/dist_${distortion.name}/enc_${encoder.name}/rate_${rate.name}/optfeat_${optimizer_feat.name}/schedfeat_${scheduler_feat.name}/zdim_${encoder.z_dim}/zs_${featurizer.loss.n_z_samples}/beta_${format:${featurizer.loss.beta},.1e}/seed_${seed}/addfeat_${other.add_feat}
 long_name_pred: ${long_name_feat}/datapred_${data_pred.name}/optpred_${optimizer_pred.name}/schedpred_${scheduler_pred.name}/addpred_${other.add_pred}
 is_only_feat: false # don't run any prediction
-is_return: false
+is_return: false # will return everything (the data, the models, ...)
+monitor_return: [] # normal return of the functio. THis is especially useful for hyperparameter tuning
+monitor_direction: [] # whether the monitor should be maximized or minimized. usefule for hyperparameter tuning
 is_no_save: ${is_return} # if you are sure you don't want to save anything
 
 paths: #! the best practice is not to modify those paths but to simlink them to the places you want
@@ -61,6 +67,7 @@ other: # some meta information that can be useful for internal stuff (usually di
   hydra_job_id: ${hydra:job.id} # this is the job id without the sweep number. Useful for filtering and grouping in wandb
   add_feat: null # some additional value for saving (e.g. current sweeping values)
   add_pred: null # some additional value for saving (e.g. current sweeping values)
+  git_hash: null
 
 ### STAGE SPECIFIC ###
 stage: ??? 
@@ -75,6 +82,7 @@ evaluation:
   featurizer:
     ckpt_path: "best"
     is_evaluate: ${featurizer.is_train}
+    is_online: True
   predictor:
     ckpt_path: "best"
     is_evaluate: ${predictor.is_train}
@@ -116,12 +124,11 @@ trainer:
   weights_summary: full # full to print show the entire model, top nly prints the top module
   profiler: null # use `simple` or `"advanced"` to find bottleneck
 
-
 ########## FEATURIZER ##########
 ### DATA ###
 data_feat: {}
 
-### MODEL ###
+### MODELS ###
 encoder:
   name: ???
   z_dim: 128
@@ -129,22 +136,44 @@ encoder:
   arch_kwargs: {}
   fam_kwargs: {}
 
+online_evaluator:
+  name: ???
+  is_classification: ${data.target_is_clf}
+  arch: ???
+  arch_kwargs: {}
+
 ### OPTIMIZER ###
-optimizer_feat: {}
+optimizer_feat: 
+  name: ${optimizer_feat.mode}_lr${format:${optimizer_feat.kwargs.lr},.1e}_w${format:${optimizer_feat.kwargs.weight_decay},.1e}
+  mode: ???
+  kwargs:
+    lr: ???
+    weight_decay: 0
+    is_lars: false # true can be useful if large batch sizes
 scheduler_feat: {}
 
-optimizer_coder: {}
+optimizer_coder: 
+  name: ${optimizer_coder.mode}_lr${format:${optimizer_coder.kwargs.lr},.1e}_w${format:${optimizer_coder.kwargs.weight_decay},.1e}
+  mode: ???
+  kwargs:
+    lr: ???
+    weight_decay: 0
+    is_lars: ${optimizer_feat.kwargs.is_lars}
 scheduler_coder: {}
 
-optimizer_online: {}
+optimizer_online: 
+  name: ${optimizer_online.mode}_lr${format:${optimizer_online.kwargs.lr},.1e}_w${format:${optimizer_online.kwargs.weight_decay},.1e}
+  mode: ???
+  kwargs:
+    lr: ???
+    weight_decay: 0
+    is_lars: ${optimizer_feat.kwargs.is_lars}
 scheduler_online: {}
-
 
 ### RUNNING ###
 checkpoint_feat: {}
 # dictionnary that will update the trainer (this is done because often the trainer is the same for feat and pred so want to minimize replication)
 update_trainer_feat: {}
-
 
 ########## PREDICTOR ##########
 ### DATA ###
@@ -161,13 +190,17 @@ predictor:
 ### OPTIMIZER ###
 optimizer_pred: 
   is_lr_find: False # whether to automatically look for best lr (only set the sugggested value if lr is None, if not just plots)
+  name: ${optimizer_pred.mode}_lr${format:${optimizer_pred.kwargs.lr},.1e}_w${format:${optimizer_pred.kwargs.weight_decay},.1e}
+  mode: ???
+  kwargs:
+    lr: ???
+    weight_decay: 0
 scheduler_pred: {}
 
 ### RUNNING ###
 checkpoint_pred: {}
 # dictionnary that will update the trainer (this is done because often the trainer is the same for feat and pred so want to minimize replication)
 update_trainer_pred: {}
-
 
 ########## HYDRA ##########
 hydra:

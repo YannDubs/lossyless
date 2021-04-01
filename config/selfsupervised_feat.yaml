@@ -1,0 +1,141 @@
+defaults:
+  - _self_
+  - user
+  
+  - logger: wandb
+  - server: none
+  - hypopt: none
+
+  - architecture@online_evaluator: mlp_probe
+  - checkpoint: bestValLoss
+  - rate: H_hyper
+
+  - optimizer@optimizer_feat: Adam_lr1e-3_w1e-4 # larger learning rate gives smaller rate but smaller acc. should stick to using adam if not changing the  beta will effectively change the lr
+  - scheduler@scheduler_feat: expdecay100 # expdecay also works well
+  - optimizer@optimizer_coder: Adam_lr1e-3_w1e-4 # quite robust to this but lr shouldn't be to small
+  - scheduler@scheduler_coder: cosine
+  - optimizer@optimizer_online: SGD_lr3e-1_w1e-4
+  - scheduler@scheduler_online: cosine # ensure that can always keep up with the chaning representation
+
+  # OVERIDES #
+  - override hydra/job_logging: colorlog
+  - override hydra/hydra_logging: colorlog
+  
+experiment: ???
+model: ???
+dataset : ???
+job_id : ???
+stage: feat
+is_no_save: False
+monitor_return: ["test/feat/online_err","test/feat/rate"] 
+monitor_direction: ["minimize","minimize"]
+long_name: exp_${experiment}/data_${dataset}/rate_${rate.name}/optfeat_${optimizer_feat.name}/schedfeat_${scheduler_feat.name}/opton_${optimizer_online.name}/schedon_${scheduler_online.name}/optcod_${optimizer_coder.name}/schedcod_${scheduler_coder.name}/bs_${data.kwargs.batch_size}/beta_${format:${featurizer.loss.beta},.1e}/seed_${seed}
+seed: 123
+timeout: 1440 # 24 hours
+time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is not when job runs
+
+paths: 
+  base_dir: ${hydra:runtime.cwd} 
+  data: ${paths.base_dir}/data
+  work: ${hydra.runtime.cwd}/outputs/${now:%Y-%m-%d_%H-%M-%S} # unfortunately cannot use hydra: in hydra so need to do everything by hand i.e. cannot use ${paths.base_dir}/outputs/{time}
+  results: ${paths.base_dir}/results/${long_name}/jid_${job_id}
+  logs: ${paths.base_dir}/logs/${long_name}/jid_${job_id}
+  chckpnt: ${paths.base_dir}/checkpoints/${long_name}/jid_${job_id}
+  pretrained: 
+    save: ${paths.base_dir}/pretrained/${long_name}/jid_${job_id} # directory for saving pretrained models
+    load: ${paths.base_dir}/pretrained/${long_name}/*  # directory for loading pretrained models if you use ** or * it will glob all matching files and take the latest
+  
+trainer: 
+  max_epochs: 100
+  progress_bar_refresh_rate: 0 
+  gradient_clip_val: 3 
+  resume_from_checkpoint: null # string to checkpoint if want to resume
+
+  # DEEP LEARNING
+  stochastic_weight_avg: False
+  auto_lr_find: false # use  `optimizer.kwargs.lr` if want it
+
+  # ENGINEERING / SPEED #
+  gpus: 1 
+  num_nodes: 1  # number gpu nodes
+  precision: 16 # use 16 bit for speed 
+
+  # DEBUGGING #
+  fast_dev_run: false # use true to make a quick test (not full epoch)
+  weights_summary: full # full to print show the entire model, top nly prints the top module
+  track_grad_norm: -1 # use 2 to track L2 norms of grad
+
+distortion:
+  p_norm: 1
+  factor_beta: 1
+
+featurizer:
+  is_features: true
+  loss:
+    beta: 0.1
+    beta_anneal: linear
+    n_z_samples: 1
+    is_scale_beta: true
+
+encoder:
+  z_dim: ???
+  
+data:
+  max_steps: ???
+  length: ???
+  target_shape: ???
+  kwargs:
+    num_workers: 16
+    batch_size: 64
+    val_split: 0.01
+    pin_memory: True
+
+# OPTIMIZERS
+optimizer_feat: 
+  name: ${optimizer_feat.mode}_lr${format:${optimizer_feat.kwargs.lr},.1e}_w${format:${optimizer_feat.kwargs.weight_decay},.1e}
+  mode: ???
+  kwargs:
+    lr: ???
+    weight_decay: 0
+    is_lars: false # true can be useful if large batch sizes
+scheduler_feat: {}
+
+optimizer_coder: 
+  name: ${optimizer_coder.mode}_lr${format:${optimizer_coder.kwargs.lr},.1e}_w${format:${optimizer_coder.kwargs.weight_decay},.1e}
+  mode: ???
+  kwargs:
+    lr: ???
+    weight_decay: 0
+    is_lars: ${optimizer_feat.kwargs.is_lars}
+scheduler_coder: {}
+
+optimizer_online: 
+  name: ${optimizer_online.mode}_lr${format:${optimizer_online.kwargs.lr},.1e}_w${format:${optimizer_online.kwargs.weight_decay},.1e}
+  mode: ???
+  kwargs:
+    lr: ???
+    weight_decay: 0
+    is_lars: ${optimizer_feat.kwargs.is_lars}
+scheduler_online: {}
+
+callbacks: # can use any callback name of lossyless.calllbacks, pl_bolts.callbacks, pl.callbacks
+  is_force_no_additional_callback: false # force empty callback
+
+  # all callback kwargs should be here (`is_use` just says whether to use that callback)
+  LearningRateMonitor:
+    is_use : true
+    kwargs:
+      logging_interval : epoch
+
+########## HYDRA ##########
+hydra:
+  job:
+    env_set:
+      NCCL_DEBUG: INFO 
+
+  run:
+    dir: ${paths.work}
+
+  sweep:
+    dir:  ${paths.work}
+    subdir: ${hydra.job.num}_${hydra.job.id}

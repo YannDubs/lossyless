@@ -1,0 +1,8 @@
+name: mlp_probe
+arch: mlp 
+arch_kwargs:
+  hid_dim: 1024
+  norm_layer: batchnorm
+  n_hid_layers: 1
+  activation: ReLU
+  dropout_p: 0.2
