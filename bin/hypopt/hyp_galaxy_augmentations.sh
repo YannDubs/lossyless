@@ -29,14 +29,13 @@ $add_kwargs
 # if the values that are swept over are not understandable from the names `interval` `log`.. check : https://hydra.cc/docs/next/plugins/optuna_sweeper
 kwargs_multi="
 distortion=ince,ivae
-featurizer.loss.beta=1e-5,1e-6,1e-4,1e-7
-data_feat.kwargs.dataset_kwargs.is_normalize=true,false
+featurizer.loss.beta=1e-4
 " 
 #vae,nce
 
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in "data_feat.kwargs.dataset_kwargs.equivalence=[hflip,360_rotation,resize_crop,color,gray]"  "data_feat.kwargs.dataset_kwargs.equivalence=[hflip,resize_crop,auto_imagenet]" "data_feat.kwargs.dataset_kwargs.equivalence=[auto_imagenet]" "data_feat.kwargs.dataset_kwargs.equivalence=[x_translation++,y_translation++,360_rotation,scale,color"         
+  for kwargs_dep in "data_feat.kwargs.dataset_kwargs.equivalence=[hflip,vflip,360_rotation,resize_crop,color,gray]"  "data_feat.kwargs.dataset_kwargs.equivalence=[hflip,vflip,resize_crop,color,gray]" "data_feat.kwargs.dataset_kwargs.equivalence=[auto_imagenet]" "data_feat.kwargs.dataset_kwargs.equivalence=[hflip,360_rotation,resize_crop,vflip]"         
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &

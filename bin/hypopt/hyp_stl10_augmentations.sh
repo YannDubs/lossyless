@@ -18,6 +18,7 @@ featurizer=neural_feat
 architecture@encoder=resnet18
 architecture@predictor=mlp_probe
 data@data_feat=stl10unlabeled
+data@data_pred=stl10_aug
 rate=H_hyper
 trainer.max_epochs=100
 +update_trainer_pred.max_epochs=100
@@ -30,12 +31,12 @@ $add_kwargs
 # FEATURIZER
 # if the values that are swept over are not understandable from the names `interval` `log`.. check : https://hydra.cc/docs/next/plugins/optuna_sweeper
 kwargs_multi="
-data@data_pred=stl10,stl10_aug
-distortion=nce,ince,ivae,vae
+distortion=ince,ivae
+featurizer.loss.beta=1e-4
 " 
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in "data_feat.kwargs.dataset_kwargs.equivalence=[auto_cifar10] data_pred.kwargs.dataset_kwargs.equivalence=[auto_cifar10]" "data_feat.kwargs.dataset_kwargs.equivalence=[auto_imagenet] data_pred.kwargs.dataset_kwargs.equivalence=[auto_imagenet]" "data_feat.kwargs.dataset_kwargs.equivalence=[hflip,resize_crop,color,gray] data_pred.kwargs.dataset_kwargs.equivalence=[hflip,resize_crop,color,gray]"         
+  for kwargs_dep in "data_feat.kwargs.dataset_kwargs.equivalence=[hflip,resize_crop,auto_imagenet] data_pred.kwargs.dataset_kwargs.equivalence=[hflip,resize_crop,auto_imagenet]" "data_feat.kwargs.dataset_kwargs.equivalence=[auto_cifar10] data_pred.kwargs.dataset_kwargs.equivalence=[auto_cifar10]" "data_feat.kwargs.dataset_kwargs.equivalence=[auto_imagenet] data_pred.kwargs.dataset_kwargs.equivalence=[auto_imagenet]" "data_feat.kwargs.dataset_kwargs.equivalence=[hflip,resize_crop,color,gray] data_pred.kwargs.dataset_kwargs.equivalence=[hflip,resize_crop,color,gray]"         
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
