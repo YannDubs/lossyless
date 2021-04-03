@@ -62,13 +62,15 @@ def main(cfg):
     aggregator = ResultAggregator(pretty_renamer=PRETTY_RENAMER, **cfg.kwargs)
 
     logger.info(f"Collecting the data ..")
-    for name, pattern in cfg.collect_data.items():
+    for name, pattern in cfg.patterns.items():
         if pattern is not None:
-            aggregator.collect_data(pattern=pattern, table_name=name)
+            aggregator.collect_data(
+                pattern=pattern, table_name=name, **cfg.collect_data
+            )
 
     if len(aggregator.tables) > 1:
         # if multiple tables also add "merged" that contains all
-        aggregator.merge_tables(list(cfg.collect_data.keys()))
+        aggregator.merge_tables(list(cfg.patterns.keys()))
 
     aggregator.subset(cfg.col_val_subset)
 
@@ -168,7 +170,6 @@ class ResultAggregator(PostPlotter):
             (using dots). E.g. {"lr": "optimizer.lr"}. The config file should be saved at the same
             place as the results file.
         """
-        # TODO test params_to_add
         paths = list(self.base_dir.glob(pattern))
         if len(paths) == 0:
             raise ValueError(f"No files found for your pattern={pattern}")
