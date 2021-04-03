@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 DIR = Path(__file__).parents[2].joinpath("data")
 
 
-__all__ = ["LossylessDataset", "LossylessCLFDataset", "LossylessDataModule"]
+__all__ = ["LossylessDataset",  "LossylessDataModule"]
 
 
 ### Base Dataset ###
@@ -149,75 +149,6 @@ class LossylessDataset(abc.ABC):
         return shapes["target"], shapes[self.additional_target]
 
 
-class LossylessCLFDataset(LossylessDataset):
-    """Base classclassification lossyless datasets.
-
-    Parameters
-    -----------
-    n_per_target : int, optional
-        Number of examples to keep per label.
-
-    targets_drop : list, optional
-        Targets to drop (needs to be same type as the targets).
-
-    kwargs :
-        Additional arguments to `LossylessDataset`.
-    """
-
-    def __init__(
-        self,
-        *args,
-        n_per_target=None,
-        targets_drop=[],
-        **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-
-        self.n_per_target = n_per_target
-        self.targets_drop = targets_drop
-
-        if self.n_per_target is not None:
-            self.keep_n_idcs_per_target_(n_per_target)
-
-        self.drop_targets_(self.targets_drop)
-
-    def keep_n_idcs_per_target_(self, n):
-        """Keep only `n` example for each target inplace.
-
-        Parameters
-        ----------
-        n : int
-            Number of examples to keep per label.
-        """
-        np_trgts = to_numpy(self.targets)
-        list_idcs_keep = [np.nonzero(np_trgts == i)[0][:n] for i in np.unique(np_trgts)]
-        idcs_keep = np.sort(np.concatenate(list_idcs_keep))
-        self.keep_indcs_(list(idcs_keep))
-
-    def drop_targets_(self, targets):
-        """Drops targets inplace.
-
-        Parameters
-        ----------
-        targets : list
-            Targets to drop (needs to be same type as the targets).
-        """
-        for target in targets:
-            np_trgts = to_numpy(self.targets)
-            idcs_keep = np.nonzero(np_trgts != target)[0]
-            self.keep_indcs_(list(idcs_keep))
-
-    def keep_indcs_(self, indcs):
-        """Keep the given indices inplace.
-
-        Parameters
-        ----------
-        indcs : array-like int
-            Indices to keep. If multiplicity larger than 1 then will duplicate  the data.
-        """
-        self.data = self.data[indcs]
-        self.targets = self.targets[indcs]
-
 
 ### Base Datamodule ###
 
@@ -265,7 +196,7 @@ class LossylessDataModule(LightningDataModule):
         data_dir=DIR,
         val_size=0.1,
         test_size=None,
-        num_workers=16,
+        num_workers=16, 
         batch_size=128,
         val_batch_size=None,
         seed=123,

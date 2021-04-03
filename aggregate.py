@@ -15,9 +15,9 @@ import seaborn as sns
 
 import hydra
 from lossyless.helpers import BASE_LOG, check_import
-from main import COMPRESSOR_RES
+from main import COMPRESSOR_RES, CONFIG_FILE, get_stage_name
 from omegaconf import OmegaConf
-from utils.helpers import omegaconf2namespace
+from utils.helpers import cfg_load, cfg_save, getattr_from_oneof, omegaconf2namespace
 from utils.postplotting import (
     PRETTY_RENAMER,
     PostPlotter,
@@ -26,11 +26,20 @@ from utils.postplotting import (
     single_plot,
     table_summarizer,
 )
-from utils.postplotting.helpers import aggregate
+from utils.postplotting.helpers import aggregate, save_fig
 from utils.visualizations.helpers import kwargs_log_scale
 
 try:
     import sklearn.metrics
+except:
+    pass
+
+try:
+    import optuna
+
+    #! waiting for https://github.com/optuna/optuna/pull/2450
+    # from optuna.visualization.matplotlib import plot_pareto_front
+    from utils.visualizations.pareto_front import plot_pareto_front
 except:
     pass
 
@@ -53,13 +62,15 @@ def main(cfg):
     aggregator = ResultAggregator(pretty_renamer=PRETTY_RENAMER, **cfg.kwargs)
 
     logger.info(f"Collecting the data ..")
-    for name, pattern in cfg.collect_data.items():
+    for name, pattern in cfg.patterns.items():
         if pattern is not None:
-            aggregator.collect_data(pattern=pattern, table_name=name)
+            aggregator.collect_data(
+                pattern=pattern, table_name=name, **cfg.collect_data
+            )
 
     if len(aggregator.tables) > 1:
         # if multiple tables also add "merged" that contains all
-        aggregator.merge_tables(list(cfg.collect_data.keys()))
+        aggregator.merge_tables(list(cfg.patterns.keys()))
 
     aggregator.subset(cfg.col_val_subset)
 
@@ -113,6 +124,7 @@ class ResultAggregator(PostPlotter):
 
         self.tables = dict()
         self.param_names = dict()
+        self.cfgs = dict()
 
     def merge_tables(self, to_merge=["featurizer", "predictor"]):
         """Add one large table called `"merge"` that concatenates other tables."""
@@ -129,6 +141,7 @@ class ResultAggregator(PostPlotter):
         pattern=f"results/**/{COMPRESSOR_RES}",
         table_name="featurizer",
         params_to_rm=["jid"],
+        params_to_add={},
     ):
         """Collect all the data.
 
@@ -150,24 +163,41 @@ class ResultAggregator(PostPlotter):
 
         params_to_rm : list of str, optional
             Params to remove.
+
+        params_to_add : dict, optional
+            Parameters to add. Those will be added from the `config.yaml` files. The key should be 
+            the name of the paramter that you weant to add and the value should be the config key 
+            (using dots). E.g. {"lr": "optimizer.lr"}. The config file should be saved at the same
+            place as the results file.
         """
-        paths = glob.glob(str(self.base_dir / pattern), recursive=True)
+        paths = list(self.base_dir.glob(pattern))
         if len(paths) == 0:
             raise ValueError(f"No files found for your pattern={pattern}")
 
         results = []
         self.param_names[table_name] = set()
         for path in paths:
-            # rm the last folder and file (filename)
-            path_clean = path.rsplit("/", maxsplit=1)[0]
-            # rm the first folder ("results")
-            path_clean = path_clean.split("/", maxsplit=1)[-1]
+            folder = path.parent
 
+            # select everything from "exp_"
+            path_clean = "exp_" + str(path.resolve()).split("/exp_")[-1]
             # make dict of params
             params = path_to_params(path_clean)
 
             for p in params_to_rm:
                 params.pop(p)
+
+            try:
+                cfg = cfg_load(folder / f"{get_stage_name(table_name)}_{CONFIG_FILE}")
+                for name, param_key in params_to_add.items():
+                    params[name] = cfg.select(param_key)
+                self.cfgs[table_name] = cfg  # will ony save last
+            except FileNotFoundError:
+                if len(params_to_add) > 0:
+                    logger.exception(
+                        "Cannot use `params_to_add` as config file was not found:"
+                    )
+                    raise
 
             # looks like : DataFrame(param1:...,param2:..., param3:...)
             df_params = pd.DataFrame.from_dict(params, orient="index").T
@@ -679,6 +709,56 @@ class ResultAggregator(PostPlotter):
         sns_plot.tight_layout()
 
         return sns_plot
+
+    def plot_optuna_hypopt(
+        self,
+        storage,
+        study_name="main",
+        filename="hypopt",
+        plot_functions_str=[
+            "plot_param_importances",
+            "plot_parallel_coordinate",
+            "plot_optimization_history",
+        ],
+    ):
+        """Plot a summary of Optuna study"""
+        check_import("optuna", "plot_optuna_hypopt")
+        study = optuna.load_study(study_name, storage)
+        cfg = self.cfgs[list(self.cfgs.keys())[-1]]  # which cfg shouldn't matter
+
+        best_trials = study.best_trials
+        to_save = {
+            "solutions": [{"values": t.values, "params": t.params} for t in best_trials]
+        }
+        cfg_save(to_save, self.save_dir / f"{self.prfx}{filename}.yaml")
+
+        for i, monitor in enumerate(cfg.monitor_return):
+            for plot_f_str in plot_functions_str:
+                if (
+                    plot_f_str == "plot_optimization_history"
+                    and len(cfg.monitor_return) > 1
+                ):
+                    #! waiting for https://github.com/optuna/optuna/issues/2531
+                    continue
+
+                # plotting
+                plt_modules = [optuna.visualization.matplotlib]
+                plot_f = getattr_from_oneof(plt_modules, plot_f_str)
+                out = plot_f(
+                    study, target=lambda trial: trial.values[i], target_name=monitor
+                )
+
+                # saving
+                nice_monitor = monitor.replace("/", "_")
+                filename = self.save_dir / f"{plot_f_str}_{nice_monitor}"
+                save_fig(out, filename, self.dpi)
+
+        if len(cfg.monitor_return) > 1:
+            out = plot_pareto_front(
+                study, target_names=cfg.monitor_return, include_dominated_trials=False
+            )
+            filename = self.save_dir / "plot_pareto_front"
+            save_fig(out, filename, self.dpi)
 
 
 # HELPERS

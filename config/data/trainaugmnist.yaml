@@ -1,8 +1,0 @@
-defaults:
-  - augmnist
-
-name: trainaugmnist
-
-kwargs:
-  dataset_kwargs:
-    is_augment_val: False

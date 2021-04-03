@@ -1,8 +1,0 @@
-defaults:
-  - base_banana
-
-name: bananaRot
-
-kwargs:
-  dataset_kwargs:
-    equivalence: rotation

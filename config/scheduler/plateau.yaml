@@ -10,3 +10,5 @@ kwargs:
     threshold_mode: rel # relative threshold instead of avsolute
     verbose: True
     min_lr: 1e-7 # minimum learning reate
+    kwargs_config_scheduler:
+      monitor: ${checkpoint.kwargs.monitor}

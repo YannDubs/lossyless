@@ -2,6 +2,7 @@ defaults:
   - base_H
 
 name: H_hyper
+mode: H_hyper
 kwargs:
   factor_dim: 5
   is_pred_mean: True

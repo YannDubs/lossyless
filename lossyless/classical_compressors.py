@@ -157,7 +157,7 @@ class ClassicalCompressor(pl.LightningModule):
             else:
                 raise ValueError(f"Unkown featurizer={self.hparams.featurizer.mode}")
 
-    @auto_move_data  # move data on correct device for inference
+    # @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_return_out=False, **kwargs):
         """Represents the data `x`.
 
@@ -199,7 +199,10 @@ class ClassicalCompressor(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         loss, logs, _ = self.step(batch)
         self.log_dict(
-            {f"test/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"test/{k}": v for k, v in logs.items()},
+            on_epoch=True,
+            on_step=False,
+            sync_dist=True,
         )
         return loss
 
@@ -214,4 +217,4 @@ class ClassicalCompressor(pl.LightningModule):
         pass
 
     def set_featurize_mode_(self):
-        pass 
+        pass

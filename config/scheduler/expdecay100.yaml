@@ -1,0 +1,7 @@
+name: expdecay100
+modes: ["expdecay"] # list of scheduler to use
+kwargs:
+  # all kwargs
+  expdecay:
+    decay_factor: 100 # by how much to reduce lr during training
+    epochs: ${trainer.max_epochs}

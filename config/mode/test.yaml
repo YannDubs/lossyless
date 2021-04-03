@@ -20,12 +20,17 @@ logger:
     project: tmp
 
 callbacks:
-  additional: ["GPUStatsMonitor","TrainingDataMonitor","ModuleDataMonitor","LearningRateMonitor"] # if add other callbacks through additional will be replaced
+  GPUStatsMonitor: 
+    is_use : true
 
   TrainingDataMonitor:
-    log_every_n_steps: 50
+    is_use : true
+    kwargs:
+      log_every_n_steps: 50
 
   ModuleDataMonitor:
-    log_every_n_steps: 50
-    submodules: ["p_ZlX.mapper"]
+    is_use : true
+    kwargs:
+      log_every_n_steps: 50
+      submodules: ["p_ZlX.mapper"]
   

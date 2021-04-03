@@ -1,3 +1,4 @@
+import logging
 import math
 from functools import partial
 from typing import Iterable
@@ -7,9 +8,23 @@ import torch.nn as nn
 import torchvision
 from compressai.layers import GDN
 from pl_bolts.models.self_supervised import SimCLR
+from torchvision import transforms as transform_lib
 
-from .helpers import batch_flatten, batch_unflatten, is_pow2, prod, weights_init
+from .helpers import (
+    batch_flatten,
+    batch_unflatten,
+    closest_pow,
+    is_pow2,
+    prod,
+    weights_init,
+)
 
+try:
+    import clip
+except ImportError:
+    pass
+
+logger = logging.getLogger(__name__)
 __all__ = ["get_Architecture"]
 
 
@@ -38,6 +53,12 @@ def get_Architecture(mode, complexity=None, **kwargs):
             kwargs["hid_dim"] = 8 * (4 ** (complexity))
         return partial(FlattenMLP, **kwargs)
 
+    elif mode == "linear":
+        return partial(FlattenLinear, **kwargs)
+
+    elif mode == "identity":
+        return torch.nn.Identity
+
     elif mode == "resnet":
         if complexity is not None:
             base = ["resnet18", "resnet34", "resnet50", "resnet101", "resnet150"]
@@ -56,6 +77,8 @@ def get_Architecture(mode, complexity=None, **kwargs):
         return partial(SimCLRResnet50, **kwargs)
     elif mode == "simclr_projector":
         return partial(SimCLRProjector, **kwargs)
+    elif mode == "clip":
+        return partial(CLIPResnet50, **kwargs)
     else:
         raise ValueError(f"Unkown mode={mode}.")
 
@@ -172,6 +195,38 @@ class FlattenMLP(MLP):
         return X
 
 
+class FlattenLinear(torch.nn.Linear):
+    """
+    Linear that can take a multi dimensional array as input and output . E.g. for predicting an image use
+    `out_shape=(32,32,3)` and this will predict 32*32*3 and then reshape.
+
+    Parameters
+    ----------
+    in_shape : tuple or int
+
+    out_shape : tuple or int
+
+    kwargs :
+        Additional arguments to `torch.nn.Linear`.
+    """
+
+    def __init__(self, in_shape, out_shape, **kwargs):
+        self.in_shape = [in_shape] if isinstance(in_shape, int) else in_shape
+        self.out_shape = [out_shape] if isinstance(out_shape, int) else out_shape
+
+        in_dim = prod(self.in_shape)
+        out_dim = prod(self.out_shape)
+        super().__init__(in_features=in_dim, out_features=out_dim, **kwargs)
+
+    def forward(self, X):
+        # flattens in_shape
+        X = X.flatten(start_dim=X.ndim - len(self.in_shape))
+        X = super().forward(X)
+        # unflattens out_shape
+        X = X.unflatten(dim=-1, sizes=self.out_shape)
+        return X
+
+
 class Resnet(nn.Module):
     """Base class for renets.
 
@@ -245,6 +300,56 @@ class Resnet(nn.Module):
             weights_init(self.resnet.fc)
 
 
+class CLIPResnet50(nn.Module):
+    """Pretrained Resnet50 using multimodal self supervised learning (CLIP).
+
+    Parameters
+    ----------
+    in_shape : tuple of int
+        Size of the inputs (channels first). This is used to see whether to change the underlying
+        resnet or not. If first dim < 100, then will decrease the kernel size  and stride of the
+        first conv, and remove the max pooling layer as done (for cifar10) in
+        https://gist.github.com/y0ast/d91d09565462125a1eb75acc65da1469.
+
+    out_shape : int or tuple, optional
+        Size of the output.
+
+    kwargs : 
+        Additional argument to clip.load model.
+    """
+
+    def __init__(self, in_shape, out_shape, **kwargs):
+        super().__init__()
+        self.in_shape = in_shape
+        self.out_shape = [out_shape] if isinstance(out_shape, int) else out_shape
+        self.out_dim = prod(self.out_shape)
+        self.kwargs = kwargs
+
+        self.load_weights_()
+
+        if self.out_dim != 1024:
+            self.resizer = nn.Linear(1024, self.out_dim)
+        else:
+            self.resizer = nn.Identity()
+
+        self.reset_parameters()
+
+    def forward(self, X):
+        z = self.resnet(X)
+        z = self.resizer(z)
+        z = z.unflatten(dim=-1, sizes=self.out_shape)
+        return z
+
+    def load_weights_(self):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model, _ = clip.load("RN50", device, jit=False, **self.kwargs)
+        model.float()
+        self.resnet = model.visual  # only keep the image model
+
+    def reset_parameters(self):
+        self.load_weights_()
+
+
 class SimCLRResnet50(nn.Module):
     """Pretrained Resnet50 using self supervised learning (simclr).
 
@@ -259,9 +364,6 @@ class SimCLRResnet50(nn.Module):
     out_shape : int or tuple, optional
         Size of the output.
 
-    is_pretrained : bool, optional
-        Whether to load a model pretrained on imagenet.
-
     is_post_project : bool, optional
         Whether to return the output after projection head instead of before.
 
@@ -269,49 +371,15 @@ class SimCLRResnet50(nn.Module):
         Additional argument to the pl_bolts model.
     """
 
-    def __init__(
-        self, in_shape, out_shape, is_pretrained=True, is_post_project=False, **kwargs
-    ):
+    def __init__(self, in_shape, out_shape, is_post_project=False, **kwargs):
         super().__init__()
         self.in_shape = in_shape
         self.out_shape = [out_shape] if isinstance(out_shape, int) else out_shape
         self.out_dim = prod(self.out_shape)
         self.is_post_project = is_post_project
-        self.is_pretrained = is_pretrained
+        self.kwargs = kwargs
 
-        if self.in_shape[1] < 100:
-            maxpool1 = False
-            first_conv = False
-
-            # resnet for smaller images
-            self.resnet.conv1 = nn.Conv2d(
-                in_shape[0], 64, kernel_size=3, stride=1, padding=1, bias=False
-            )
-            self.resnet.maxpool = nn.Identity()
-        else:
-            maxpool1 = True
-            first_conv = True
-
-        module = SimCLR(
-            gpus=0,
-            nodes=1,
-            num_samples=1,
-            batch_size=64,
-            maxpool1=maxpool1,
-            first_conv=first_conv,
-            dataset="",  # not importnant,
-        )
-
-        if self.is_pretrained:
-            ckpt_path = "https://pl-bolts-weights.s3.us-east-2.amazonaws.com/simclr/bolts_simclr_imagenet/simclr_imagenet.ckpt"
-            module = module.load_from_checkpoint(ckpt_path, strict=False)
-
-        self.resnet = module.encoder
-
-        if self.is_post_project:
-            self.projector = module.projection
-        else:
-            self.projector = nn.Identity()
+        self.load_weights_()
 
         if self.is_post_project and self.out_dim != 128:
             self.resizer = nn.Linear(128, self.out_dim)
@@ -333,18 +401,47 @@ class SimCLRResnet50(nn.Module):
         z = z.unflatten(dim=-1, sizes=self.out_shape)
         return z
 
+    def load_weights_(self):
+        if self.in_shape[1] < 100:
+            maxpool1 = False
+            first_conv = False
+        else:
+            maxpool1 = True
+            first_conv = True
+
+        module = SimCLR(
+            gpus=0,
+            nodes=1,
+            num_samples=1,
+            batch_size=64,
+            maxpool1=maxpool1,
+            first_conv=first_conv,
+            dataset="",  # not importnant,
+            **self.kwargs,
+        )
+
+        ckpt_path = "https://pl-bolts-weights.s3.us-east-2.amazonaws.com/simclr/bolts_simclr_imagenet/simclr_imagenet.ckpt"
+        module = module.load_from_checkpoint(ckpt_path, strict=False)
+
+        self.resnet = module.encoder
+
+        if self.is_post_project:
+            self.projector = module.projection
+        else:
+            self.projector = nn.Identity()
+
     def reset_parameters(self):
         weights_init(self.resizer)
-        if not self.is_pretrained:
-            weights_init(self.projector)
-            weights_init(self.resnet)
+        self.load_weights_()
 
 
 class SimCLRProjector(nn.Module):
     """Pretrained simclr projector head."""
 
-    def __init__(self, in_shape, out_shape):
+    def __init__(self, in_shape, out_shape, **kwargs):
         super().__init__()
+        self.kwargs = kwargs
+
         if isinstance(in_shape, int):
             in_shape = [in_shape]
         if isinstance(out_shape, int):
@@ -352,14 +449,27 @@ class SimCLRProjector(nn.Module):
         assert in_shape[0] == prod(in_shape) == 2048
         assert out_shape[0] == prod(out_shape) == 128
 
+        self.load_weights_()
+        self.reset_parameters()
+
+    def forward(self, X):
+        #  make sure only 2 dims
+        X, shape = batch_flatten(X)
+        X = self.projection(X)
+        X = batch_unflatten(X, shape)
+        return X
+
+    def load_weights_(self):
         # give random non important args
-        module = SimCLR(gpus=0, nodes=1, num_samples=1, batch_size=64, dataset="",)
+        module = SimCLR(
+            gpus=0, nodes=1, num_samples=1, batch_size=64, dataset="", **self.kwargs
+        )
         ckpt_path = "https://pl-bolts-weights.s3.us-east-2.amazonaws.com/simclr/bolts_simclr_imagenet/simclr_imagenet.ckpt"
         module.load_from_checkpoint(ckpt_path, strict=False)
         self.projection = module.projection
 
-    def forward(self, X):
-        return self.projection(X)
+    def reset_parameters(self):
+        self.load_weights_()
 
 
 class CNN(nn.Module):
@@ -367,7 +477,8 @@ class CNN(nn.Module):
 
     Notes
     -----
-    - Only works for images whose side is a power of 2 (not necessarily  squared).
+    - if some of the sides of the inputs are not power of 2 they will be resized to the closest power
+    of 2 for prediction.
     - If `in_shape` and `out_dim` are reversed (i.e. `in_shape` is int) then will transpose the CNN.
 
     Parameters
@@ -389,7 +500,7 @@ class CNN(nn.Module):
     activation : {"gdn"}U{any torch.nn activation}, optional
         Activation to use.
 
-    n_layers : int, optional, optional
+    n_layers : int, optional
         Number of layers. If `None` uses the required number of layers so that the smallest side 
         is 2 after encoding (i.e. one less than the maximum).
 
@@ -416,17 +527,33 @@ class CNN(nn.Module):
             in_shape, out_dim = out_dim, in_shape
             self.is_transpose = True
 
+        resizer = torch.nn.Identity()
+        is_input_pow2 = is_pow2(in_shape[1]) and is_pow2(in_shape[2])
+        if not is_input_pow2:
+            # shape that you will work with which are power of 2
+            in_shape_pow2 = list(in_shape)
+            in_shape_pow2[1] = closest_pow(in_shape[1], base=2)
+            in_shape_pow2[2] = closest_pow(in_shape[2], base=2)
+
+            if self.is_transpose:
+                # the model will output image of `in_shape_pow2` then will reshape to actual
+                resizer = transform_lib.Resize((in_shape[1], in_shape[2]))
+            else:
+                # the model will first resize to power of 2
+                resizer = transform_lib.Resize((in_shape_pow2[1], in_shape_pow2[2]))
+
+            logger.warn(
+                f"The input shape={in_shape} is not powers of 2 so we will rescale it and work with shape {in_shape_pow2}."
+            )
+            # for the rest treat the image as if pow 2
+            in_shape = in_shape_pow2
+
         self.in_shape = in_shape
         self.out_dim = out_dim
         self.hid_dim = hid_dim
         self.norm_layer = norm_layer
         self.activation = activation
         self.n_layers = n_layers
-
-        # if want non pow2 you can pass it through a linear layer to get the closest power of 2
-        # and if transposed a linear layer to get in_shape. But better if it's done when image is
-        # smaller (or best is simply to resize it to power of 2)
-        assert is_pow2(self.in_shape[1]) and is_pow2(self.in_shape[2])
 
         if self.n_layers is None:
             # divide length by 2 at every step until smallest is 2
@@ -457,18 +584,21 @@ class CNN(nn.Module):
             in_chan = out_chan
 
         if self.is_transpose:
-            layers = [
+            pre_layers = [
                 nn.Linear(self.out_dim, channels[0] * end_w * end_h, bias=is_bias),
                 nn.Unflatten(dim=-1, unflattened_size=(channels[0], end_h, end_w)),
-            ] + layers
+            ]
+            post_layers = [resizer]
+
         else:
-            layers += [
+            pre_layers = [resizer]
+            post_layers = [
                 nn.Flatten(start_dim=1),
                 nn.Linear(channels[-1] * end_w * end_h, self.out_dim),
                 # last layer should always have bias
             ]
 
-        self.model = nn.Sequential(*layers)
+        self.model = nn.Sequential(*(pre_layers + layers + post_layers))
 
         self.reset_parameters()
 

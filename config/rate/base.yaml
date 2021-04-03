@@ -1,4 +1,8 @@
 name: ???
+mode: ???
 range_coder: null
 factor_beta : 1 # factor that multiplies beta 
-kwargs: {}
+kwargs: 
+  z_dim: ${encoder.z_dim}
+  warmup_k_epoch: 0 # stop gradients to the encoder for the first k epoch for the rate
+  is_endToEnd: true

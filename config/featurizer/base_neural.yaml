@@ -2,3 +2,6 @@ defaults:
   - base
   
 is_learnable: True 
+
+loss:
+  beta_anneal: constant

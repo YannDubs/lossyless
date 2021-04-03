@@ -100,8 +100,11 @@ class Distributions:
         """Preprocesses parameters outputed from network (usually to satisfy some constraints)."""
         return suff_params
 
-    def detach(self):
-        """Detaches all the parameters."""
+    def detach(self, is_grad_flow=False):
+        """
+        Detaches all the parameters. With optional `is_grad_flow` that would ensure pytorch does
+        not complain about no grad (by setting grad to 0.
+        """
         raise NotImplementedError()
 
 
@@ -121,9 +124,14 @@ class DiagGaussian(Distributions, Independent):
         diag_scale = F.softplus(diag_log_var) + cls.min_std
         return diag_loc, diag_scale
 
-    def detach(self):
+    def detach(self, is_grad_flow=False):
         loc = self.base_dist.loc.detach()
         scale = self.base_dist.scale.detach()
+
+        if is_grad_flow:
+            loc = loc + 0 * self.base_dist.loc
+            scale = scale + 0 * self.base_dist.scale
+
         return DiagGaussian(loc, scale)
 
 
@@ -135,8 +143,12 @@ class Deterministic(Distributions, Independent):
     def __init__(self, param):
         super().__init__(Delta(param), 1)
 
-    def detach(self):
+    def detach(self, is_grad_flow=False):
         loc = self.base_dist.loc.detach()
+
+        if is_grad_flow:
+            loc = loc + 0 * self.base_dist.loc
+
         return Deterministic(loc)
 
 

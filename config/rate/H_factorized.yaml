@@ -2,3 +2,4 @@ defaults:
   - base_H
 
 name: H_factorized
+mode: H_factorized

@@ -4,9 +4,10 @@ hydra_colorlog
 hydra-submitit-launcher
 pytorch-lightning
 pytorch-lightning-bolts
+torchmetrics
 matplotlib
 seaborn
-git+git://github.com/InterDigitalInc/CompressAI.git#egg=compressai
+compressai
 pillow
 einops
 pandas
@@ -23,3 +24,19 @@ wandb
 
 # only necessary for computing area uinder RD curves (and could easily be computed without)
 sklearn
+
+# only needed for parallel ddp_sharded
+fairscale
+
+# hyperparameter tuning
+hydra-optuna-sweeper
+
+# transfer learning datasets
+tensorflow
+tensorflow_datasets
+
+# CLIP
+ftfy 
+regex 
+tqdm
+git+https://github.com/openai/CLIP.git

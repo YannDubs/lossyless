@@ -1,13 +1,17 @@
+import logging
+
 import pytorch_lightning as pl
 import torch
 from pytorch_lightning.core.decorators import auto_move_data
-from pytorch_lightning.metrics.functional import accuracy
+from torchmetrics.functional import accuracy
 
 from .architectures import FlattenMLP, get_Architecture
 from .distortions import mse_or_crossentropy_loss
 from .helpers import Normalizer, Timer, append_optimizer_scheduler_, is_img_shape
 
 __all__ = ["Predictor", "OnlineEvaluator"]
+
+logger = logging.getLogger(__name__)
 
 
 def get_featurizer_predictor(featurizer):
@@ -32,9 +36,9 @@ class Predictor(pl.LightningModule):
         self.is_clf = self.hparams.data.target_is_clf
 
         if featurizer is not None:
-            self.featurizer = featurizer
             # ensure not saved in checkpoint and frozen
-            self.featurizer.set_featurize_mode_()
+            featurizer.set_featurize_mode_()
+            self.featurizer = featurizer
             pred_in_shape = featurizer.out_shape
 
             is_normalize = self.hparams.data.kwargs.dataset_kwargs.is_normalize
@@ -53,7 +57,7 @@ class Predictor(pl.LightningModule):
         Architecture = get_Architecture(cfg_pred.arch, **cfg_pred.arch_kwargs)
         self.predictor = Architecture(pred_in_shape, self.hparams.data.target_shape)
 
-    @auto_move_data  # move data on correct device for inference
+    # @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_logits=True, is_return_logs=False):
         """Perform prediction for `x`.
 
@@ -108,7 +112,6 @@ class Predictor(pl.LightningModule):
 
         # Shape: [batch, 1]
         loss, loss_logs = self.loss(Y_hat, y)
-        # breakpoint()
 
         # Shape: []
         loss = loss.mean()
@@ -117,6 +120,7 @@ class Predictor(pl.LightningModule):
         logs["loss"] = loss
         if self.is_clf:
             logs["acc"] = accuracy(Y_hat.argmax(dim=-1), y)
+            logs["err"] = 1 - logs["acc"]
 
         return loss, logs
 
@@ -139,22 +143,31 @@ class Predictor(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
-        self.log_dict({f"train/pred/{k}": v for k, v in logs.items()})
+        self.log_dict({f"train/pred/{k}": v for k, v in logs.items()}, sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
         self.log_dict(
-            {f"val/pred/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"val/pred/{k}": v for k, v in logs.items()},
+            on_epoch=True,
+            on_step=False,
+            sync_dist=True,
         )
         return loss
 
     def test_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
         self.log_dict(
-            {f"test/pred/{k}": v for k, v in logs.items()}, on_epoch=True, on_step=False
+            {f"test/pred/{k}": v for k, v in logs.items()},
+            on_epoch=True,
+            on_step=False,
+            sync_dist=True,
         )
         return loss
+
+    def on_test_epoch_start(self):
+        self.featurizer.on_test_epoch_start()
 
     def configure_optimizers(self):
 
@@ -166,6 +179,7 @@ class Predictor(pl.LightningModule):
             self.parameters(),
             optimizers,
             schedulers,
+            name="lr_predictor",
         )
 
         return optimizers, schedulers
@@ -188,6 +202,9 @@ class OnlineEvaluator(torch.nn.Module):
     y_shape : tuple of in
         Shape of the output
 
+    Architecture : nn.Module
+        Module to be instantiated by `Architecture(in_shape, out_dim)`.
+
     is_classification : bool, optional
         Whether or not the task is a classification one.
 
@@ -196,29 +213,11 @@ class OnlineEvaluator(torch.nn.Module):
     """
 
     def __init__(
-        self,
-        in_dim,
-        out_dim,
-        is_classification=True,
-        n_hid_layers=1,
-        hid_dim=1024,
-        norm_layer="batchnorm",
-        dropout_p=0.2,
+        self, in_dim, out_dim, Architecture, is_classification=True,
     ):
         super().__init__()
-        self.model = FlattenMLP(
-            in_dim,
-            out_dim,
-            n_hid_layers=n_hid_layers,
-            hid_dim=hid_dim,
-            norm_layer=norm_layer,
-            dropout_p=dropout_p,
-        )
         self.is_classification = is_classification
-
-    def parameters(self):
-        """No parameters should be trained by main optimizer."""
-        return iter(())
+        self.model = Architecture(in_dim, out_dim)
 
     def aux_parameters(self):
         """Return iterator over parameters."""
@@ -227,7 +226,10 @@ class OnlineEvaluator(torch.nn.Module):
                 yield p
 
     def forward(self, batch, encoder):
-        x, (y, _) = batch  # only return the real label
+        x, y = batch
+
+        if isinstance(y, (tuple, list)):
+            y = y[0]  # only return the real label assumed to be first
 
         with torch.no_grad():
             # Shape: [batch, z_dim]
@@ -248,5 +250,6 @@ class OnlineEvaluator(torch.nn.Module):
         logs = dict(online_loss=loss, inference_time=inference_timer.duration)
         if self.is_classification:
             logs["online_acc"] = accuracy(Y_hat.argmax(dim=-1), y)
+            logs["online_err"] = 1 - logs["online_acc"]
 
         return loss, logs

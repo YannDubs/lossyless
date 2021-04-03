@@ -3,6 +3,7 @@ import copy
 import glob
 import logging
 import os
+import shutil
 import types
 from argparse import Namespace
 from contextlib import contextmanager
@@ -11,11 +12,35 @@ from pathlib import Path
 import numpy as np
 
 import pytorch_lightning as pl
+import pytorch_lightning.plugins.training_type as train_plugins
 import torch
 from lossyless.callbacks import save_img
 from omegaconf import OmegaConf
+from pytorch_lightning.overrides.data_parallel import LightningParallelModule
 
 logger = logging.getLogger(__name__)
+
+
+def format_resolver(x, pattern):
+    return f"{x:{pattern}}"
+
+
+def cfg_save(cfg, filename):
+    """Save a config as a yaml file."""
+    if isinstance(cfg, NamespaceMap):
+        cfg = OmegaConf.create(namespace2dict(cfg))
+    elif isinstance(cfg, dict):
+        cfg = OmegaConf.create(cfg)
+    elif OmegaConf.is_config(cfg):
+        pass
+    else:
+        raise ValueError(f"Unkown type(cfg)={type(cfg)}.")
+    return OmegaConf.save(cfg, filename)
+
+
+def cfg_load(filename):
+    """Load a config yaml file."""
+    return omegaconf2namespace(OmegaConf.load(filename))
 
 
 def omegaconf2namespace(cfg, is_allow_missing=False):
@@ -25,7 +50,10 @@ def omegaconf2namespace(cfg, is_allow_missing=False):
 
 
 def dict2namespace(d, is_allow_missing=False, all_keys=""):
-    """Converts recursively dictionary to namespace."""
+    """
+    Converts recursively dictionary to namespace. Does not work if there is a dict whose
+    parent is not a dict.
+    """
     namespace = NamespaceMap(d)
     for k, v in d.items():
         if v == "???" and not is_allow_missing:
@@ -33,6 +61,18 @@ def dict2namespace(d, is_allow_missing=False, all_keys=""):
         elif isinstance(v, dict):
             namespace[k] = dict2namespace(v, f"{all_keys}.{k}")
     return namespace
+
+
+def namespace2dict(namespace):
+    """
+    Converts recursively namespace to dictionary. Does not work if there is a namespace whose
+    parent is not a namespace.
+    """
+    d = dict(**namespace)
+    for k, v in d.items():
+        if isinstance(v, NamespaceMap):
+            d[k] = namespace2dict(v)
+    return d
 
 
 class NamespaceMap(Namespace, collections.abc.MutableMapping):
@@ -43,6 +83,13 @@ class NamespaceMap(Namespace, collections.abc.MutableMapping):
         # because from pytorch_lightning.utilities.apply_func import apply_to_collection doesn't work
         # with namespace (even though they think it does)
         super().__init__(**d)
+
+    def select(self, k):
+        """Allows selection using `.` in string."""
+        to_return = self
+        for subk in k.split("."):
+            to_return = to_return[subk]
+        return to_return
 
     def __getitem__(self, k):
         return self.__dict__[k]
@@ -296,3 +343,32 @@ class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
         self.best_k_models = {}
         self.best_k_models[self.best_model_path] = self.best_model_score
         self.kth_best_model_path = self.best_model_path
+
+
+# credits : https://github.com/pytorch/pytorch/issues/16885
+class DataParallelPassthrough(torch.nn.DataParallel):
+    """Like dataparallel but enable accessing attributes as if there was no ``DataParallel``."""
+
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)
+
+
+class DataParallelPlugin(train_plugins.DataParallelPlugin):
+    def setup(self, model):
+        # model needs to be moved to the device before it is wrapped
+        model.to(self.root_device)
+        self._model = DataParallelPassthrough(
+            LightningParallelModule(model), self.parallel_devices
+        )
+
+
+def remove_rf(path):
+    """Remove a file or a folder"""
+    path = Path(path)
+    if path.is_file():
+        path.unlink()
+    else:
+        shutil.rmtree(path)

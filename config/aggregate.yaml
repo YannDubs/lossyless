@@ -6,10 +6,17 @@ experiment: ???
 agg_mode: [summarize_metrics] # summarize_RD_curves, plot_all_RD_curves, plot_invariance_RD_curve, plot_scatter_lines, plot_superpose
 col_val_subset : {}
 
-collect_data:
+patterns:
   # name, pattern to find it
   featurizer: "results/exp_${experiment}/**/results_compressor.csv"
   predictor: "results/exp_${experiment}/**/results_predictor.csv"
+
+collect_data:
+  params_to_add: {}
+
+plot_optuna_hypopt:
+  storage: sqlite:///${kwargs.base_dir}/results/exp_${experiment}/optuna.db
+  study_name: main
 
 kwargs:
   base_dir: ${hydra:runtime.cwd}

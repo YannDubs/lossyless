@@ -1,5 +1,0 @@
-defaults:
-  - mnist
-
-name: fashionMnist
-dataset: fashionmnist

@@ -1,5 +1,0 @@
-name: adam1e-2
-mode: Adam
-kwargs:
-  lr: 0.01 
-  weight_decay: 0

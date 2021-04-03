@@ -9,6 +9,3 @@ experiment: debugcpu_${now:%Y-%m-%d_%H-%M-%S}
 trainer:
   gpus: 0
   precision: 32 # 16 does not work for cpu
-
-callbacks:
-  additional: [LearningRateMonitor] # if add other callbacks through additional will be replaced

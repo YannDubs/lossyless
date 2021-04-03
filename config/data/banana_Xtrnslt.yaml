@@ -1,0 +1,8 @@
+defaults:
+  - base_banana
+
+name: banana_Xtrnslt
+
+kwargs:
+  dataset_kwargs:
+    equivalence: x_translation

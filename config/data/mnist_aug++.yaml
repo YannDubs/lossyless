@@ -1,0 +1,9 @@
+defaults:
+  - base_mnist
+
+name: mnist_aug++
+
+kwargs:
+  dataset_kwargs:
+    equivalence: [x_translation++, y_translation++,rotation++,scale++,shear++] # don't use color changin because black and white
+    is_augment_val: True

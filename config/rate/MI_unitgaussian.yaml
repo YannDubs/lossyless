@@ -2,6 +2,7 @@ defaults:
   - base_MI
   
 name: MI_unitgaussian
+mode: MI
 kwargs:
   prior_fam: unitgaussian
   prior_kwargs: {}

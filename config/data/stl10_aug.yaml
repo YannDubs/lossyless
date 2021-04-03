@@ -1,0 +1,8 @@
+defaults:
+  - stl10
+
+name: stl10_aug
+
+kwargs:
+  dataset_kwargs:
+    is_augment_val: True

@@ -1,0 +1,26 @@
+# @package _global_
+defaults:
+  - neural_feat@featurizer
+  - override /architecture@encoder: simclr
+  - override /distortion: ince
+  - override /rate: H_simclr
+  - override /finetune: simclr
+
+featurizer:
+  name: bottleneck_simclr_postproj
+  loss:
+    beta_anneal: geometric
+
+encoder:
+  z_dim: 128
+  is_post_project: True
+
+distortion:
+  kwargs:
+    temperature: 0.1
+    is_cosine: True
+    is_project: false
+
+rate:
+  kwargs: 
+    warmup_k_epoch: 1 

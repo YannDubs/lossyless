@@ -1,3 +1,4 @@
+import logging
 import math
 
 import einops
@@ -10,10 +11,13 @@ from .distributions import Deterministic, DiagGaussian
 from .helpers import (
     BASE_LOG,
     UnNormalizer,
+    gather_from_gpus,
     is_colored_img,
     kl_divergence,
     mse_or_crossentropy_loss,
 )
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["get_distortion_estimator"]
 
@@ -221,20 +225,22 @@ class ContrastiveDistortion(nn.Module):
         Instantiated conditional distribution. Used to represent all the other positives.
 
     temperature : float, optional
-        Temperature scaling in InfoNCE.
+        Temperature scaling in InfoNCE. Recommended less than 1. 
 
     is_symmetric : bool, optional
         Whether to use symmetric logits in the case of probabilistic InfoNCE.
 
-    weight : float, optional
-        By how much to weight the denominator in InfoNCE. In [1] this corresponds to 1/alpha of
-        reweighted CPC. We can show that this is still a valid lower bound if set to at max
-        len(train_dataset) / (2*batch_size-1), and should thus be set to that.
+    effective_batch_size : float, optional
+        Effective batch size to use for estimating InfoNCE. Larger means that more variance but less bias,
+        but if too large can become not a lower bound anymore. In [1] this is (m+1)/(2*alpha), where
+        +1 and / 2 comes from the fact that talking about batch size rather than sample size.
+        If `None` will use the standard unweighted `effective_batch_size`. Another good possibility
+        is `effective_batch_size=len_dataset` which ensures that least bias while still lower bound.
 
     is_cosine : bool, optional
         Whether to use cosine similarity instead of dot products fot the logits of deterministic functions.
         This seems necessary for training, probably because if not norm of Z matters++ and then
-        large loss in entropy bottleneck.
+        large loss in entropy bottleneck. Recommended True.
 
     is_invariant : bool, optional
         Want to be invariant => same orbit / positive element. If not then the positive is the element itself
@@ -243,7 +249,11 @@ class ContrastiveDistortion(nn.Module):
         for nce (but not ince).
 
     is_project : bool, optional
-        Whether to use a porjection head.
+        Whether to use a porjection head. True seems to work better.
+
+    project_kwargs : dict, optional
+        Additional arguments to `Projector` in case `is_project`. Noe that is `out_shape` is <= 1 
+        it will be a percentage of z_dim.
 
     References
     ----------
@@ -257,27 +267,30 @@ class ContrastiveDistortion(nn.Module):
         temperature=0.1,
         is_symmetric=True,
         is_cosine=True,
-        weight=1,
+        effective_batch_size=None,
         is_invariant=True,
         is_project=True,
-        project_kwargs={"out_shape": 128},
-        is_bolts_loss=False,
+        project_kwargs={"mode": "mlp", "out_shape": 128},
     ):
         super().__init__()
         self.p_ZlX = p_ZlX
         self.temperature = temperature
         self.is_symmetric = is_symmetric
         self.is_cosine = is_cosine
-        self.weight = weight
+        self.effective_batch_size = effective_batch_size
         self.is_invariant = is_invariant
         self.is_project = is_project
         if self.is_project:
+            z_dim = self.p_ZlX.out_dim
+            if project_kwargs["out_shape"] <= 1:
+                project_kwargs["out_shape"] = max(
+                    10, int(z_dim * project_kwargs["out_shape"])
+                )
+
             Projector = get_Architecture(**project_kwargs)
-            self.projector = Projector(self.p_ZlX.out_dim)
+            self.projector = Projector(z_dim)
         else:
             self.projector = torch.nn.Identity()
-
-        self.is_bolts_loss = is_bolts_loss  # DEV
 
     def forward(self, z_hat, x_pos, p_Zlx):
         """Compute the distortion.
@@ -304,20 +317,17 @@ class ContrastiveDistortion(nn.Module):
         other : dict
             Additional values to return.
         """
+
         n_z, batch_size, z_dim = z_hat.shape
 
         # Distribution for positives. batch shape: [batch_size] ; event shape: [z_dim]
         p_Zlp = self.p_ZlX(x_pos)
 
-        # shape: [new_batch_size,z_dim]
-        #! logit should be after mult and shape [new_batch_size,new_batch_size]
+        # shape: [2 * batch_size, 2 * batch_size * world_size]
         logits = self.compute_logits(p_Zlx, p_Zlp)
 
         # shape: [2 * batch_size]
-        if self.is_bolts_loss:
-            hat_H_mlz, logs = self.nt_xent_loss(logits)
-        else:
-            hat_H_mlz, logs = self.compute_loss(logits)
+        hat_H_mlz, logs = self.compute_loss(logits)
 
         # shape: [n_z, batch_size]
         hat_H_mlz = (hat_H_mlz[:batch_size] + hat_H_mlz[batch_size:]) / 2
@@ -327,41 +337,7 @@ class ContrastiveDistortion(nn.Module):
 
         return hat_H_mlz, logs, other
 
-    def nt_xent_loss(self, out, eps=1e-6):  # DEV just to check if gives similar results
-        """
-            assume out_1 and out_2 are normalized
-            out_1: [batch_size, dim]
-            out_2: [batch_size, dim]
-        """
-
-        # out: [2 * batch_size, dim]
-        # out_dist: [2 * batch_size * world_size, dim]
-        out = out
-        out_dist = out
-        bs2 = out.shape[0]
-        out_1 = out[: bs2 // 2, ...]
-        out_2 = out[bs2 // 2 :, ...]
-
-        # cov and sim: [2 * batch_size, 2 * batch_size * world_size]
-        # neg: [2 * batch_size]
-        cov = torch.mm(out, out_dist.t().contiguous())
-        sim = torch.exp(cov / self.temperature)
-        neg = sim.sum(dim=-1)
-
-        # from each row, subtract e^1 to remove similarity measure for x1.x1
-        row_sub = torch.Tensor(neg.shape).fill_(math.e).to(neg.device)
-        neg = torch.clamp(neg - row_sub, min=eps)  # clamp for numerical stability
-
-        # Positive similarity, pos becomes [2 * batch_size]
-        pos = torch.exp(torch.sum(out_1 * out_2, dim=-1) / self.temperature)
-        pos = torch.cat([pos, pos], dim=0)
-
-        loss = -torch.log(pos / (neg + eps))
-
-        return loss, {}
-
     def compute_logits(self, p_Zlx, p_Zlp):
-        # TODO make it work for distributed training
 
         if isinstance(p_Zlx, DiagGaussian):
             assert not self.is_project
@@ -398,17 +374,13 @@ class ContrastiveDistortion(nn.Module):
                 # equivalent to (kl(p||q) + kl(q||p))/2 for each pair
                 logits = (logits + logits.T) / 2
 
-        else:
+        elif isinstance(p_Zlx, Deterministic):
+
             # if you are using a deterministic representation then use standard InfoNCE
             # because if not KL is none differentiable
             # z,z_pos. shape: [batch_size,z_dim]
-            if isinstance(p_Zlx, Deterministic):
-                z = p_Zlx.base_dist.loc
-                z_pos = p_Zlp.base_dist.loc
-            else:
-                # assume outputs are tensors of shape: [n_z,batch_size,z_dim]
-                z = p_Zlx.squeeze(0)
-                z_pos = p_Zlp.squeeze(0)
+            z = p_Zlx.base_dist.loc
+            z_pos = p_Zlp.base_dist.loc
 
             z = self.projector(z)
             z_pos = self.projector(z_pos)
@@ -417,29 +389,43 @@ class ContrastiveDistortion(nn.Module):
             zs = torch.cat([z, z_pos], dim=0)
 
             if self.is_cosine:
-                # note that simclr head projector already normalizes, but not an issue to normalize
-                # twice
+                # Note: simclr head projector already normalizes, but can issue normalize twice
                 zs = F.normalize(zs, dim=1, p=2)
 
-            # shape: [2*batch_size,2*batch_size]
-            # logits = zs @ zs.T
-            # logits = torch.mm(zs, zs_parallel.t().contiguous())
-            logits = zs  # DEV
+            # shape: [2*batch_size, 2*batch_size]
+            logits = zs @ zs.T
+
+        else:
+            raise ValueError(f"Unkown type(p_Zlx)={type(p_Zlx)}.")
+
+        # collect all negatives on different devices.
+        if torch.distributed.is_available() and torch.distributed.is_initialized():
+            list_logits = gather_from_gpus(logits)
+            curr_gpu = torch.distributed.get_rank()
+            curr_logits = list_logits[curr_gpu]
+            other_logits = torch.cat(
+                list_logits[:curr_gpu] + list_logits[curr_gpu + 1 :], dim=-1
+            )
+
+            # shape: [2*batch_size, 2*batch_size * world_size]
+            logits = torch.cat([curr_logits, other_logits], dim=1)
 
         return logits
 
     def compute_loss(self, logits):
+        n_classes = logits.size(1)
         new_batch_size = logits.size(0)
         batch_size = new_batch_size // 2
         device = logits.device
 
-        logits = logits @ logits.T  # DEV
-        logits /= self.temperature
-
         if self.is_invariant:
+            # select all but current example.
             mask = ~torch.eye(new_batch_size, device=device).bool()
-            # select all but current.
-            n_classes = new_batch_size - 1  # n classes in clf
+            n_to_add = n_classes - new_batch_size
+            ones = torch.ones(new_batch_size, n_to_add, device=device).bool()
+            # shape: [2*batch_size, 2*batch_size * world_size]
+            mask = torch.cat([mask, ones], dim=1)
+            n_classes -= 1  # remove the current example due to masking
             logits = logits[mask].view(new_batch_size, n_classes)
 
             # infoNCE is essentially the same as a softmax (where wights are other z => try to predict
@@ -449,21 +435,30 @@ class ContrastiveDistortion(nn.Module):
             arange = torch.arange(batch_size, device=device)
             pos_idx = torch.cat([arange + batch_size - 1, arange], dim=0)
         else:
-            n_classes = new_batch_size  # all examples ( do not remove current)
             # use NCE which is not invariant to transformations =>
             # the positive example is the example  itself
             pos_idx = torch.arange(new_batch_size, device=device)
 
-        if self.weight != 1:
-            # TODO CHECK correct (And without self.is_invariant )
-            # you want to multiply \sum e(negative) in the denomiator by to_mult
-            to_mult = (n_classes - (1 / self.weight)) / (n_classes - 1)
+        if self.effective_batch_size is not None:
+            # want the reweighting so that as if the batchsize was entire dataset
+            # so number of negatives would be 2*detaset - 1 (one being beign current)
+            effective_n_classes = 2 * self.effective_batch_size - 1
+
+            # you want to multiply \sum exp(negative) in the denominator by to_mult
+            # so that they have an effective weight of `effective_n_classes - 1`
+            # -1 comes from the fact that only the negatives
+            to_mult = (effective_n_classes - 1) / (n_classes - 1)
+
             # equivalent: add log(to_mult) to every negative logits
             # equivalent: add - log(to_mult) to positive logits
             to_add = -math.log(to_mult)
             to_add = to_add * torch.ones_like(logits[:, 0:1])  # correct shape
             logits.scatter_add_(1, pos_idx.unsqueeze(1), to_add)
             # when testing use `logits.gather(1, pos_idx.unsqueeze(1))` to see pos
+        else:
+            effective_n_classes = n_classes
+
+        logits /= self.temperature
 
         # I[Z,f(M(X))] = E[ log \frac{(N-1) exp(z^T z_p)}{\sum^{N-1} exp(z^T z')} ]
         # = log(N-1) + E[ log \frac{ exp(z^T z_p)}{\sum^{N-1} exp(z^T z')} ]
@@ -471,9 +466,13 @@ class ContrastiveDistortion(nn.Module):
         # = log(N-1) + E[ log softmax(z^Tz_p) ]
         # = log(N-1) - E[ crossentropy(z^Tz, p) ]
         # = \hat{H}[f(M(X))] - \hat{H}[f(M(X))|Z]
-        hat_H_m = math.log(self.weight * n_classes)
+        hat_H_m = math.log(effective_n_classes)
         hat_H_mlz = F.cross_entropy(logits, pos_idx, reduction="none")
 
-        logs = dict(I_q_zm=(hat_H_m - hat_H_mlz.mean()) / math.log(BASE_LOG))
+        logs = dict(
+            I_q_zm=(hat_H_m - hat_H_mlz.mean()) / math.log(BASE_LOG),
+            hat_H_m=hat_H_m / math.log(BASE_LOG),
+            n_negatives=n_classes,
+        )
 
         return hat_H_mlz, logs

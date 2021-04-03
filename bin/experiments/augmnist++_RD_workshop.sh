@@ -74,28 +74,8 @@ python aggregate.py \
        +plot_invariance_RD_curve.desirable_distortion="test/pred/loss" \
        agg_mode=[summarize_metrics,summarize_RD_curves,plot_all_RD_curves,plot_invariance_RD_curve] || true #  make sure continue even if error
 
-# col_val_subset=""
-# rate_cols="['test/feat/rate']"
-# distortion_cols="['test/feat/distortion','test/feat/online_loss','test/feat/online_acc']"
-# compare="dist"
-# data="featurizer" # want to access both ther featurizer data and the  predictor data
-# python aggregate.py \
-#        experiment=$experiment  \
-#        $col_val_subset \
-#        collect_data.predictor=null \
-#        +summarize_RD_curves.data="${data}" \
-#        +summarize_RD_curves.rate_cols="${rate_cols}" \
-#        +summarize_RD_curves.distortion_cols="${distortion_cols}" \
-#        +summarize_RD_curves.mse_cols="${distortion_cols}" \
-#        +plot_all_RD_curves.data="${data}" \
-#        +plot_all_RD_curves.rate_cols="${rate_cols}" \
-#        +plot_all_RD_curves.distortion_cols="${distortion_cols}" \
-#        +plot_all_RD_curves.hue=$compare \
-#        agg_mode=[summarize_metrics,summarize_RD_curves,plot_all_RD_curves]
 
-
-
-# plot loaded model
+#plot loaded model
 col_val_subset=""
 python load_pretrained.py \
       load_pretrained.experiment=$experiment  \
@@ -106,3 +86,35 @@ python load_pretrained.py \
       $kwargs_multi \
       load_pretrained.mode=[latent_traversals_plot,reconstruct_image_plot] \
       -m 
+
+# col_val_subset=""
+# python load_pretrained.py \
+#       load_pretrained.experiment=$experiment  \
+#       $col_val_subset \
+#       $kwargs  \
+#       server=none \
+#       trainer.gpus=0 \
+#       distortion=ivae \
+#       featurizer.loss.beta=0.1 \
+#       seed=1 \
+#       +load_pretrained.reconstruct_image_plot_placeholder.is_single_row=True \
+#       +load_pretrained.reconstruct_image_plot_placeholder.add_standard='\ \(130 Bits\)' \
+#       +load_pretrained.reconstruct_image_plot_placeholder.add_invariant='\ \(48 Bits\)' \
+#       load_pretrained.mode=[reconstruct_image_plot_placeholder] \
+#       -m
+
+# col_val_subset=""
+# python load_pretrained.py \
+#       load_pretrained.experiment=$experiment  \
+#       $col_val_subset \
+#       $kwargs  \
+#       server=none \
+#       trainer.gpus=0 \
+#       distortion=ivae \
+#       featurizer.loss.beta=0.1 \
+#       seed=1 \
+#       +load_pretrained.reconstruct_image_plot_placeholder.is_single_row=False \
+#       +load_pretrained.reconstruct_image_plot_placeholder.add_standard='\ \(130 Bits\)' \
+#       +load_pretrained.reconstruct_image_plot_placeholder.add_invariant='\ \(48 Bits\)' \
+#       load_pretrained.mode=[reconstruct_image_plot_placeholder] \
+#       -m

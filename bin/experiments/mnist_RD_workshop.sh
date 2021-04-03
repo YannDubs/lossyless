@@ -57,31 +57,43 @@ fi
 wait
 
 #for featurizer
+# col_val_subset=""
+# rate_cols="['test/feat/rate']"
+# distortion_cols="['test/feat/distortion','test/feat/online_loss','test/feat/online_acc','train/feat/online_acc','test/pred/loss','test/pred/acc','train/pred/acc']"
+# compare="dist"
+# data="merged" # want to access both ther featurizer data and the  predictor data
+# python aggregate.py \
+#        experiment=$experiment  \
+#        $col_val_subset \
+#        +summarize_RD_curves.data="${data}" \
+#        +summarize_RD_curves.rate_cols="${rate_cols}" \
+#        +summarize_RD_curves.distortion_cols="${distortion_cols}" \
+#        +summarize_RD_curves.mse_cols="${distortion_cols}" \
+#        +plot_all_RD_curves.data="${data}" \
+#        +plot_all_RD_curves.rate_cols="${rate_cols}" \
+#        +plot_all_RD_curves.distortion_cols="${distortion_cols}" \
+#        +plot_all_RD_curves.hue=$compare \
+#        +plot_invariance_RD_curve.data="${data}" \
+#        +plot_invariance_RD_curve.noninvariant='vae' \
+#        +plot_invariance_RD_curve.logbase_x=2 \
+#        +plot_invariance_RD_curve.desirable_distortion="test/pred/loss" \
+#        agg_mode=[summarize_metrics,summarize_RD_curves,plot_all_RD_curves,plot_invariance_RD_curve] || true #  make sure continue even if error
+
+
+#plot loaded model
 col_val_subset=""
-rate_cols="['test/feat/rate']"
-distortion_cols="['test/feat/distortion','test/feat/online_loss','test/feat/online_acc','test/pred/loss','test/pred/acc']"
-compare="dist"
-data="merged" # want to access both ther featurizer data and the  predictor data
-python aggregate.py \
-       experiment=$experiment  \
-       $col_val_subset \
-       +summarize_RD_curves.data="${data}" \
-       +summarize_RD_curves.rate_cols="${rate_cols}" \
-       +summarize_RD_curves.distortion_cols="${distortion_cols}" \
-       +summarize_RD_curves.mse_cols="${distortion_cols}" \
-       +plot_all_RD_curves.data="${data}" \
-       +plot_all_RD_curves.rate_cols="${rate_cols}" \
-       +plot_all_RD_curves.distortion_cols="${distortion_cols}" \
-       +plot_all_RD_curves.hue=$compare \
-       +plot_all_RD_curves.logbase_x=2 \
-       +plot_invariance_RD_curve.data="${data}" \
-       +plot_invariance_RD_curve.noninvariant='vae' \
-       +plot_invariance_RD_curve.logbase_x=2 \
-       +plot_invariance_RD_curve.desirable_distortion="test/pred/loss" \
-       agg_mode=[summarize_metrics,summarize_RD_curves,plot_all_RD_curves,plot_invariance_RD_curve] || true #  make sure continue even if error
+python load_pretrained.py \
+      load_pretrained.experiment=$experiment  \
+      $col_val_subset \
+      $kwargs  \
+      server=none \
+      trainer.gpus=0 \
+      $kwargs_multi \
+      load_pretrained.mode=[latent_traversals_plot,reconstruct_image_plot] \
+      -m 
 
 
-# plot loaded model
+
 # col_val_subset=""
 # python load_pretrained.py \
 #       load_pretrained.experiment=$experiment  \
@@ -89,7 +101,27 @@ python aggregate.py \
 #       $kwargs  \
 #       server=none \
 #       trainer.gpus=0 \
-#       $kwargs_multi \
-#       distortion=vae,ivae \
-#       load_pretrained.mode=[latent_traversals_plot,reconstruct_image_plot] \
-#       -m 
+#       distortion=ivae \
+#       featurizer.loss.beta=0.1 \
+#       seed=1 \
+#       +load_pretrained.reconstruct_image_plot_placeholder.is_single_row=True \
+#       +load_pretrained.reconstruct_image_plot_placeholder.add_standard='\ \(79 Bits\)' \
+#       +load_pretrained.reconstruct_image_plot_placeholder.add_invariant='\ \(57 Bits\)' \
+#       load_pretrained.mode=[reconstruct_image_plot_placeholder] \
+#       -m
+
+# col_val_subset=""
+# python load_pretrained.py \
+#       load_pretrained.experiment=$experiment  \
+#       $col_val_subset \
+#       $kwargs  \
+#       server=none \
+#       trainer.gpus=0 \
+#       distortion=ivae \
+#       featurizer.loss.beta=0.1 \
+#       seed=1 \
+#       +load_pretrained.reconstruct_image_plot_placeholder.is_single_row=False \
+#       +load_pretrained.reconstruct_image_plot_placeholder.add_standard='\ \(79 Bits\)' \
+#       +load_pretrained.reconstruct_image_plot_placeholder.add_invariant='\ \(57 Bits\)' \
+#       load_pretrained.mode=[reconstruct_image_plot_placeholder] \
+#       -m

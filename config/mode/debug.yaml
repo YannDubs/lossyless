@@ -19,7 +19,8 @@ trainer:
   profiler: simple # use `simple` or `"advanced"` to find bottleneck
 
 callbacks:
-  additional: ["GPUStatsMonitor","LearningRateMonitor"] # if add other callbacks through additional will be replaced
+  GPUStatsMonitor: 
+    is_use : true
 
 evaluation:
   featurizer:

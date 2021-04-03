@@ -1,9 +1,0 @@
-
-defaults:
-  - base_imagenet
-
-name: simclrimagenet
-
-kwargs:
-  dataset_kwargs:
-    equivalence: [simclr_imagenet]

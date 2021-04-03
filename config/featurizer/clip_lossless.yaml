@@ -1,0 +1,21 @@
+# @package _global_
+defaults:
+  - neural_feat@featurizer
+  - override /architecture@encoder: clip
+  - override /distortion: ince
+  - override /rate: lossless
+
+featurizer:
+  name: clip_lossless
+
+encoder:
+  z_dim: 1024
+
+distortion:
+  kwargs:
+    temperature: 0.01
+    is_cosine: True
+    is_project: False
+
+rate:
+  warmup_k_epoch: 1 

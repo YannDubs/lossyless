@@ -1,0 +1,8 @@
+defaults:
+  - base_banana
+
+name: banana_rot
+
+kwargs:
+  dataset_kwargs:
+    equivalence: rotation

@@ -1,4 +1,4 @@
-name: expdecay
+name: expdecay_plateau
 modes: [expdecay, ReduceLROnPlateau] # list of scheduler to use
 kwargs:
   # all kwargs
@@ -14,3 +14,5 @@ kwargs:
     threshold_mode: rel # relative threshold instead of avsolute
     verbose: True
     min_lr: 1e-7 # minimum learning reate
+    kwargs_config_scheduler:
+      monitor: ${checkpoint.kwargs.monitor}

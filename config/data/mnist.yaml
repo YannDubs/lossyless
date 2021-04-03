@@ -1,8 +1,9 @@
 defaults:
-  - trainaugmnist
+  - base_mnist
 
 name: mnist
 
 kwargs:
   dataset_kwargs:
     equivalence: [] # no augmentation
+    is_augment_val: False

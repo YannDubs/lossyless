@@ -1,0 +1,26 @@
+# @package _global_
+defaults:
+  - neural_feat@featurizer
+  - override /architecture@encoder: clip
+  - override /distortion: ince
+  - override /rate: H_hyper
+  - override /finetune: clip
+
+featurizer:
+  name: bottleneck_clip_disjoint
+  loss:
+    beta_anneal: geometric
+
+encoder:
+  z_dim: 1024
+
+distortion:
+  kwargs:
+    temperature: 0.01
+    is_cosine: True
+    is_project: False
+
+rate:
+  kwargs: 
+    warmup_k_epoch: 1 # really important to warmup
+    is_endToEnd: True

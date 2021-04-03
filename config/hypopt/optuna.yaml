@@ -1,0 +1,12 @@
+# @package _global_
+hydra:
+  sweeper:
+    _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
+    optuna_config:
+      study_name: main
+      direction: ${monitor_direction} # whether to maximize or mimize an objective (the objective is selected by results_to_return). If multi objective this should be a list
+      n_trials: 100 # number of total trials (i.e. will launch n_trials//n_jobs job batches, every time with better parameters)
+      n_jobs: 10 # number of jobs to run in parallel (each differen slurm job)
+      sampler: tpe # which sampler https://optuna.readthedocs.io/en/stable/reference/generated/optuna.samplers.TPESampler.html
+      seed: ${seed}
+      storage: sqlite:///${hydra.runtime.cwd}/results/exp_${experiment}/optuna.db

@@ -1,0 +1,8 @@
+name: cosine_restart
+modes: ["CosineAnnealingWarmRestarts"] # list of scheduler to use
+kwargs:
+  # all kwargs
+  CosineAnnealingWarmRestarts:
+    T_0: 5
+    T_mult: 2
+    eta_min: 0
