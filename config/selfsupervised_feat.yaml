@@ -75,7 +75,6 @@ featurizer:
     beta: 0.1
     beta_anneal: linear
     n_z_samples: 1
-    is_scale_beta: true
 
 encoder:
   z_dim: ???

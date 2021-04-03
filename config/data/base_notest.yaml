@@ -1,0 +1,4 @@
+# @package _global_
+evaluation:
+  # evaluate on validation set because you don't have access to test set
+  is_eval_on_test: False  

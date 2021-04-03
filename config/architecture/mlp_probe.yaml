@@ -3,6 +3,6 @@ arch: mlp
 arch_kwargs:
   hid_dim: 1024
   norm_layer: batchnorm
-  n_hid_layers: 1
+  n_hid_layers: 2
   activation: ReLU
   dropout_p: 0.2

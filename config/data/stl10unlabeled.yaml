@@ -8,5 +8,5 @@ dataset: stl10unlabeled
 kwargs:
   val_size: 0.05 #! very little labels so that might make an impact ? 
   dataset_kwargs:
-    equivalence: [x_translation, y_translation,rotation,scale,color] #! to tune 
+    equivalence: [hflip,resize_crop,color,gray] #! to tune 
     is_augment_val: True # if you don't augment test set then SSL validation distortion is meaningleass
