@@ -11,35 +11,26 @@ from pathlib import Path
 import h5py
 import numpy as np
 import pandas as pd
-from PIL import Image
-from tqdm import tqdm
-
 import torch
 import torchvision
 from lossyless.helpers import BASE_LOG, Normalizer, check_import
+from PIL import Image
 from torch.utils.data import random_split
 from torchvision import transforms as transform_lib
-from torchvision.datasets import CIFAR10, CIFAR100, MNIST, STL10, ImageFolder, ImageNet
-from torchvision.transforms import (
-    ColorJitter,
-    RandomAffine,
-    RandomApply,
-    RandomErasing,
-    RandomGrayscale,
-    RandomHorizontalFlip,
-    RandomResizedCrop,
-    RandomRotation,
-)
+from torchvision.datasets import (CIFAR10, CIFAR100, MNIST, STL10, ImageFolder,
+                                  ImageNet)
+from torchvision.transforms import (ColorJitter, Compose, RandomAffine,
+                                    RandomApply, RandomErasing,
+                                    RandomGrayscale, RandomHorizontalFlip,
+                                    RandomResizedCrop, RandomRotation,
+                                    RandomVerticalFlip)
+from tqdm import tqdm
 from utils.estimators import discrete_entropy
 from utils.helpers import remove_rf
 
-from .augmentations import (
-    CIFAR10Policy,
-    ImageNetPolicy,
-    SVHNPolicy,
-    get_finetune_augmentations,
-    get_simclr_augmentations,
-)
+from .augmentations import (CIFAR10Policy, ImageNetPolicy,
+                            get_finetune_augmentations,
+                            get_simclr_augmentations)
 from .base import LossylessDataModule, LossylessDataset
 from .helpers import int_or_ratio, npimg_resize
 
@@ -86,6 +77,9 @@ class LossylessImgDataset(LossylessDataset):
     equivalence : set of str, optional
         List of equivalence relationship with respect to which to be invariant.
 
+    p_augment : float, optional
+        Probability (in [0,1]) of applying the entire augmentation.
+
     is_augment_val : bool, optional
         Whether to augment the validation + test set.
 
@@ -112,6 +106,7 @@ class LossylessImgDataset(LossylessDataset):
         self,
         *args,
         equivalence={},
+        p_augment=1.0,
         is_augment_val=False,
         is_normalize=True,
         base_resize="resize",
@@ -123,6 +118,7 @@ class LossylessImgDataset(LossylessDataset):
         self.is_augment_val = is_augment_val
         self.base_resize = base_resize
         self.curr_split = curr_split
+        self.p_augment = p_augment
 
         self.base_tranform = self.get_base_transform()
         self.PIL_augment, self.tensor_augment = self.get_curr_augmentations()
@@ -159,7 +155,7 @@ class LossylessImgDataset(LossylessDataset):
     @property
     def augmentations(self):
         """
-        Return a dictortionary of dictionaries containing all possible augmentations of interest.
+        Return a dictionary of dictionaries containing all possible augmentations of interest.
         first dictionary say which kind of data they act on.
         """
         shape = self.shapes_x_t_Mx["input"]
@@ -186,6 +182,7 @@ class LossylessImgDataset(LossylessDataset):
                 ),
                 "gray": RandomGrayscale(p=0.2),
                 "hflip": RandomHorizontalFlip(p=0.5),
+                "vflip": RandomVerticalFlip(p=0.5),
                 "resize_crop": RandomResizedCrop(
                     size=(shape[1], shape[2]), scale=(0.3, 1.0), ratio=(0.7, 1.4)
                 ),
@@ -275,7 +272,9 @@ class LossylessImgDataset(LossylessDataset):
             else:
                 raise ValueError(f"Unkown `equivalence={equiv}`.")
 
-        return transform_lib.Compose(PIL_augment), transform_lib.Compose(tensor_augment)
+        PIL_augment = RandomApply(Compose(PIL_augment),p=self.p_augment)
+        tensor_augment = RandomApply(Compose(tensor_augment),p=self.p_augment)
+        return PIL_augment, tensor_augment
 
     def get_curr_augmentations(self):
         """Return the current augmentations transorms (tuple for PIL and tensor)."""
@@ -1087,6 +1086,21 @@ class GalaxyDataset(LossylessImgDataset):
     @property
     def dataset_name(self):
         return f"galaxy{self.resolution}"
+
+    @property
+    def augmentations(self):
+        # TODO remove if we don't end up using those
+        augmentations = super().augmentations()
+
+        # these are the augmentations used in kaggle
+        PIL_update ={
+                # in kaggle authors translate 69x69 images by /pm 4 pixel = 11.6%
+                "y_translation": RandomAffine(0, translate=(0, 0.116)),
+                "x_translation": RandomAffine(0, translate=(0.116, 0)),
+                "scale": RandomAffine(0, scale=(1.0/1.3, 1.3)),
+            }
+        augmentations["PIL"].update(PIL_update)
+        return augmentations
 
 
 class GalaxyDataModule(LossylessDataModule):
