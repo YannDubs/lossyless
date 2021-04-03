@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-experiment="hyp_ince_stl10"
+experiment="hyp_ince_cifar10"
 notes="
-**Goal**: Hyperparameter tuning for ince on stl10
+**Goal**: Hyperparameter tuning for ince on cifar10
 "
 
 # parses special mode for running the script
@@ -17,8 +17,8 @@ is_only_feat=False
 featurizer=neural_feat
 architecture@encoder=resnet18
 architecture@predictor=mlp_probe
-data@data_feat=stl10unlabeled
-data@data_pred=stl10_aug
+data@data_feat=cifar10_aug
+data@data_pred=cifar10_aug
 rate=H_hyper
 trainer.max_epochs=50
 +update_trainer_pred.max_epochs=100
@@ -65,7 +65,7 @@ scheduler@scheduler_feat=cosine,expdecay100,expdecay1000,plateau_quick,plateau,u
 scheduler@scheduler_coder=cosine_restart,expdecay100,plateau_quick,unifmultistep1000,unifmultistep100
 seed=0,1,2,3,4
 distortion.kwargs.project_kwargs.out_shape=tag(log,interval(0.01,0.5))
-distortion.kwargs.temperature=tag(log,interval(0.01,0.3))
+distortion.kwargs.temperature=tag(log,interval(5e-3,0.2))
 " 
 # distortion.factor_beta : instead of deacreasing weight given to rate will increase weight given to distortion
 # BATCH SIZE: for INCE it can be beneficial to use larger batches. THe issues is that this might be worst for other parts of the networks. SOme papers say using `is_lars=True` can mititgate the issue when using large batches

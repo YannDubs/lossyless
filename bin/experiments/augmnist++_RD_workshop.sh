@@ -75,7 +75,7 @@ python aggregate.py \
        agg_mode=[summarize_metrics,summarize_RD_curves,plot_all_RD_curves,plot_invariance_RD_curve] || true #  make sure continue even if error
 
 
-plot loaded model
+#plot loaded model
 col_val_subset=""
 python load_pretrained.py \
       load_pretrained.experiment=$experiment  \

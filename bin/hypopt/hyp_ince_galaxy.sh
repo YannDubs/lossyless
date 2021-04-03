@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-experiment="hyp_ince_stl10"
+experiment="hyp_ince_galaxy"
 notes="
-**Goal**: Hyperparameter tuning for ince on stl10
+**Goal**: Hyperparameter tuning for ince on galaxy
 "
 
 # parses special mode for running the script
@@ -17,16 +17,15 @@ is_only_feat=False
 featurizer=neural_feat
 architecture@encoder=resnet18
 architecture@predictor=mlp_probe
-data@data_feat=stl10unlabeled
-data@data_pred=stl10_aug
+data@data_feat=galaxy64
 rate=H_hyper
 trainer.max_epochs=50
 +update_trainer_pred.max_epochs=100
 distortion=ince
 $add_kwargs
 "
-#! here we are augmenting at test time also so the results will just be ahrder than standard results in litterature. We should also evaluate without augmenting at test time to get an idea of how well they perform
 #TODO increase epochs before pushing
+#TODO chose best augmentation from `hyp_galaxy_augmentations`
 
 # sweeping arguments
 kwargs_hypopt="
