@@ -19,19 +19,16 @@ import torchvision
 from lossyless.helpers import BASE_LOG, Normalizer, check_import
 from torch.utils.data import random_split
 from torchvision import transforms as transform_lib
-from torchvision.datasets import CIFAR10, CIFAR100, MNIST, STL10, ImageNet
+from torchvision.datasets import CIFAR10, CIFAR100, MNIST, STL10, ImageFolder, ImageNet
 from torchvision.transforms import (
-    CenterCrop,
     ColorJitter,
-    Lambda,
-    Normalize,
     RandomAffine,
+    RandomApply,
     RandomErasing,
+    RandomGrayscale,
     RandomHorizontalFlip,
     RandomResizedCrop,
     RandomRotation,
-    Resize,
-    ToTensor,
 )
 from utils.estimators import discrete_entropy
 from utils.helpers import remove_rf
@@ -69,6 +66,7 @@ __all__ = [
     "Cars196DataModule",
     "Pets37DataModule",
     "PCamDataModule",
+    "Caltech101DataModule",
     "Flowers102DataModule",
     "MnistDataModule",
     "GalaxyDataModule",
@@ -173,18 +171,26 @@ class LossylessImgDataset(LossylessDataset):
                 "shear": RandomAffine(0, shear=10),
                 "scale": RandomAffine(0, scale=(0.8, 1.2)),
                 "rotation++": RandomRotation(45),
+                "360_rotation": RandomRotation(360),
                 "y_translation++": RandomAffine(0, translate=(0, 0.25)),
                 "x_translation++": RandomAffine(0, translate=(0.25, 0)),
                 "shear++": RandomAffine(0, shear=25),
                 "scale++": RandomAffine(0, scale=(0.6, 1.4)),
-                "color": ColorJitter(
-                    brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
+                "color": RandomApply(
+                    [
+                        ColorJitter(
+                            brightness=0.4, contrast=0.4, saturation=0.4, hue=0.2
+                        )
+                    ],
+                    p=0.8,
                 ),
-                "hflip": RandomHorizontalFlip(),
-                "resizecrop": RandomResizedCrop(size=(shape[1], shape[2])),
+                "gray": RandomGrayscale(p=0.2),
+                "hflip": RandomHorizontalFlip(p=0.5),
+                "resize_crop": RandomResizedCrop(
+                    size=(shape[1], shape[2]), scale=(0.3, 1.0), ratio=(0.7, 1.4)
+                ),
                 "auto_cifar10": CIFAR10Policy(),
                 "auto_imagenet": ImageNetPolicy(),
-                "auto_svhn": SVHNPolicy(),
                 # NB you should use those 3 also at eval time
                 "simclr_cifar10": get_simclr_augmentations("cifar10", shape[-1]),
                 "simclr_imagenet": get_simclr_augmentations("imagenet", shape[-1]),
@@ -347,7 +353,7 @@ class MnistDataset(LossylessImgDataset, MNIST):
 
     def __init__(self, *args, curr_split="train", **kwargs):
         is_train = curr_split == "train"
-        super().__init__(curr_split=curr_split, train=is_train)
+        super().__init__(*args, curr_split=curr_split, train=is_train, **kwargs)
 
     # avoid duplicates by saving once at "MNIST" rather than at multiple  __class__.__name__
     @property
@@ -384,7 +390,7 @@ class MnistDataModule(LossylessImgDataModule):
 class Cifar10Dataset(LossylessImgDataset, CIFAR10):
     def __init__(self, *args, curr_split="train", **kwargs):
         is_train = curr_split == "train"
-        super().__init__(curr_split=curr_split, train=is_train)
+        super().__init__(*args, curr_split=curr_split, train=is_train, **kwargs)
 
     @property
     def shapes_x_t_Mx(self):
@@ -412,7 +418,7 @@ class Cifar10DataModule(LossylessImgDataModule):
 class Cifar100Dataset(LossylessImgDataset, CIFAR100):
     def __init__(self, *args, curr_split="train", **kwargs):
         is_train = curr_split == "train"
-        super().__init__(curr_split=curr_split, train=is_train)
+        super().__init__(*args, curr_split=curr_split, train=is_train, **kwargs)
 
     @property
     def shapes_x_t_Mx(self):
@@ -536,18 +542,11 @@ class ImagenetDataModule(LossylessImgDataModule):
 
 
 ### Tensorflow Datasets Modules ###
-
-# TODO use jpeg in hdf5. Currently this is very memory intensive
-# TODO maybe use FolderDataset instead???
-class TensorflowBaseDataset(LossylessImgDataset):
+class TensorflowBaseDataset(LossylessImgDataset, ImageFolder):
     """Base class for tensorflow-datasets. This will download using save as hdf5.
 
     Notes
     -----
-    - THis will *increase* the memory footprint compared to standard tensorflow becasue we are not
-    usign jpef (but gzip) for compression. If you really care about memory you should probably use
-    https://github.com/vahidk/tfrecord to convert tensorflow to pytorch iterable datasets. But I
-    didn't want interable datasets as it does not work well with lightning.
     - By default will load the datasets in a format usable by CLIP.
     - Only works for square cropping for now.
 
@@ -571,23 +570,18 @@ class TensorflowBaseDataset(LossylessImgDataset):
 
     class attributes
     ----------------
-    is_in_memory : bool, optional
-        Whether to load the entire dataset in memory. This only works if all images are of the same size.
-        Recommended for small datasets. Has to be given when downloading.
-
     min_size : int, optional
         Resizing of the smaller size of an edge to a certain value. If `None` does not resize.
         Recommended for images that will be always rescaled to a smaller version (for memory gains).
         Only used when downloading.
     """
 
-    is_in_memory = False
     min_size = 256
+    CHECK_FILENAME = "tfds_exist.txt"
 
     def __init__(
         self,
         root,
-        *args,
         curr_split="train",
         download=True,
         n_pixels=224,
@@ -606,94 +600,74 @@ class TensorflowBaseDataset(LossylessImgDataset):
         if download and not self.is_exist_data:
             self.download()
 
-        if self.is_in_memory:
-            with h5py.File(self.get_h5_file(curr_split), "r") as hf:
-                self.data = hf["X"][:]
-                self.targets = hf["Y"][:]
-        else:
-            # see https://discuss.pytorch.org/t/dataloader-when-num-worker-0-there-is-bug/25643/16
-            # if you want multiprocessing with h5py you have to only open the files in each worker
-            self.hf = None
-
         super().__init__(
-            *args, base_resize=base_resize, curr_split=curr_split, **kwargs
+            root=self.get_dir(self.curr_split),
+            base_resize=base_resize,
+            curr_split=curr_split,
+            **kwargs,
         )
+        self.root = root  # overwirte root for which is currently split folder
 
-    def get_h5_file(self, split):
-        """return the name of the file for a given split"""
-        tfds_split = self.to_tfds_split(split)
-        return Path(self.root) / self.dataset_name / f"{tfds_split}.h5"
+    def get_dir(self, split=None):
+        """Return the main directory or the one for a split."""
+        main_dir = Path(self.root) / self.dataset_name
+        if split is None:
+            return main_dir
+        else:
+            return main_dir / split
 
     @property
     def is_exist_data(self):
         """Whether the data is available."""
         is_exist = True
         for split in self.get_available_splits():
-            is_exist &= self.get_h5_file(split).is_file()
+            check_file = self.get_dir(split) / self.CHECK_FILENAME
+            is_exist &= check_file.is_file()
         return is_exist
 
     def download(self):
         """Download the data."""
-        batch_size = -1 if self.is_in_memory else 1
         tfds_splits = [self.to_tfds_split(s) for s in self.get_available_splits()]
-        np_datasets = tfds.as_numpy(
-            tfds.load(
-                name=self.dataset_name,
-                batch_size=batch_size,
-                data_dir=self.root,
-                as_supervised=True,
-                split=tfds_splits,
-            )
+        tfds_datasets, metadata = tfds.load(
+            name=self.dataset_name,
+            batch_size=1,
+            data_dir=self.root,
+            as_supervised=True,
+            split=tfds_splits,
+            with_info=True,
         )
-        tmp_files = list(
-            (Path(self.root) / self.dataset_name).glob("*")
-        )  # all files and folders that were downloaded by tfds
+        np_datasets = tfds.as_numpy(tfds_datasets)
+        metadata.write_to_directory(self.get_dir())
 
         for split, np_data in zip(self.get_available_splits(), np_datasets):
-            file_path = self.get_h5_file(split)
-            file_path.unlink(missing_ok=True)  # remove file if it exists
-            with h5py.File(file_path, "a") as hf:
-                for i, (x, y) in enumerate(tqdm(np_data)):
-                    if self.min_size is not None:
-                        x = npimg_resize(x, self.min_size)
+            split_path = self.get_dir(split)
+            remove_rf(split_path, not_exist_ok=True)
+            split_path.mkdir()
+            for i, (x, y) in enumerate(tqdm(np_data)):
+                if self.min_size is not None:
+                    x = npimg_resize(x, self.min_size)
 
-                    if self.is_in_memory:
-                        hf.create_dataset("X", data=x, compression="gzip")
-                        hf.create_dataset("Y", data=y, compression="gzip")
+                x = x.squeeze()  # given as batch of 1 (and squeeze if single channel)
+                target = y.squeeze().item()
 
-                    else:
-                        curr_group = hf.create_group(f"{i}")
-                        x = x[0]  # given as batch of 1
-                        assert x.ndim == 3
-                        X_dataset = curr_group.create_dataset(
-                            "X", data=x, compression="gzip"
-                        )
-                        Y_dataset = curr_group.create_dataset(
-                            "Y", data=y, compression="gzip"
-                        )
+                label_name = metadata.features["label"].int2str(target)
+                label_name = label_name.replace(" ", "_")
+
+                label_dir = split_path / label_name
+                label_dir.mkdir(exist_ok=True)
+
+                img_file = label_dir / f"{i}.jpeg"
+                Image.fromarray(x).save(img_file)
+
+        for split in self.get_available_splits():
+            check_file = self.get_dir(split) / self.CHECK_FILENAME
+            check_file.touch()
 
         # remove all downloading files
-        for tmp in tmp_files:
-            remove_rf(tmp)
+        remove_rf(Path(metadata.data_dir))
 
     def get_img_target(self, index):
-        if self.is_in_memory:
-            img = self.data[index]
-            target = self.targets[index]
-        else:
-            if self.hf is None:
-                # this will not deal with closing well => only close at end of program
-                # loading has to be done here because once per worker
-                self.hf = h5py.File(self.get_h5_file(self.curr_split), "r")
-
-            group = self.hf[f"{index}"]
-            img = group["X"][:]
-            target = group["Y"][:].squeeze()
-
-            if target.ndim == 0:
-                target = target.item()
-
-        img = transform_lib.functional.to_pil_image(img)
+        img, target = ImageFolder.__getitem__(self, index)
         return img, target
 
     def normalizer(self):
@@ -701,15 +675,7 @@ class TensorflowBaseDataset(LossylessImgDataset):
         return Normalizer(data_normalize, is_raise=True)
 
     def __len__(self):
-        if self.is_in_memory:
-            return len(self.data)
-
-        if self._length is None:
-            file_path = self.get_h5_file(self.curr_split)
-            with h5py.File(file_path, "r") as hf:
-                self._length = len(hf)
-
-        return self._length
+        return ImageFolder.__len__(self)
 
     @property
     def shapes_x_t_Mx(self):
@@ -736,7 +702,6 @@ class TensorflowBaseDataset(LossylessImgDataset):
 
 # Food101 #
 class Food101Dataset(TensorflowBaseDataset):
-    is_in_memory = False
     min_size = 256
 
     @property
@@ -763,7 +728,6 @@ class Food101DataModule(LossylessImgDataModule):
 
 # Sun 397 #
 class Sun397Dataset(TensorflowBaseDataset):
-    is_in_memory = False
     min_size = 256
 
     @property
@@ -789,7 +753,6 @@ class Sun397DataModule(LossylessImgDataModule):
 
 # Cars #
 class Cars196Dataset(TensorflowBaseDataset):
-    is_in_memory = False
     min_size = 256
 
     @property
@@ -811,7 +774,6 @@ class Cars196DataModule(LossylessImgDataModule):
 
 # Path Camelyon #
 class PCamDataset(TensorflowBaseDataset):
-    is_in_memory = False
     min_size = None
 
     @property
@@ -837,7 +799,6 @@ class PCamDataModule(LossylessImgDataModule):
 
 # Flowers 102 #
 class Flowers102Dataset(TensorflowBaseDataset):
-    is_in_memory = False
     min_size = 256
 
     @property
@@ -863,7 +824,6 @@ class Flowers102DataModule(LossylessImgDataModule):
 
 # Pets 37 #
 class Pets37Dataset(TensorflowBaseDataset):
-    is_in_memory = False
     min_size = 256
 
     @property
@@ -887,6 +847,31 @@ class Pets37DataModule(LossylessImgDataModule):
         return Pets37Dataset
 
 
+# Caltech 101 #
+class Caltech101Dataset(TensorflowBaseDataset):
+    min_size = 256
+
+    @property
+    def shapes_x_t_Mx(self):
+        shapes = super().shapes_x_t_Mx
+        shapes["target"] = (101,)
+        return shapes
+
+    @property
+    def dataset_name(self):
+        return "caltech101"
+
+    @property
+    def available_split(self):
+        return ["train", "test"]
+
+
+class Caltech101DataModule(LossylessImgDataModule):
+    @property
+    def Dataset(self):
+        return Caltech101Dataset
+
+
 ### Other Datasets ###
 
 # Galaxy Zoo #
@@ -900,7 +885,6 @@ class GalaxyDataset(LossylessImgDataset):
         resolution: int = 64,
         **kwargs,
     ):
-        # TODO check if need to normalize (if not add is_normalize=False in cfg) because very low std
         check_import("cv2", "GalaxyDataset")
 
         self.root = root
@@ -1062,21 +1046,6 @@ class GalaxyDataset(LossylessImgDataset):
             self.ids = np.load(path.join(data_dir, split + "_ids.npy"))
 
     @property
-    def augmentations(self):
-        return dict(
-            PIL={
-                "rotation": RandomRotation(360),
-                "y_translation": RandomAffine(0, translate=(0, 0.25)),
-                "x_translation": RandomAffine(0, translate=(0.25, 0)),
-                "scale": RandomAffine(0, scale=(0.8, 1.2)),
-                "color": ColorJitter(
-                    brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05
-                ),
-            },
-            tensor={"erasing": RandomErasing(value=0.5),},
-        )
-
-    @property
     def is_clf_x_t_Mx(self):
         is_clf = super(GalaxyDataset, self).is_clf_x_t_Mx
         # input should be true is using log loss for reconstruction (typically MNIST) and False if MSE (typically colored images)
@@ -1127,23 +1096,23 @@ class GalaxyDataModule(LossylessDataModule):
 
     def get_train_dataset(self, **dataset_kwargs):
         return self.Dataset(
-            self.data_dir, split="train", download=False, **dataset_kwargs,
+            self.data_dir, curr_split="train", download=False, **dataset_kwargs,
         )
 
     def get_val_dataset(self, **dataset_kwargs):
         return self.Dataset(
-            self.data_dir, split="valid", download=False, **dataset_kwargs,
+            self.data_dir, curr_split="valid", download=False, **dataset_kwargs,
         )
 
     def get_test_dataset(self, **dataset_kwargs):
         return self.Dataset(
-            self.data_dir, split="test", download=False, **dataset_kwargs,
+            self.data_dir, curr_split="test", download=False, **dataset_kwargs,
         )
 
     def prepare_data(self):
         for split in ["train", "valid", "test"]:
             self.Dataset(
-                self.data_dir, split=split, download=True, **self.dataset_kwargs,
+                self.data_dir, curr_split=split, download=True, **self.dataset_kwargs,
             )
 
     @property
