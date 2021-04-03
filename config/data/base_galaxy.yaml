@@ -4,5 +4,5 @@ defaults:
 
 kwargs:
   dataset_kwargs:
-    equivalence: [x_translation++,y_translation++,360_rotation,scale,color]
+    equivalence: [hflip,vflip,360_rotation,resize_crop,color,gray] # works better than the kaggle ones (this with ince is best and for ivaer auto_imagenet works best)
     is_normalize: False # TODO: test if better (I dont' think it will)
