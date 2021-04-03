@@ -146,7 +146,7 @@ class RateEstimator(torch.nn.Module):
         z_hat, rates, r_logs, r_other = self.forward_help(z, p_Zlx, parent)
 
         if (not self.is_endToEnd) or (parent.current_epoch < self.warmup_k_epoch):
-            # during disjoint training z_hat will still be returned but the rate is computed on
+            # during disjoint training z_hat will still be returned but the rate is computed
             # without backpropagating throught the encoder => only train rate_estimator parameters
 
             # make sure not changing featurizer. *0 to make sure pytorch does not complain about no grad
@@ -456,7 +456,7 @@ class HRateEstimator(RateEstimator):
         elif self.invertible_processing == "psd":
             self.scaling = torch.nn.Parameter(torch.randn(z_dim, z_dim))
             self.biasing = torch.nn.Parameter(torch.zeros(z_dim))
-            self.register_buffer("eye", torch.eye(512), persistent=False)
+            self.register_buffer("eye", torch.eye(z_dim), persistent=False)
         elif self.invertible_processing is None:
             pass
         else:
@@ -495,11 +495,12 @@ class HRateEstimator(RateEstimator):
             z = (z + self.biasing) * self.scaling.exp()
 
         elif self.invertible_processing == "psd":
-            # not working : getting size issue
-            # TODO DEBUG
+            n_z, batch, z_dim = z.shape
+            z = einops.rearrange(z, "n_z b d -> (n_z b) d", n_z=n_z)
             mat = torch.mm(self.scaling, self.scaling.T) + 1e-1 * self.eye
             z = z + self.biasing
-            z = torch.matmul(mat, z.T).T
+            z = torch.matmul(z, mat)
+            z = einops.rearrange(z, "(n_z b) d -> n_z b d", n_z=n_z)
             kwargs["mat"] = mat
 
         return z, kwargs
@@ -509,11 +510,14 @@ class HRateEstimator(RateEstimator):
             z_hat = (z_hat / self.scaling.exp()) - self.biasing
 
         elif self.invertible_processing == "psd":
+            n_z, batch, z_dim = z_hat.shape
+            z_hat = einops.rearrange(z_hat, "n_z b d -> (n_z b) d", n_z=n_z)
             if mat is None:
                 mat = torch.mm(self.scaling, self.scaling.T) + 1e-1 * self.eye
             chol = torch.cholesky(mat)
             z_hat = torch.cholesky_solve(z_hat.T, chol).T
             z_hat = z_hat - self.biasing
+            z_hat = einops.rearrange(z_hat, "(n_z b) d -> n_z b d", n_z=n_z)
 
         return z_hat
 
@@ -712,6 +716,7 @@ class HRateHyperprior(HRateEstimator):
         return scales_hat, means_hat
 
     def forward_help(self, z, _, __):
+
         # shape: [n_z_dim, batch_shape, side_z_dim]
         side_z = self.side_encoder(z)
         side_z_hat, q_s = self.entropy_bottleneck(side_z)

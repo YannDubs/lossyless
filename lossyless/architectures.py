@@ -1,3 +1,4 @@
+import logging
 import math
 from functools import partial
 from typing import Iterable
@@ -7,15 +8,23 @@ import torch.nn as nn
 import torchvision
 from compressai.layers import GDN
 from pl_bolts.models.self_supervised import SimCLR
+from torchvision import transforms as transform_lib
 
-from .helpers import batch_flatten, batch_unflatten, is_pow2, prod, weights_init
+from .helpers import (
+    batch_flatten,
+    batch_unflatten,
+    closest_pow,
+    is_pow2,
+    prod,
+    weights_init,
+)
 
 try:
     import clip
 except ImportError:
     pass
 
-
+logger = logging.getLogger(__name__)
 __all__ = ["get_Architecture"]
 
 
@@ -468,7 +477,8 @@ class CNN(nn.Module):
 
     Notes
     -----
-    - Only works for images whose side is a power of 2 (not necessarily  squared).
+    - if some of the sides of the inputs are not power of 2 they will be resized to the closest power
+    of 2 for prediction.
     - If `in_shape` and `out_dim` are reversed (i.e. `in_shape` is int) then will transpose the CNN.
 
     Parameters
@@ -490,7 +500,7 @@ class CNN(nn.Module):
     activation : {"gdn"}U{any torch.nn activation}, optional
         Activation to use.
 
-    n_layers : int, optional, optional
+    n_layers : int, optional
         Number of layers. If `None` uses the required number of layers so that the smallest side 
         is 2 after encoding (i.e. one less than the maximum).
 
@@ -517,17 +527,33 @@ class CNN(nn.Module):
             in_shape, out_dim = out_dim, in_shape
             self.is_transpose = True
 
+        resizer = torch.nn.Identity()
+        is_input_pow2 = is_pow2(in_shape[1]) and is_pow2(in_shape[2])
+        if not is_input_pow2:
+            # shape that you will work with which are power of 2
+            in_shape_pow2 = list(in_shape)
+            in_shape_pow2[1] = closest_pow(in_shape[1], base=2)
+            in_shape_pow2[2] = closest_pow(in_shape[2], base=2)
+
+            if self.is_transpose:
+                # the model will output image of `in_shape_pow2` then will reshape to actual
+                resizer = transform_lib.Resize((in_shape[1], in_shape[2]))
+            else:
+                # the model will first resize to power of 2
+                resizer = transform_lib.Resize((in_shape_pow2[1], in_shape_pow2[2]))
+
+            logger.warn(
+                f"The input shape={in_shape} is not powers of 2 so we will rescale it and work with shape {in_shape_pow2}."
+            )
+            # for the rest treat the image as if pow 2
+            in_shape = in_shape_pow2
+
         self.in_shape = in_shape
         self.out_dim = out_dim
         self.hid_dim = hid_dim
         self.norm_layer = norm_layer
         self.activation = activation
         self.n_layers = n_layers
-
-        # if want non pow2 you can pass it through a linear layer to get the closest power of 2
-        # and if transposed a linear layer to get in_shape. But better if it's done when image is
-        # smaller (or best is simply to resize it to power of 2)
-        assert is_pow2(self.in_shape[1]) and is_pow2(self.in_shape[2])
 
         if self.n_layers is None:
             # divide length by 2 at every step until smallest is 2
@@ -558,18 +584,21 @@ class CNN(nn.Module):
             in_chan = out_chan
 
         if self.is_transpose:
-            layers = [
+            pre_layers = [
                 nn.Linear(self.out_dim, channels[0] * end_w * end_h, bias=is_bias),
                 nn.Unflatten(dim=-1, unflattened_size=(channels[0], end_h, end_w)),
-            ] + layers
+            ]
+            post_layers = [resizer]
+
         else:
-            layers += [
+            pre_layers = [resizer]
+            post_layers = [
                 nn.Flatten(start_dim=1),
                 nn.Linear(channels[-1] * end_w * end_h, self.out_dim),
                 # last layer should always have bias
             ]
 
-        self.model = nn.Sequential(*layers)
+        self.model = nn.Sequential(*(pre_layers + layers + post_layers))
 
         self.reset_parameters()
 

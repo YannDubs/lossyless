@@ -89,6 +89,7 @@ class LearnableCompressor(pl.LightningModule):
             self.hparams.encoder.z_dim,
             self.hparams.data.target_shape,
             Architecture=get_Architecture(cfgoe.arch, **cfgoe.arch_kwargs),
+            is_classification=cfgoe.is_classification,
         )
 
     # @auto_move_data  # move data on correct device for inference
@@ -118,6 +119,7 @@ class LearnableCompressor(pl.LightningModule):
             X_hat : torch.Tensor of shape=[batch_size,  *data.shape]
                 Reconstructed data. If image it's the unormalized image in [0,1].
         """
+
         if is_features is None:
             is_features = self.is_features
 
@@ -147,8 +149,6 @@ class LearnableCompressor(pl.LightningModule):
     def step(self, batch):
         x, (_, aux_target) = batch
         n_z = self.hparams.featurizer.loss.n_z_samples
-
-        breakpoint()
 
         with Timer() as encoder_timer:
             # batch shape: [batch_size] ; event shape: [z_dim]
@@ -192,25 +192,8 @@ class LearnableCompressor(pl.LightningModule):
         """Return the final beta to use."""
         cfg = self.hparams
 
-        # TODO chose whether or not to use is_scale_beta and then remove
-        if cfg.featurizer.loss.is_scale_beta:
-            # you don't want to have values that explode
-            # so instead of decreasing more rate just increase distortion
-            labda = 1
-
-            beta = (
-                cfg.featurizer.loss.beta
-                * cfg.rate.factor_beta
-                * cfg.distortion.factor_beta
-            )
-
-            min_beta = 1e-5  # put some lower bound to not be 0 with fp16
-            if beta < min_beta:
-                labda = min_beta / beta
-                beta = min_beta
-        else:
-            labda = 1 / cfg.distortion.factor_beta
-            beta = cfg.featurizer.loss.beta * cfg.rate.factor_beta
+        labda = 1 / cfg.distortion.factor_beta
+        beta = cfg.featurizer.loss.beta * cfg.rate.factor_beta
 
         return beta, labda
 

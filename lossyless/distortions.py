@@ -8,8 +8,14 @@ from torch.nn import functional as F
 
 from .architectures import MLP, get_Architecture
 from .distributions import Deterministic, DiagGaussian
-from .helpers import (BASE_LOG, UnNormalizer, gather_from_gpus, is_colored_img,
-                      kl_divergence, mse_or_crossentropy_loss)
+from .helpers import (
+    BASE_LOG,
+    UnNormalizer,
+    gather_from_gpus,
+    is_colored_img,
+    kl_divergence,
+    mse_or_crossentropy_loss,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -277,7 +283,9 @@ class ContrastiveDistortion(nn.Module):
         if self.is_project:
             z_dim = self.p_ZlX.out_dim
             if project_kwargs["out_shape"] <= 1:
-                project_kwargs["out_shape"] = max(10, int(z_dim * project_kwargs["out_shape"]))
+                project_kwargs["out_shape"] = max(
+                    10, int(z_dim * project_kwargs["out_shape"])
+                )
 
             Projector = get_Architecture(**project_kwargs)
             self.projector = Projector(z_dim)
@@ -309,6 +317,7 @@ class ContrastiveDistortion(nn.Module):
         other : dict
             Additional values to return.
         """
+
         n_z, batch_size, z_dim = z_hat.shape
 
         # Distribution for positives. batch shape: [batch_size] ; event shape: [z_dim]

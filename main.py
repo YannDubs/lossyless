@@ -20,39 +20,22 @@ import pl_bolts
 import pytorch_lightning as pl
 import torch
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
-from lossyless.callbacks import (
-    CodebookPlot,
-    LatentDimInterpolator,
-    MaxinvDistributionPlot,
-    ReconstructImages,
-)
+from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
+                                 MaxinvDistributionPlot, ReconstructImages)
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import OrderedSet, check_import
 from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
-from pytorch_lightning.plugins import (
-    DDPPlugin,
-    DDPShardedPlugin,
-    DDPSpawnPlugin,
-    DDPSpawnShardedPlugin,
-)
+from pytorch_lightning.plugins import (DDPPlugin, DDPShardedPlugin,
+                                       DDPSpawnPlugin, DDPSpawnShardedPlugin)
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
-from utils.helpers import (
-    DataParallelPlugin,
-    ModelCheckpoint,
-    cfg_save,
-    format_resolver,
-    get_latest_match,
-    getattr_from_oneof,
-    learning_rate_finder,
-    log_dict,
-    omegaconf2namespace,
-    replace_keys,
-    set_debug,
-)
+from utils.helpers import (DataParallelPlugin, ModelCheckpoint, cfg_save,
+                           format_resolver, get_latest_match,
+                           getattr_from_oneof, learning_rate_finder, log_dict,
+                           omegaconf2namespace, replace_keys, set_debug)
 
 try:
     import wandb
@@ -106,7 +89,6 @@ def main(cfg):
         initialize_compressor_(compressor, comp_datamodule, comp_trainer, comp_cfg)
 
         logger.info("Train compressor ...")
-        breakpoint()
         comp_trainer.fit(compressor, datamodule=comp_datamodule)
         save_pretrained(comp_cfg, comp_trainer, COMPRESSOR_CHCKPNT)
     else:

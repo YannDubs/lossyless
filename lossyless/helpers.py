@@ -1,5 +1,6 @@
 import contextlib
 import itertools
+import math
 import operator
 import random
 import sys
@@ -233,6 +234,11 @@ def is_pow2(n):
     return (n != 0) and (n & (n - 1) == 0)
 
 
+def closest_pow(n, base=2):
+    """Return the closest (in log space) power of 2 from a number."""
+    return base ** round(math.log(n, base))
+
+
 def kl_divergence(p, q, z_samples=None, is_lower_var=False, is_reduce=True):
     """Computes KL[p||q], analytically if possible but with MC."""
     try:
@@ -267,6 +273,7 @@ MEANS = dict(
     galaxy128=[0.03294565, 0.04387402, 0.04995899],
     clip=[0.48145466, 0.4578275, 0.40821073],
     stl10=[0.43, 0.42, 0.39],
+    stl10unlabeled=[0.43, 0.42, 0.39],
 )
 STDS = dict(
     imagenet=[0.229, 0.224, 0.225],
@@ -275,6 +282,7 @@ STDS = dict(
     galaxy128=[0.07004886, 0.07964786, 0.09574898],
     clip=[0.26862954, 0.26130258, 0.27577711],
     stl10=[0.27, 0.26, 0.27],
+    stl10unlabeled=[0.27, 0.26, 0.27],
 )
 
 
