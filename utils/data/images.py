@@ -11,10 +11,12 @@ from pathlib import Path
 import h5py
 import numpy as np
 import pandas as pd
+from PIL import Image
+from tqdm import tqdm
+
 import torch
 import torchvision
 from lossyless.helpers import BASE_LOG, Normalizer, check_import
-from PIL import Image
 from torch.utils.data import random_split
 from torchvision import transforms as transform_lib
 from torchvision.datasets import CIFAR10, CIFAR100, MNIST, STL10, ImageFolder, ImageNet
@@ -30,7 +32,6 @@ from torchvision.transforms import (
     RandomRotation,
     RandomVerticalFlip,
 )
-from tqdm import tqdm
 from utils.estimators import discrete_entropy
 from utils.helpers import remove_rf
 
@@ -85,7 +86,7 @@ class LossylessImgDataset(LossylessDataset):
     Parameters
     -----------
     equivalence : set of str, optional
-        List of equivalence relationship with respect to which to be invariant.
+        List of equivalence relationship with respect to which to be invariant (or equivariant).
 
     p_augment : float, optional
         Probability (in [0,1]) of applying the entire augmentation.
@@ -127,9 +128,10 @@ class LossylessImgDataset(LossylessDataset):
         curr_split="train",
         **kwargs,
     ):
+
         super().__init__(*args, is_normalize=is_normalize, **kwargs)
-        self.equivalence = equivalence
-        self.val_equivalence = val_equivalence
+        self.equivalence = self.validate_equivalence(equivalence)
+        self.val_equivalence = self.validate_equivalence(val_equivalence)
         self.is_augment_val = True if len(self.val_equivalence) > 0 else is_augment_val
 
         self.base_resize = base_resize
@@ -165,6 +167,19 @@ class LossylessImgDataset(LossylessDataset):
     @classmethod  # class method property does not work before python 3.9
     def get_available_splits(self):
         return ["train", "test"]
+
+    def validate_equivalence(self, equivalence):
+        """Check that all given augmentations are available."""
+        available = dict(
+            **self.augmentations["PIL"],
+            **self.augmentations["tensor"],
+            **self.joint_augmentations["PIL"],
+            **self.joint_augmentations["tensor"],
+        ).keys()
+        for equiv in equivalence:
+            if equiv not in available:
+                raise ValueError(f"Unkown `equivalence={equiv}`.")
+        return equivalence
 
     def get_x_target_Mx(self, index):
         """Return the correct example, target, and maximal invariant."""
@@ -223,9 +238,7 @@ class LossylessImgDataset(LossylessDataset):
                 "simclr_imagenet": get_simclr_augmentations("imagenet", shape[-1]),
                 "simclr_finetune": get_finetune_augmentations(),
             },
-            tensor={
-                "erasing": RandomErasing(value=0.5),
-            },
+            tensor={"erasing": RandomErasing(value=0.5),},
         )
 
     @property
@@ -311,17 +324,20 @@ class LossylessImgDataset(LossylessDataset):
 
     def get_augmentations(self, augmentations):
         """Return the augmentations transorms (tuple for PIL and tensor)."""
+        if (not self.is_train) and (len(self.val_equivalence) > 0):
+            equivalence = self.val_equivalence
+        else:
+            equivalence = self.equivalence
+
         PIL_augment, tensor_augment = [], []
-        for equiv in self.equivalence:
+        for equiv in equivalence:
             if equiv in augmentations["PIL"]:
-                PIL_augment += [self.augmentations["PIL"][equiv]]
+                PIL_augment += [augmentations["PIL"][equiv]]
             elif equiv in augmentations["tensor"]:
                 tensor_augment += [augmentations["tensor"][equiv]]
-            else:
-                raise ValueError(f"Unkown `equivalence={equiv}`.")
 
-        PIL_augment = RandomApply(Compose(PIL_augment), p=self.p_augment)
-        tensor_augment = RandomApply(Compose(tensor_augment), p=self.p_augment)
+        PIL_augment = RandomApply(PIL_augment, p=self.p_augment)
+        tensor_augment = RandomApply(tensor_augment, p=self.p_augment)
         return PIL_augment, tensor_augment
 
     def get_curr_augmentations(self, augmentations):
@@ -354,10 +370,7 @@ class LossylessImgDataset(LossylessDataset):
 class LossylessImgDataModule(LossylessDataModule):
     def get_train_val_dataset(self, **dataset_kwargs):
         dataset = self.Dataset(
-            self.data_dir,
-            download=False,
-            curr_split="train",
-            **dataset_kwargs,
+            self.data_dir, download=False, curr_split="train", **dataset_kwargs,
         )
 
         n_val = int_or_ratio(self.val_size, len(dataset))
@@ -380,10 +393,7 @@ class LossylessImgDataModule(LossylessDataModule):
 
     def get_test_dataset(self, **dataset_kwargs):
         test = self.Dataset(
-            self.data_dir,
-            curr_split="test",
-            download=False,
-            **dataset_kwargs,
+            self.data_dir, curr_split="test", download=False, **dataset_kwargs,
         )
         return test
 
@@ -1144,7 +1154,7 @@ class GalaxyDataset(LossylessImgDataset):
     @property
     def augmentations(self):
         # TODO remove if we don't end up using those
-        augmentations = super().augmentations()
+        augmentations = super().augmentations
 
         # these are the augmentations used in kaggle
         PIL_update = {
@@ -1164,35 +1174,23 @@ class GalaxyDataModule(LossylessDataModule):
 
     def get_train_dataset(self, **dataset_kwargs):
         return self.Dataset(
-            self.data_dir,
-            curr_split="train",
-            download=False,
-            **dataset_kwargs,
+            self.data_dir, curr_split="train", download=False, **dataset_kwargs,
         )
 
     def get_val_dataset(self, **dataset_kwargs):
         return self.Dataset(
-            self.data_dir,
-            curr_split="valid",
-            download=False,
-            **dataset_kwargs,
+            self.data_dir, curr_split="valid", download=False, **dataset_kwargs,
         )
 
     def get_test_dataset(self, **dataset_kwargs):
         return self.Dataset(
-            self.data_dir,
-            curr_split="test",
-            download=False,
-            **dataset_kwargs,
+            self.data_dir, curr_split="test", download=False, **dataset_kwargs,
         )
 
     def prepare_data(self):
         for split in ["train", "valid", "test"]:
             self.Dataset(
-                self.data_dir,
-                curr_split=split,
-                download=True,
-                **self.dataset_kwargs,
+                self.data_dir, curr_split=split, download=True, **self.dataset_kwargs,
             )
 
     @property
