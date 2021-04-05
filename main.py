@@ -27,7 +27,7 @@ from lossyless.callbacks import (
     ReconstructImages,
 )
 from lossyless.distributions import MarginalVamp
-from lossyless.helpers import OrderedSet, check_import
+from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
@@ -43,6 +43,7 @@ from utils.estimators import estimate_entropies
 from utils.helpers import (
     DataParallelPlugin,
     ModelCheckpoint,
+    apply_featurizer,
     cfg_save,
     format_resolver,
     get_latest_match,
@@ -90,9 +91,7 @@ def main(cfg):
     logger.info("Stage : Compressor")
     comp_cfg = set_cfg(cfg, mode="featurizer")
     comp_datamodule = instantiate_datamodule_(comp_cfg)
-    comp_cfg = omegaconf2namespace(
-        comp_cfg
-    )  # ensure real python types (only once cfg are fixed)
+    comp_cfg = omegaconf2namespace(comp_cfg)  # ensure real python types
 
     if not comp_cfg.featurizer.is_learnable:
         logger.info(f"Using classical compressor {comp_cfg.featurizer.mode} ...")
@@ -150,12 +149,9 @@ def main(cfg):
         onfly_featurizer = compressor
         pre_featurizer = None
     else:
-        raise NotImplementedError()
-        # TODO keep all in memory
-        # compressing once the dataset is more realistic (and quicker) but requires
-        # more memory as the compressed dataset will be saved to file
-        # onfly_featurizer = None
-        # pre_featurizer = compressor
+        # compressing once the dataset is more realistic (and quicker) but requires more RAM
+        onfly_featurizer = None
+        pre_featurizer = comp_trainer
 
     ############## DOWNSTREAM PREDICTOR (i.e. receiver) ##############
     logger.info("Stage : Predictor")
@@ -297,11 +293,6 @@ def set_cfg(cfg, mode):
 def instantiate_datamodule_(cfg, pre_featurizer=None):
     """Instantiate dataset."""
 
-    if pre_featurizer is not None:
-        pass  # TODO (probabby give to datamodule)
-        # todo  return here a sklearn data module but don't forget to deactivate augmentations
-        # when featuzizing (so everything will be in memroy)
-
     cfgd = cfg.data
     cfgt = cfg.trainer
 
@@ -312,6 +303,12 @@ def instantiate_datamodule_(cfg, pre_featurizer=None):
     datamodule = get_datamodule(cfgd.dataset)(**cfgd.kwargs)
     datamodule.prepare_data()
     datamodule.setup()
+
+    if pre_featurizer is not None:
+        datamodule = apply_featurizer(datamodule, pre_featurizer, **cfgd.kwargs)
+        datamodule.prepare_data()
+        datamodule.setup()
+
     cfgd.aux_is_clf = datamodule.aux_is_clf
     limit_train_batches = cfgt.get("limit_train_batches", 1)
     cfgd.length = int(len(datamodule.train_dataset) * limit_train_batches)

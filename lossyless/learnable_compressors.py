@@ -92,6 +92,18 @@ class LearnableCompressor(pl.LightningModule):
             is_classification=cfgoe.is_classification,
         )
 
+    def predict_step(self, batch, batch_idx, dataloader_idx=None):
+        """
+        Predict function, this will represent the data and also return the correct label.
+        Which is useful in case you want to create a featurized dataset.
+        """
+        x, (y, _) = batch
+        x_hat = self(x)
+        return x_hat, y
+
+    def predict(self, *args, **kwargs):  # TODO remove in newer version of lightning
+        return self.predict_step(*args, **kwargs)
+
     # @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_compress=False, is_features=None):
         """Represents the data `x`.

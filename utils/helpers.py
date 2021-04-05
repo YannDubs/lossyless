@@ -16,6 +16,7 @@ import pytorch_lightning.plugins.training_type as train_plugins
 import torch
 from lossyless.callbacks import save_img
 from omegaconf import OmegaConf
+from pl_bolts.datamodules import SklearnDataModule
 from pytorch_lightning.overrides.data_parallel import LightningParallelModule
 
 logger = logging.getLogger(__name__)
@@ -329,9 +330,27 @@ def suggest_min_lr(self, skip_begin: int = 10, skip_end: int = 1):
         self._optimal_idx = None
 
 
-def apply_featurizer(datamodule, featurizer):
-    """Apply a featurizer on every example of a datamodule and return a new datamodule."""
-    # TODO
+def apply_featurizer(datamodule, featurizer, **kwargs):
+    """Apply a featurizer on every example (precomputed) of a datamodule and return a new datamodule."""
+    X_train, Y_train = pre_featurizer.predict(
+        dataloaders=[datamodule.train_dataloader()]
+    )[0]
+    X_val, Y_val = pre_featurizer.predict(dataloaders=[datamodule.val_dataloader()])[0]
+    X_test, Y_test = pre_featurizer.predict(dataloaders=[datamodule.test_dataloader()])[
+        0
+    ]
+
+    # make a datamodule from features that are precomputed
+    datamodule = SklearnDataModule(
+        X_train,
+        Y_train,
+        x_val=X_val,
+        y_val=Y_val,
+        x_test=X_test,
+        y_test=Y_test,
+        **kwargs,
+    )
+    return datamodule
 
 
 class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
