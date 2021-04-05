@@ -236,7 +236,7 @@ class LossylessImgDataset(LossylessDataset):
                 # NB you should use those 3 also at eval time
                 "simclr_cifar10": get_simclr_augmentations("cifar10", shape[-1]),
                 "simclr_imagenet": get_simclr_augmentations("imagenet", shape[-1]),
-                "simclr_finetune": get_finetune_augmentations(),
+                "simclr_finetune": get_finetune_augmentations(shape[-1]),
             },
             tensor={"erasing": RandomErasing(value=0.5),},
         )
@@ -310,7 +310,7 @@ class LossylessImgDataset(LossylessDataset):
         else:
             raise ValueError(f"Unkown base_resize={self.base_resize }")
 
-        trnsfs = [transform_lib.ToTensor()]
+        trnsfs += [transform_lib.ToTensor()]
 
         if self.is_normalize and self.is_color:
             # only normalize colored images
