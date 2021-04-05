@@ -57,7 +57,6 @@ rate.kwargs.invertible_processing=null,diag,psd
 optimizer@optimizer_feat=Adam,AdamW
 optimizer_feat.kwargs.weight_decay=tag(log,interval(1e-8,1e-4))
 optimizer_feat.kwargs.lr=tag(log,interval(1e-4,3e-3))
-optimizer_feat.kwargs.is_lars=true,false
 optimizer_coder.kwargs.weight_decay=tag(log,interval(1e-7,5e-4))
 optimizer_coder.kwargs.lr=tag(log,interval(1e-4,1e-3))
 scheduler@scheduler_feat=cosine,expdecay100,expdecay1000,unifmultistep1000
@@ -74,8 +73,8 @@ distortion.kwargs.temperature=tag(log,interval(0.01,0.3))
 # PREDICTOR
 kwargs_multi="
 $kwargs_multi
-data_pred.kwargs.batch_size=tag(log,int(interval(16,128)))
-predictor.arch_kwargs.hid_dim=tag(log,int(interval(512,4096)))
+data_pred.kwargs.batch_size=tag(log,int(interval(16,64)))
+predictor.arch_kwargs.hid_dim=tag(log,int(interval(1024,4096)))
 predictor.arch_kwargs.dropout_p=interval(0.,0.4)
 predictor.arch_kwargs.n_hid_layers=1,2
 optimizer@optimizer_pred=SGD_likeadam,Adam
