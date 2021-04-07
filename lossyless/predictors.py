@@ -7,13 +7,8 @@ from torchmetrics.functional import accuracy
 
 from .architectures import get_Architecture
 from .distortions import prediction_loss
-from .helpers import (
-    Normalizer,
-    Timer,
-    append_optimizer_scheduler_,
-    is_img_shape,
-    to_numpy,
-)
+from .helpers import (Normalizer, Timer, append_optimizer_scheduler_,
+                      is_img_shape, to_numpy)
 
 __all__ = ["Predictor", "OnlineEvaluator"]
 
@@ -238,13 +233,17 @@ class OnlineEvaluator(torch.nn.Module):
     Architecture : nn.Module
         Module to be instantiated by `Architecture(in_shape, out_dim)`.
 
+    is_classification : bool, optional
+        Whether or not the task is a classification one.
+
     kwargs:
         Additional kwargs to `prediction_loss`.
     """
 
-    def __init__(self, in_dim, out_dim, Architecture, **kwargs):
+    def __init__(self, in_dim, out_dim, Architecture, is_classification=True, **kwargs):
         super().__init__()
         self.model = Architecture(in_dim, out_dim)
+        self.is_classification = is_classification
         self.kwargs = kwargs
 
     def aux_parameters(self):
@@ -270,7 +269,7 @@ class OnlineEvaluator(torch.nn.Module):
             Y_hat = self.model(z)
 
         # Shape: [batch, 1]
-        loss = prediction_loss(Y_hat, y, **self.kwargs)
+        loss = prediction_loss(Y_hat, y, self.is_classification, **self.kwargs)
 
         # Shape: []
         loss = loss.mean()
