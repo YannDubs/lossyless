@@ -522,7 +522,7 @@ class HRateEstimator(RateEstimator):
 
             if is_nz_dim:
                 # allow computation with n_z => resize
-                n_z = z.size(0)
+                n_z = z_hat.size(0)
                 z_hat = einops.rearrange(z_hat, "n_z b d -> (n_z b) d", n_z=n_z)
 
             if mat is None:
