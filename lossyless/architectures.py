@@ -10,14 +10,8 @@ from compressai.layers import GDN
 from pl_bolts.models.self_supervised import SimCLR
 from torchvision import transforms as transform_lib
 
-from .helpers import (
-    batch_flatten,
-    batch_unflatten,
-    closest_pow,
-    is_pow2,
-    prod,
-    weights_init,
-)
+from .helpers import (batch_flatten, batch_unflatten, closest_pow, is_pow2,
+                      prod, weights_init)
 
 try:
     import clip
@@ -78,7 +72,7 @@ def get_Architecture(mode, complexity=None, **kwargs):
     elif mode == "simclr_projector":
         return partial(SimCLRProjector, **kwargs)
     elif mode == "clip":
-        return partial(CLIPResnet50, **kwargs)
+        return partial(CLIPViT, **kwargs)
     else:
         raise ValueError(f"Unkown mode={mode}.")
 
@@ -300,54 +294,7 @@ class Resnet(nn.Module):
             weights_init(self.resnet.fc)
 
 
-class CLIPResnet50(nn.Module):
-    """Pretrained Resnet50 using multimodal self supervised learning (CLIP).
-
-    Parameters
-    ----------
-    in_shape : tuple of int
-        Size of the inputs (channels first). This is used to see whether to change the underlying
-        resnet or not. If first dim < 100, then will decrease the kernel size  and stride of the
-        first conv, and remove the max pooling layer as done (for cifar10) in
-        https://gist.github.com/y0ast/d91d09565462125a1eb75acc65da1469.
-
-    out_shape : int or tuple, optional
-        Size of the output.
-
-    kwargs : 
-        Additional argument to clip.load model.
-    """
-
-    def __init__(self, in_shape, out_shape, **kwargs):
-        super().__init__()
-        self.in_shape = in_shape
-        self.out_shape = [out_shape] if isinstance(out_shape, int) else out_shape
-        self.out_dim = prod(self.out_shape)
-        self.kwargs = kwargs
-
-        self.load_weights_()
-
-        if self.out_dim != 1024:
-            self.resizer = nn.Linear(1024, self.out_dim)
-        else:
-            self.resizer = nn.Identity()
-
-        self.reset_parameters()
-
-    def forward(self, X):
-        z = self.resnet(X)
-        z = self.resizer(z)
-        z = z.unflatten(dim=-1, sizes=self.out_shape)
-        return z
-
-    def load_weights_(self):
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        model, _ = clip.load("RN50", device, jit=False, **self.kwargs)
-        model.float()
-        self.resnet = model.visual  # only keep the image model
-
-    def reset_parameters(self):
-        self.load_weights_()
+# TODO remove and keep only clip ViT
 
 
 class SimCLRResnet50(nn.Module):
@@ -467,6 +414,51 @@ class SimCLRProjector(nn.Module):
         ckpt_path = "https://pl-bolts-weights.s3.us-east-2.amazonaws.com/simclr/bolts_simclr_imagenet/simclr_imagenet.ckpt"
         module.load_from_checkpoint(ckpt_path, strict=False)
         self.projection = module.projection
+
+    def reset_parameters(self):
+        self.load_weights_()
+
+
+class CLIPViT(nn.Module):
+    """Pretrained visual transformer using multimodal self supervised learning (CLIP).
+
+    Parameters
+    ----------
+    in_shape : tuple of int
+        Size of the inputs (channels first). Needs to be 3,224,224.
+
+    out_shape : int or tuple, optional
+        Size of the output. Flattened needs to be 512.
+
+    kwargs : 
+        Additional argument to clip.load model.
+    """
+
+    def __init__(self, in_shape, out_shape, **kwargs):
+        super().__init__()
+        self.in_shape = in_shape
+        self.out_shape = [out_shape] if isinstance(out_shape, int) else out_shape
+        self.out_dim = prod(self.out_shape)
+        self.kwargs = kwargs
+
+        self.load_weights_()
+
+        assert self.out_dim == 512
+        assert self.in_shape[0] == 3
+        assert self.in_shape[1] == self.in_shape[2] == 224
+
+        self.reset_parameters()
+
+    def forward(self, X):
+        z = self.vit(X)
+        z = z.unflatten(dim=-1, sizes=self.out_shape)
+        return z
+
+    def load_weights_(self):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model, _ = clip.load("ViT-B/32", device, jit=False, **self.kwargs)
+        model.float()
+        self.vit = model.visual  # only keep the image model
 
     def reset_parameters(self):
         self.load_weights_()
