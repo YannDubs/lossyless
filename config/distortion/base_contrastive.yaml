@@ -5,6 +5,7 @@ defaults:
 distortion:
   mode: contrastive
   kwargs:
+    is_train_temperature: false # whether to train the temperature (as in CLIP) => removes on hyperparam
     temperature: 0.1 
     is_symmetric: true
     effective_batch_size: ${data.length} # new but seems to work better use `null` if want to deactivate

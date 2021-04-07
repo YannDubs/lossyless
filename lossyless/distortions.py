@@ -15,6 +15,7 @@ from .helpers import (
     is_colored_img,
     kl_divergence,
     prediction_loss,
+    weights_init,
 )
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,11 @@ class DirectDistortion(nn.Module):
                 raise NotImplementedError(
                     "Can curently only deal with normalized data if it's an image."
                 )
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        weights_init(self)
 
     def forward(self, z_hat, aux_target, _):
         """Compute the distortion.
@@ -190,6 +196,9 @@ class ContrastiveDistortion(nn.Module):
     temperature : float, optional
         Temperature scaling in InfoNCE. Recommended less than 1. 
 
+    is_train_temperature : bool, optional 
+        Whether to treat the temperature as a parameter. Uses the same sceme as CLIP.
+
     is_symmetric : bool, optional
         Whether to use symmetric logits in the case of probabilistic InfoNCE.
 
@@ -228,6 +237,7 @@ class ContrastiveDistortion(nn.Module):
         self,
         p_ZlX,
         temperature=0.1,
+        is_train_temperature=True,
         is_symmetric=True,
         is_cosine=True,
         effective_batch_size=None,
@@ -238,6 +248,7 @@ class ContrastiveDistortion(nn.Module):
         super().__init__()
         self.p_ZlX = p_ZlX
         self.temperature = temperature
+        self.is_train_temp = is_train_temp
         self.is_symmetric = is_symmetric
         self.is_cosine = is_cosine
         self.effective_batch_size = effective_batch_size
@@ -254,6 +265,19 @@ class ContrastiveDistortion(nn.Module):
             self.projector = Projector(z_dim)
         else:
             self.projector = torch.nn.Identity()
+
+        if self.is_train_temp:
+            # Same initialization as clip
+            self.logit_scale = nn.Parameter(torch.log(torch.tensor(1 / 0.07)))
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        weights_init(self)
+
+        if self.is_train_temperature:
+            # Same initialization as clip
+            self.logit_scale = nn.Parameter(torch.log(torch.tensor(1 / 0.07)))
 
     def forward(self, z_hat, x_pos, p_Zlx):
         """Compute the distortion.
@@ -421,7 +445,12 @@ class ContrastiveDistortion(nn.Module):
         else:
             effective_n_classes = n_classes
 
-        logits /= self.temperature
+        if self.is_train_temperature:
+            temperature = 1 / torch.clamp(self.logit_scale.exp(), max=100)
+        else:
+            temperature = self.temperature
+
+        logits /= temperature
 
         # I[Z,f(M(X))] = E[ log \frac{(N-1) exp(z^T z_p)}{\sum^{N-1} exp(z^T z')} ]
         # = log(N-1) + E[ log \frac{ exp(z^T z_p)}{\sum^{N-1} exp(z^T z')} ]
