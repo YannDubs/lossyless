@@ -17,7 +17,7 @@ def get_datamodule(datamodule):
         return STL10UnlabeledDataModule
     elif datamodule == "food101":
         return Food101DataModule
-    elif datamodule == "sun397":
+    elif datamodule == "sun397":  # download does not seem to be working
         return Sun397DataModule
     elif datamodule == "cars196":
         return Cars196DataModule

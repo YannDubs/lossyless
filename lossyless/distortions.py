@@ -14,7 +14,7 @@ from .helpers import (
     gather_from_gpus,
     is_colored_img,
     kl_divergence,
-    mse_or_crossentropy_loss,
+    prediction_loss,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,27 +53,19 @@ class DirectDistortion(nn.Module):
     dataset : str, optional
         Name of the dataset, used to undo normalization.
 
-    is_classification : str, optional
-        Wether you should perform classification instead of regression. It is not used if
-        `is_img_out=True`, in which cross entropy is used only if the image is black and white.
-
-    n_classes_multilabel : list of int, optional
-        In the multilabel multiclass case but with varying classes, the model cannot predict the
-        correct shape as tensor (as each label have different associated target size) as a result it
-        predicts everything in a single flattened predictions. `n_labels` is a list of the number
-        of classes for each labels. This should only be given if the targets and predictions are
-        flattened.
-
-    is_sum_over_tasks : bool, optional
-        Whether to sum all task loss rather than average.
-
     is_normalized : bool, optional
         Whether the data is normalized. This is important to know whether needs to be unormalized
         when comparing in case you are reconstructing the input. Currently only works for colored
         images.
 
+    prediction_loss_kwargs : dict, optional     
+        Additional arguments to `` 
+
     data_mode : {"image","distribution"}, optional      
         Mode of the data input.
+
+    kwargs : 
+        Additional arguments to `prediction_loss`. 
     """
 
     def __init__(
@@ -83,25 +75,21 @@ class DirectDistortion(nn.Module):
         arch=None,
         arch_kwargs=dict(complexity=2),
         dataset=None,
-        is_classification=True,
-        n_classes_multilabel=None,
-        is_sum_over_tasks=False,
         is_normalized=True,
         data_mode="image",
         name=None,  # in case you are directly using cfg of architecture. This is a placeholder
+        **kwargs,
     ):
         super().__init__()
         self.dataset = dataset
-        self.is_classification = is_classification
         self.is_img_out = data_mode == "image"
 
         if arch is None:
             arch = "cnn" if self.is_img_out else "mlp"
         Decoder = get_Architecture(arch, **arch_kwargs)
         self.q_YlZ = Decoder(z_dim, y_shape)
-        self.n_classes_multilabel = n_classes_multilabel
-        self.is_sum_over_tasks = is_sum_over_tasks
         self.is_normalized = is_normalized
+        self.kwargs = kwargs
 
         if self.is_normalized:
             if self.is_img_out:
@@ -166,30 +154,8 @@ class DirectDistortion(nn.Module):
 
                 # but for saving you still want the image in [0,1]
                 Y_hat = torch.sigmoid(Y_hat)
-
-        elif self.n_classes_multilabel:
-            assert self.is_classification
-            cum_cls = 0
-            neg_log_q_ylz = 0
-            for i, n_classes in enumerate(self.n_classes_multilabel):
-                cum_cls_new = cum_cls + n_classes
-                neg_log_q_ylz = neg_log_q_ylz + F.cross_entropy(
-                    Y_hat[:, cum_cls:cum_cls_new], aux_target[:, i], reduction="none"
-                )
-                cum_cls = cum_cls_new
-
-            if not self.is_sum_over_tasks:
-                n_tasks = len(self.n_classes_multilabel)
-                neg_log_q_ylz = neg_log_q_ylz / n_tasks
-
         else:  # normal pred
-            agg_over_tasks = "sum" if self.is_sum_over_tasks else "mean"
-            neg_log_q_ylz = mse_or_crossentropy_loss(
-                Y_hat,
-                aux_target,
-                self.is_classification,
-                agg_over_tasks=agg_over_tasks,
-            )
+            neg_log_q_ylz = prediction_loss(Y_hat, aux_target, **self.kwargs)
 
         # -log p(y|z). shape: [n_z_samples, batch_size]
         #! mathematically should take a sum (log prod proba -> sum log proba), but usually people take mean

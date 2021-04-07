@@ -304,19 +304,23 @@ def instantiate_datamodule_(cfg, pre_featurizer=None):
     datamodule.prepare_data()
     datamodule.setup()
 
-    if pre_featurizer is not None:
-        datamodule = apply_featurizer(datamodule, pre_featurizer, **cfgd.kwargs)
-        datamodule.prepare_data()
-        datamodule.setup()
-
     cfgd.aux_is_clf = datamodule.aux_is_clf
     limit_train_batches = cfgt.get("limit_train_batches", 1)
     cfgd.length = int(len(datamodule.train_dataset) * limit_train_batches)
     cfgd.shape = datamodule.shape
     cfgd.target_is_clf = datamodule.target_is_clf
     cfgd.target_shape = datamodule.target_shape
+    cfgd.balancing_weights = datamodule.balancing_weights
     cfgd.aux_shape = datamodule.aux_shape
     cfgd.mode = datamodule.mode
+    if pre_featurizer is not None:
+        datamodule = apply_featurizer(datamodule, pre_featurizer, **cfgd.kwargs)
+        datamodule.prepare_data()
+        datamodule.setup()
+
+        # changes due to the featurization
+        cfgd.shape = (datamodule.train_dataset.X.shape[-1],)
+        cfgd.mode = "vector"
 
     n_devices = max(cfgt.gpus * cfgt.num_nodes, 1)
     eff_batch_size = n_devices * cfgd.kwargs.batch_size * cfgt.accumulate_grad_batches

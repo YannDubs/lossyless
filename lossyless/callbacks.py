@@ -17,16 +17,8 @@ from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from pytorch_lightning.utilities import rank_zero_only
 
-from .helpers import (
-    BASE_LOG,
-    UnNormalizer,
-    is_colored_img,
-    plot_config,
-    plot_density,
-    setup_grid,
-    tensors_to_fig,
-    to_numpy,
-)
+from .helpers import (BASE_LOG, UnNormalizer, is_colored_img, plot_config,
+                      plot_density, setup_grid, tensors_to_fig, to_numpy)
 
 try:
     import wandb
@@ -556,25 +548,25 @@ class ResnetFinetuning(BaseFinetuning):
 
     Parameters
     ----------
-    resnet_name : string
-        Name of the resnet from pl module. Can use dots.
+    model_name : string
+        Name of the model from pl module. Can use dots.
 
-    unfreeze_last : int, optional
+    unfreeze_last_layer : int, optional
         Epoch at which to unfreeze last layer.
 
-    unfreeze_layer4 : int, optional
-        Epoch at which to unfreeze last resnet block.
+    unfreeze_last_block : int, optional
+        Epoch at which to unfreeze last block.
 
-    unfreeze_layer3 : int, optional
-        Epoch at which to unfreeze penultimate resnet block.
+    unfreeze_penult_block : int, optional
+        Epoch at which to unfreeze penultimate block.
 
-    lr_factor_last : int, optional
+    lr_factor_last_layer : int, optional
         Learning rate factor (how much to decrease compared to normal lr) to use for last layer.
 
-    lr_factor_layer4 : int, optional
+    lr_factor_last_block : int, optional
         Learning rate factor (how much to decrease compared to normal lr) to use for last block.
 
-    lr_factor_layer3 : int, optional
+    lr_factor_penult_block : int, optional
         Learning rate factor (how much to decrease compared to normal lr) to use for penultimate layer.
 
     train_bn : bool, optional
@@ -583,40 +575,40 @@ class ResnetFinetuning(BaseFinetuning):
 
     def __init__(
         self,
-        resnet_name,
-        unfreeze_last=0,
-        unfreeze_layer4=3,
-        unfreeze_layer3=5,
-        lr_factor_last=10,
-        lr_factor_layer4=100,
-        lr_factor_layer3=1000,
+        model_name,
+        unfreeze_last_layer=0,
+        unfreeze_last_block=3,
+        unfreeze_penult_block=5,
+        lr_factor_last_layer=10,
+        lr_factor_last_block=100,
+        lr_factor_penult_block=1000,
         train_bn=False,
     ):
         super().__init__()
-        self.resnet_name = resnet_name.split(".")
-        self.unfreeze_last = unfreeze_last
-        self.unfreeze_layer4 = unfreeze_layer4
-        self.unfreeze_layer3 = unfreeze_layer3
-        self.lr_factor_last = lr_factor_last
-        self.lr_factor_layer4 = lr_factor_layer4
-        self.lr_factor_layer3 = lr_factor_layer3
+        self.model_name = model_name.split(".")
+        self.unfreeze_last_layer = unfreeze_last_layer
+        self.unfreeze_last_block = unfreeze_last_block
+        self.unfreeze_penult_block = unfreeze_penult_block
+        self.lr_factor_last_layer = lr_factor_last_layer
+        self.lr_factor_last_block = lr_factor_last_block
+        self.lr_factor_penult_block = lr_factor_penult_block
         self.train_bn = train_bn
 
-    def get_resnet(self, pl_module):
-        resnet = pl_module
+    def get_model(self, pl_module):
+        model = pl_module
 
-        for resnet_name in self.resnet_name:
-            resnet = getattr(resnet, resnet_name)
+        for model_name in self.model_name:
+            model = getattr(model, model_name)
 
-        return resnet
+        return model
 
     def freeze_before_training(self, pl_module):
-        resnet = self.get_resnet(pl_module)
-        self.freeze(modules=resnet, train_bn=self.train_bn)
+        model = self.get_model(pl_module)
+        self.freeze(modules=model, train_bn=self.train_bn)
 
     def finetune_function(self, pl_module, current_epoch, optimizer, optimizer_idx):
-        if optimizer_idx == 0 and current_epoch == self.unfreeze_last:
-            resnet = self.get_resnet(pl_module)
+        if optimizer_idx == 0 and current_epoch == self.unfreeze_last_layer:
+            resnet = self.get_model(pl_module)
 
             if hasattr(resnet, "attnpool"):
                 last_layer = resnet.attnpool
@@ -631,39 +623,61 @@ class ResnetFinetuning(BaseFinetuning):
                 modules=last_layer,
                 optimizer=optimizer,
                 train_bn=self.train_bn,
-                initial_denom_lr=self.lr_factor_last,
+                initial_denom_lr=self.lr_factor_last_layer,
             )
 
-        if optimizer_idx == 0 and current_epoch == self.unfreeze_layer4:
-            resnet = self.get_resnet(pl_module)
-
-            if hasattr(resnet, "layer4"):
-                layer4 = resnet.layer4
-            else:
-                raise ValueError(
-                    f"Unkown resnet architecture {resnet} which has no layer4."
-                )
-
+        if optimizer_idx == 0 and current_epoch == self.unfreeze_last_block:
+            resnet = self.get_model(pl_module)
+            last_block = resnet.layer4
             self.unfreeze_and_add_param_group(
-                modules=layer4,
+                modules=last_block,
                 optimizer=optimizer,
                 train_bn=self.train_bn,
-                initial_denom_lr=self.lr_factor_layer4,
+                initial_denom_lr=self.lr_factor_last_block,
             )
 
-        if optimizer_idx == 0 and current_epoch == self.unfreeze_layer3:
-            resnet = self.get_resnet(pl_module)
-
-            if hasattr(resnet, "layer3"):
-                layer3 = resnet.layer3
-            else:
-                raise ValueError(
-                    f"Unkown resnet architecture {resnet} which has no layer3."
-                )
-
+        if optimizer_idx == 0 and current_epoch == self.unfreeze_penult_block:
+            resnet = self.get_model(pl_module)
+            penult_block = resnet.layer3
             self.unfreeze_and_add_param_group(
-                modules=layer3,
+                modules=penult_block,
                 optimizer=optimizer,
                 train_bn=self.train_bn,
-                initial_denom_lr=self.lr_factor_layer3,
+                initial_denom_lr=self.lr_factor_penult_block,
+            )
+
+
+class ViTFinetuning(ResnetFinetuning):
+    # finetuning of CLIP visual tranformer
+    def finetune_function(self, pl_module, current_epoch, optimizer, optimizer_idx):
+        if optimizer_idx == 0 and current_epoch == self.unfreeze_last_layer:
+
+            vit = self.get_model(pl_module)
+            last_layer = vit.proj
+
+            # last layer is just a matrix of parameters, not a layer
+            last_layer.requires_grad = True
+            lr = optimizer.param_groups[0]["lr"] / self.lr_factor_last_layer
+            optimizer.add_param_group({"params": [last_layer], "lr": lr})
+
+        if optimizer_idx == 0 and current_epoch == self.unfreeze_last_block:
+
+            vit = self.get_model(pl_module)
+            last_block = vit.transformer.resblocks[-1]
+            self.unfreeze_and_add_param_group(
+                modules=[last_block.attn, last_block.mlp],  # don't add layer norms
+                optimizer=optimizer,
+                train_bn=self.train_bn,
+                initial_denom_lr=self.lr_factor_last_block,
+            )
+
+        if optimizer_idx == 0 and current_epoch == self.unfreeze_penult_block:
+
+            vit = self.get_model(pl_module)
+            penult_block = vit.transformer.resblocks[-2]
+            self.unfreeze_and_add_param_group(
+                modules=[penult_block.attn, penult_block.mlp],
+                optimizer=optimizer,
+                train_bn=self.train_bn,
+                initial_denom_lr=self.lr_factor_penult_block,
             )

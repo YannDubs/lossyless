@@ -5,9 +5,15 @@ import torch
 from pytorch_lightning.core.decorators import auto_move_data
 from torchmetrics.functional import accuracy
 
-from .architectures import FlattenMLP, get_Architecture
-from .distortions import mse_or_crossentropy_loss
-from .helpers import Normalizer, Timer, append_optimizer_scheduler_, is_img_shape
+from .architectures import get_Architecture
+from .distortions import prediction_loss
+from .helpers import (
+    Normalizer,
+    Timer,
+    append_optimizer_scheduler_,
+    is_img_shape,
+    to_numpy,
+)
 
 __all__ = ["Predictor", "OnlineEvaluator"]
 
@@ -104,6 +110,21 @@ class Predictor(pl.LightningModule):
 
         return out
 
+    def add_balanced_logs(self, loss, y, Y_hat, logs):
+        mapper = self.hparams.data.balancing_weights
+        assert mapper["is_eval"]  # currently only during val
+
+        sample_weights = torch.tensor([mapper[yi.item()] for yi in y], device=y.device)
+        logs["balanced_loss"] = (loss * sample_weights).mean()
+
+        if self.is_clf:
+            is_same = (Y_hat.argmax(dim=-1) == y).float()
+            balanced_acc = (is_same * sample_weights).mean()
+            logs["balanced_acc"] = balanced_acc
+            logs["balanced_err"] = 1 - logs["balanced_acc"]
+
+        return logs
+
     def step(self, batch):
         x, y = batch
 
@@ -113,29 +134,41 @@ class Predictor(pl.LightningModule):
         # Shape: [batch, 1]
         loss, loss_logs = self.loss(Y_hat, y)
 
+        if not self.training and len(self.hparams.data.balancing_weights) > 0:
+            loss_logs = self.add_balanced_logs(loss, y, Y_hat, loss_logs)
+
         # Shape: []
         loss = loss.mean()
 
         logs.update(loss_logs)
         logs["loss"] = loss
         if self.is_clf:
-            logs["acc"] = accuracy(Y_hat.argmax(dim=-1), y)
+            logs["acc"] = accuracy()
             logs["err"] = 1 - logs["acc"]
 
         return loss, logs
 
     def loss(self, Y_hat, y):
         """Compute the MSE or cross entropy loss."""
-        # TODO n_classes_multilabel or drop in distortion
 
-        loss = mse_or_crossentropy_loss(Y_hat, y, self.is_clf, agg_over_tasks="mean")
+        loss = prediction_loss(
+            Y_hat,
+            y,
+            self.is_clf,
+            agg_over_tasks="mean",
+            **self.hparams.predictor.loss_kwargs,
+        )
 
         logs = {}
         # assumes that shape is (Y_dim, n_tasks) or (Y_dim) for single task
         # if single task std will be nan which is ok
         for agg_over_tasks in ["max", "std"]:
-            agg = mse_or_crossentropy_loss(
-                Y_hat.detach(), y, self.is_clf, agg_over_tasks=agg_over_tasks
+            agg = prediction_loss(
+                Y_hat.detach(),
+                y,
+                self.is_clf,
+                agg_over_tasks=agg_over_tasks,
+                **self.hparams.predictor.loss_kwargs,
             )
             logs[f"tasks_{agg_over_tasks}"] = agg.mean()
 
@@ -205,19 +238,14 @@ class OnlineEvaluator(torch.nn.Module):
     Architecture : nn.Module
         Module to be instantiated by `Architecture(in_shape, out_dim)`.
 
-    is_classification : bool, optional
-        Whether or not the task is a classification one.
-
     kwargs:
-        Additional kwargs to the MLP predictor.
+        Additional kwargs to `prediction_loss`.
     """
 
-    def __init__(
-        self, in_dim, out_dim, Architecture, is_classification=True,
-    ):
+    def __init__(self, in_dim, out_dim, Architecture, **kwargs):
         super().__init__()
-        self.is_classification = is_classification
         self.model = Architecture(in_dim, out_dim)
+        self.kwargs = kwargs
 
     def aux_parameters(self):
         """Return iterator over parameters."""
@@ -242,7 +270,7 @@ class OnlineEvaluator(torch.nn.Module):
             Y_hat = self.model(z)
 
         # Shape: [batch, 1]
-        loss = mse_or_crossentropy_loss(Y_hat, y, self.is_classification)
+        loss = prediction_loss(Y_hat, y, **self.kwargs)
 
         # Shape: []
         loss = loss.mean()

@@ -8,14 +8,12 @@ import zipfile
 from os import path
 from pathlib import Path
 
-import h5py
 import numpy as np
 import pandas as pd
 from PIL import Image
 from tqdm import tqdm
 
 import torch
-import torchvision
 from lossyless.helpers import BASE_LOG, Normalizer, check_import
 from torch.utils.data import random_split
 from torchvision import transforms as transform_lib
@@ -43,7 +41,13 @@ from .augmentations import (
     get_simclr_augmentations,
 )
 from .base import LossylessDataModule, LossylessDataset
-from .helpers import int_or_ratio, npimg_resize
+from .helpers import (
+    Caltech101BalancingWeights,
+    Flowers102BalancingWeights,
+    Pets37BalancingWeights,
+    int_or_ratio,
+    npimg_resize,
+)
 
 try:
     import cv2  # only used for galaxy so skip if not needed
@@ -102,12 +106,12 @@ class LossylessImgDataset(LossylessDataset):
         that `MEAN` and `STD` and `get_normalization` and `undo_normalization` in `lossyless.helpers`
         can normalize your data.
 
-    base_resize : {"resize","crop_eval", "upscale_crop_eval", None}, optional
+    base_resize : {"resize","upscale_crop_eval", None}, optional
         What resizing to apply. If "resize" uses the same standard resizing during train and test.
-        If "crop_eval" during test first resize such that smallest side is correct size and then
-        center crops but nothing at training time (this is used by CLIP). If "scale_crop_eval"
-        then during test first up scale to 1.1*size and then center crop (this is used by SimCLR).
-        If None does not perform any resizing.
+        If "scale_crop_eval" then during test first up scale to 1.1*size and then center crop (this
+        is used by SimCLR). If "clip" during test first resize such that smallest side is
+        224 size and then center crops, during training ensures that image is first rescaled to smallest
+        side of 256, also ensures that using "clip" normalization. If None does not perform any resizing.
 
     curr_split : str, optional
         Which data split you are considering.
@@ -129,15 +133,25 @@ class LossylessImgDataset(LossylessDataset):
         **kwargs,
     ):
 
+        self.base_resize = base_resize
         super().__init__(*args, is_normalize=is_normalize, **kwargs)
         self.equivalence = self.validate_equivalence(equivalence)
         self.val_equivalence = self.validate_equivalence(val_equivalence)
         self.is_augment_val = True if len(self.val_equivalence) > 0 else is_augment_val
-
-        self.base_resize = base_resize
-        self.curr_split = curr_split
         self.p_augment = p_augment
+        self.curr_split = curr_split
 
+    @property
+    def curr_split(self):
+        """Return the current split."""
+        return self._curr_split
+
+    @curr_split.setter
+    def curr_split(self, value):
+        """Update the current split. Also reloads correct transformation as they are split dependent."""
+        self._curr_split = value
+
+        # when updating the split has to also reload the transformations as
         self.base_tranform = self.get_base_transform()
 
         # these are invariances => only act on X
@@ -165,7 +179,7 @@ class LossylessImgDataset(LossylessDataset):
         ...
 
     @classmethod  # class method property does not work before python 3.9
-    def get_available_splits(self):
+    def get_available_splits(cls):
         return ["train", "test"]
 
     def validate_equivalence(self, equivalence):
@@ -204,6 +218,7 @@ class LossylessImgDataset(LossylessDataset):
         first dictionary say which kind of data they act on.
         """
         shape = self.shapes_x_t_Mx["input"]
+
         return dict(
             PIL={
                 "rotation": RandomRotation(30),
@@ -213,6 +228,13 @@ class LossylessImgDataset(LossylessDataset):
                 "scale": RandomAffine(0, scale=(0.8, 1.2)),
                 "rotation++": RandomRotation(45),
                 "360_rotation": RandomRotation(360),
+                "D4_group": Compose(
+                    [
+                        RandomHorizontalFlip(p=0.5),
+                        RandomVerticalFlip(p=0.5),
+                        RandomApply([RandomRotation((90, 90))], p=0.5),
+                    ]
+                ),
                 "y_translation++": RandomAffine(0, translate=(0, 0.25)),
                 "x_translation++": RandomAffine(0, translate=(0.25, 0)),
                 "shear++": RandomAffine(0, shear=25),
@@ -233,7 +255,6 @@ class LossylessImgDataset(LossylessDataset):
                 ),
                 "auto_cifar10": CIFAR10Policy(),
                 "auto_imagenet": ImageNetPolicy(),
-                # NB you should use those 3 also at eval time
                 "simclr_cifar10": get_simclr_augmentations("cifar10", shape[-1]),
                 "simclr_imagenet": get_simclr_augmentations("imagenet", shape[-1]),
                 "simclr_finetune": get_finetune_augmentations(shape[-1]),
@@ -296,14 +317,18 @@ class LossylessImgDataset(LossylessDataset):
                     transform_lib.Resize((int(shape[1] * 1.1), int(shape[2] * 1.1))),
                     transform_lib.CenterCrop((shape[1], shape[2])),
                 ]
-        elif self.base_resize == "crop_eval":
-            if not self.is_train:
-                # this is what CLIP does : scale small side and then center crop
+        elif self.base_resize == "clip":
+            if self.is_train:
                 trnsfs += [
-                    transform_lib.Resize(
-                        (shape[1], shape[2]), interpolation=Image.BICUBIC
-                    ),
-                    transform_lib.CenterCrop((shape[1], shape[2])),
+                    # make sure that slightly larger than final => translation
+                    # TODO will have to change if adds text
+                    transform_lib.Resize(256, interpolation=Image.BICUBIC)
+                ]
+            else:
+                trnsfs += [
+                    # resize smallest to 224
+                    transform_lib.Resize(224, interpolation=Image.BICUBIC),
+                    transform_lib.CenterCrop((224, 224)),
                 ]
         elif self.base_resize is None:
             pass  # no resizing
@@ -317,10 +342,12 @@ class LossylessImgDataset(LossylessDataset):
             # raise if can't normalize because you specifrically gave `is_normalize`
             trnsfs += [self.normalizer()]
 
-        return transform_lib.Compose(trnsfs)
+        return Compose(trnsfs)
 
     def normalizer(self):
-        return Normalizer(self.dataset_name, is_raise=True)
+        dataset_name = "clip" if self.base_resize == "clip" else self.dataset_name
+        #! normalization for clip will not affect plotting => if using vae with clip will look wrong
+        return Normalizer(dataset_name, is_raise=True)
 
     def get_augmentations(self, augmentations):
         """Return the augmentations transorms (tuple for PIL and tensor)."""
@@ -346,7 +373,7 @@ class LossylessImgDataset(LossylessDataset):
             PIL_augment, tensor_augment = self.get_augmentations(augmentations)
             return PIL_augment, tensor_augment
         else:
-            identity = transform_lib.Compose([])
+            identity = Compose([])
             return identity, identity
 
     def __len__(self):
@@ -364,7 +391,13 @@ class LossylessImgDataset(LossylessDataset):
     @property
     def shapes_x_t_Mx(self):
         #! In each child should assign "input" and "target"
-        return dict(max_inv=(len(self),))
+        shapes_x_t_Mx = dict(max_inv=(len(self),))
+
+        if self.base_resize == "clip":
+            # when using clip the shape should always be 224x224
+            shapes_x_t_Mx["input"] = (3, 224, 224)
+
+        return shapes_x_t_Mx
 
 
 class LossylessImgDataModule(LossylessDataModule):
@@ -384,11 +417,26 @@ class LossylessImgDataModule(LossylessDataModule):
         return train, valid
 
     def get_train_dataset(self, **dataset_kwargs):
-        train, _ = self.get_train_val_dataset(**dataset_kwargs)
+        if "validation" in self.Dataset.get_available_splits():
+            train = self.Dataset(
+                self.data_dir, curr_split="train", download=False, **dataset_kwargs,
+            )
+        else:
+            # if there is no valdation split will compute it on the fly
+            train, _ = self.get_train_val_dataset(**dataset_kwargs)
         return train
 
     def get_val_dataset(self, **dataset_kwargs):
-        _, valid = self.get_train_val_dataset(**dataset_kwargs)
+        if "validation" in self.Dataset.get_available_splits():
+            valid = self.Dataset(
+                self.data_dir,
+                curr_split="validation",
+                download=False,
+                **dataset_kwargs,
+            )
+        else:
+            # if there is no validation split will compute it on the fly
+            _, valid = self.get_train_val_dataset(**dataset_kwargs)
         return valid
 
     def get_test_dataset(self, **dataset_kwargs):
@@ -430,7 +478,7 @@ class MnistDataset(LossylessImgDataset, MNIST):
     @property
     def shapes_x_t_Mx(self):
         shapes = super(MnistDataset, self).shapes_x_t_Mx
-        shapes["input"] = (1, 32, 32)
+        shapes["input"] = shapes.get("input", (1, 32, 32))
         shapes["target"] = (10,)
         return shapes
 
@@ -458,7 +506,7 @@ class Cifar10Dataset(LossylessImgDataset, CIFAR10):
     @property
     def shapes_x_t_Mx(self):
         shapes = super(Cifar10Dataset, self).shapes_x_t_Mx
-        shapes["input"] = (3, 32, 32)
+        shapes["input"] = shapes.get("input", (3, 32, 32))
         shapes["target"] = (10,)
         return shapes
 
@@ -486,7 +534,7 @@ class Cifar100Dataset(LossylessImgDataset, CIFAR100):
     @property
     def shapes_x_t_Mx(self):
         shapes = super(Cifar100Dataset, self).shapes_x_t_Mx
-        shapes["input"] = (3, 32, 32)
+        shapes["input"] = shapes.get("input", (3, 32, 32))
         shapes["target"] = (100,)
         return shapes
 
@@ -513,7 +561,7 @@ class STL10Dataset(LossylessImgDataset, STL10):
     @property
     def shapes_x_t_Mx(self):
         shapes = super(STL10Dataset, self).shapes_x_t_Mx
-        shapes["input"] = (3, 96, 96)
+        shapes["input"] = shapes.get("input", (3, 96, 96))
         shapes["target"] = (10,)
         return shapes
 
@@ -553,7 +601,7 @@ class ImageNetDataset(LossylessImgDataset, ImageNet):
         *args,
         curr_split="train",
         base_resize="upscale_crop_eval",
-        download=None,  # # for compatibility
+        download=None,  # for compatibility
         **kwargs,
     ):
         if os.path.isdir(path.join(root, "imagenet256")):
@@ -582,7 +630,7 @@ class ImageNetDataset(LossylessImgDataset, ImageNet):
     @property
     def shapes_x_t_Mx(self):
         shapes = super(ImageNetDataset, self).shapes_x_t_Mx
-        shapes["input"] = (3, 224, 224)
+        shapes["input"] = shapes.get("input", (3, 224, 224))
         shapes["target"] = (1000,)
         return shapes
 
@@ -627,10 +675,6 @@ class TensorflowBaseDataset(LossylessImgDataset, ImageFolder):
     n_pixels : int, optional
         Size of square crops to take.
 
-    is_clip_normalization : bool, optional
-        Whether to use default CLIP normalization (i.e. ~ real image) rather than dataset specific.
-        This currently does not work with direct distortion when unormalization has to be done.
-
     class attributes
     ----------------
     min_size : int, optional
@@ -643,22 +687,13 @@ class TensorflowBaseDataset(LossylessImgDataset, ImageFolder):
     CHECK_FILENAME = "tfds_exist.txt"
 
     def __init__(
-        self,
-        root,
-        curr_split="train",
-        download=True,
-        n_pixels=224,
-        is_clip_normalization=True,
-        base_resize="crop_eval",
-        **kwargs,
+        self, root, curr_split="train", download=True, base_resize="clip", **kwargs,
     ):
         check_import("tensorflow_datasets", "TensorflowBaseDataset")
 
         self.root = root
         self.curr_split = curr_split
         self._length = None
-        self.n_pixels = n_pixels
-        self.is_clip_normalization = is_clip_normalization
 
         if download and not self.is_exist_data:
             self.download()
@@ -715,6 +750,7 @@ class TensorflowBaseDataset(LossylessImgDataset, ImageFolder):
 
                 label_name = metadata.features["label"].int2str(target)
                 label_name = label_name.replace(" ", "_")
+                label_name = label_name.replace("/", "")
 
                 label_dir = split_path / label_name
                 label_dir.mkdir(exist_ok=True)
@@ -733,19 +769,8 @@ class TensorflowBaseDataset(LossylessImgDataset, ImageFolder):
         img, target = ImageFolder.__getitem__(self, index)
         return img, target
 
-    def normalizer(self):
-        data_normalize = "CLIP" if self.is_clip_normalization else self.dataset_name
-        return Normalizer(data_normalize, is_raise=True)
-
     def __len__(self):
         return ImageFolder.__len__(self)
-
-    @property
-    def shapes_x_t_Mx(self):
-        shapes = super().shapes_x_t_Mx
-        shapes["input"] = (3, self.n_pixels, self.n_pixels)
-        #! in each child should assign target
-        return shapes
 
     def to_tfds_split(self, split):
         """Change from a lossyless split to a tfds split."""
@@ -770,6 +795,7 @@ class Food101Dataset(TensorflowBaseDataset):
     @property
     def shapes_x_t_Mx(self):
         shapes = super().shapes_x_t_Mx
+        shapes["input"] = shapes.get("input", (3, 224, 224))
         shapes["target"] = (101,)
         return shapes
 
@@ -781,6 +807,10 @@ class Food101Dataset(TensorflowBaseDataset):
         # validation comes from train
         renamer = dict(train="train", test="validation", validation="train")
         return renamer[split]
+
+    @classmethod
+    def get_available_splits(cls):
+        return ["train", "validation"]
 
 
 class Food101DataModule(LossylessImgDataModule):
@@ -796,6 +826,7 @@ class Sun397Dataset(TensorflowBaseDataset):
     @property
     def shapes_x_t_Mx(self):
         shapes = super().shapes_x_t_Mx
+        shapes["input"] = shapes.get("input", (3, 224, 224))
         shapes["target"] = (397,)
         return shapes
 
@@ -804,7 +835,7 @@ class Sun397Dataset(TensorflowBaseDataset):
         return "sun397"
 
     @classmethod
-    def get_available_splits(self):
+    def get_available_splits(cls):
         return ["train", "test", "validation"]
 
 
@@ -821,6 +852,7 @@ class Cars196Dataset(TensorflowBaseDataset):
     @property
     def shapes_x_t_Mx(self):
         shapes = super().shapes_x_t_Mx
+        shapes["input"] = shapes.get("input", (3, 224, 224))
         shapes["target"] = (196,)
         return shapes
 
@@ -835,13 +867,14 @@ class Cars196DataModule(LossylessImgDataModule):
         return Cars196Dataset
 
 
-# Path Camelyon #
+# Patch Camelyon #
 class PCamDataset(TensorflowBaseDataset):
     min_size = None
 
     @property
     def shapes_x_t_Mx(self):
         shapes = super().shapes_x_t_Mx
+        shapes["input"] = shapes.get("input", (3, 96, 96))
         shapes["target"] = (2,)
         return shapes
 
@@ -849,8 +882,8 @@ class PCamDataset(TensorflowBaseDataset):
     def dataset_name(self):
         return "patch_camelyon"
 
-    @property
-    def available_split(self):
+    @classmethod
+    def get_available_splits(cls):
         return ["train", "test", "validation"]
 
 
@@ -867,6 +900,7 @@ class Flowers102Dataset(TensorflowBaseDataset):
     @property
     def shapes_x_t_Mx(self):
         shapes = super().shapes_x_t_Mx
+        shapes["input"] = shapes.get("input", (3, 224, 224))
         shapes["target"] = (102,)
         return shapes
 
@@ -874,8 +908,8 @@ class Flowers102Dataset(TensorflowBaseDataset):
     def dataset_name(self):
         return "oxford_flowers102"
 
-    @property
-    def available_split(self):
+    @classmethod
+    def get_available_splits(cls):
         return ["train", "test", "validation"]
 
 
@@ -883,6 +917,10 @@ class Flowers102DataModule(LossylessImgDataModule):
     @property
     def Dataset(self):
         return Flowers102Dataset
+
+    @property
+    def balancing_weights(self):
+        return Flowers102BalancingWeights  # should compute mean acc per class
 
 
 # Pets 37 #
@@ -892,6 +930,7 @@ class Pets37Dataset(TensorflowBaseDataset):
     @property
     def shapes_x_t_Mx(self):
         shapes = super().shapes_x_t_Mx
+        shapes["input"] = shapes.get("input", (3, 224, 224))
         shapes["target"] = (37,)
         return shapes
 
@@ -899,15 +938,14 @@ class Pets37Dataset(TensorflowBaseDataset):
     def dataset_name(self):
         return "oxford_iiit_pet"
 
-    @property
-    def available_split(self):
-        return ["train", "test"]
-
 
 class Pets37DataModule(LossylessImgDataModule):
     @property
     def Dataset(self):
         return Pets37Dataset
+
+    def balancing_weights(self):
+        return Pets37BalancingWeights  # should compute mean acc per class
 
 
 # Caltech 101 #
@@ -917,22 +955,22 @@ class Caltech101Dataset(TensorflowBaseDataset):
     @property
     def shapes_x_t_Mx(self):
         shapes = super().shapes_x_t_Mx
-        shapes["target"] = (101,)
+        shapes["input"] = shapes.get("input", (3, 224, 224))
+        shapes["target"] = (102,)  # ?!? there are 102 classes in caltech 101
         return shapes
 
     @property
     def dataset_name(self):
         return "caltech101"
 
-    @property
-    def available_split(self):
-        return ["train", "test"]
-
 
 class Caltech101DataModule(LossylessImgDataModule):
     @property
     def Dataset(self):
         return Caltech101Dataset
+
+    def balancing_weights(self):
+        return Caltech101BalancingWeights  # should compute mean acc per class
 
 
 ### Other Datasets ###
