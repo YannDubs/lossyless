@@ -35,7 +35,9 @@ distortion=ince,ivae
 featurizer.loss.beta=1e-4
 " 
 
+
 if [ "$is_plot_only" = false ] ; then
+  # hflip,resize_crop,color,gray is good 
   for kwargs_dep in "data_feat.kwargs.dataset_kwargs.equivalence=[hflip,resize_crop,auto_imagenet] data_pred.kwargs.dataset_kwargs.equivalence=[hflip,resize_crop,auto_imagenet]" "data_feat.kwargs.dataset_kwargs.equivalence=[auto_cifar10] data_pred.kwargs.dataset_kwargs.equivalence=[auto_cifar10]" "data_feat.kwargs.dataset_kwargs.equivalence=[auto_imagenet] data_pred.kwargs.dataset_kwargs.equivalence=[auto_imagenet]" "data_feat.kwargs.dataset_kwargs.equivalence=[hflip,resize_crop,color,gray] data_pred.kwargs.dataset_kwargs.equivalence=[hflip,resize_crop,color,gray]"         
   do
 
