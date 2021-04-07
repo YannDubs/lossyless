@@ -3,6 +3,7 @@ import glob
 import logging
 import math
 import os
+import random
 import subprocess
 import zipfile
 from os import path
@@ -15,20 +16,35 @@ from tqdm import tqdm
 
 import torch
 from lossyless.helpers import BASE_LOG, Normalizer, check_import
-from torch.utils.data import random_split
+from torch.utils.data import DataLoader, random_split
 from torchvision import transforms as transform_lib
-from torchvision.datasets import CIFAR10, CIFAR100, MNIST, STL10, ImageFolder, ImageNet
+from torchvision.datasets import (
+    CIFAR10,
+    CIFAR100,
+    MNIST,
+    STL10,
+    CocoCaptions,
+    ImageFolder,
+    ImageNet,
+)
+from torchvision.datasets.folder import default_loader
 from torchvision.transforms import (
+    CenterCrop,
     ColorJitter,
     Compose,
+    Lambda,
     RandomAffine,
     RandomApply,
+    RandomCrop,
     RandomErasing,
     RandomGrayscale,
     RandomHorizontalFlip,
     RandomResizedCrop,
     RandomRotation,
     RandomVerticalFlip,
+    Resize,
+    ToPILImage,
+    ToTensor,
 )
 from utils.estimators import discrete_entropy
 from utils.helpers import remove_rf
@@ -45,9 +61,16 @@ from .helpers import (
     Caltech101BalancingWeights,
     Flowers102BalancingWeights,
     Pets37BalancingWeights,
+    download_url,
     int_or_ratio,
     npimg_resize,
+    unzip,
 )
+
+try:
+    import kaggle  # only used for galaxy so skip if not needed
+except (ImportError, OSError):
+    pass
 
 try:
     import cv2  # only used for galaxy so skip if not needed
@@ -59,7 +82,17 @@ try:
 except ImportError:
     pass
 
+try:
+    import pycocotools  # only used for coco
+except ImportError:
+    pass
 
+try:
+    import clip  # only used for coco
+except ImportError:
+    pass
+
+EXIST_DATA = "data_exist.txt"
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -77,6 +110,7 @@ __all__ = [
     "MnistDataModule",
     "GalaxyDataModule",
     "ImagenetDataModule",
+    "CocoClipDataModule",
 ]
 
 
@@ -253,6 +287,8 @@ class LossylessImgDataset(LossylessDataset):
                 "resize_crop": RandomResizedCrop(
                     size=(shape[1], shape[2]), scale=(0.3, 1.0), ratio=(0.7, 1.4)
                 ),
+                "resize": Resize(min(shape[1], shape[2]), interpolation=Image.BICUBIC),
+                "crop": RandomCrop(size=(shape[1], shape[2])),
                 "auto_cifar10": CIFAR10Policy(),
                 "auto_imagenet": ImageNetPolicy(),
                 "simclr_cifar10": get_simclr_augmentations("cifar10", shape[-1]),
@@ -309,33 +345,33 @@ class LossylessImgDataset(LossylessDataset):
         trnsfs = []
 
         if self.base_resize == "resize":
-            trnsfs += [transform_lib.Resize((shape[1], shape[2]))]
+            trnsfs += [Resize((shape[1], shape[2]))]
         elif self.base_resize == "upscale_crop_eval":
             if not self.is_train:
                 # this is what simclr does : first upscale by 10% then center crop
                 trnsfs += [
-                    transform_lib.Resize((int(shape[1] * 1.1), int(shape[2] * 1.1))),
-                    transform_lib.CenterCrop((shape[1], shape[2])),
+                    Resize((int(shape[1] * 1.1), int(shape[2] * 1.1))),
+                    CenterCrop((shape[1], shape[2])),
                 ]
         elif self.base_resize == "clip":
             if self.is_train:
                 trnsfs += [
                     # make sure that slightly larger than final => translation
-                    # TODO will have to change if adds text
-                    transform_lib.Resize(256, interpolation=Image.BICUBIC)
+                    # TODO will have to change if adds text (just use cropping randomly anywahere)
+                    Resize(256, interpolation=Image.BICUBIC)
                 ]
             else:
                 trnsfs += [
                     # resize smallest to 224
-                    transform_lib.Resize(224, interpolation=Image.BICUBIC),
-                    transform_lib.CenterCrop((224, 224)),
+                    Resize(224, interpolation=Image.BICUBIC),
+                    CenterCrop((224, 224)),
                 ]
         elif self.base_resize is None:
             pass  # no resizing
         else:
             raise ValueError(f"Unkown base_resize={self.base_resize }")
 
-        trnsfs += [transform_lib.ToTensor()]
+        trnsfs += [ToTensor()]
 
         if self.is_normalize and self.is_color:
             # only normalize colored images
@@ -684,7 +720,6 @@ class TensorflowBaseDataset(LossylessImgDataset, ImageFolder):
     """
 
     min_size = 256
-    CHECK_FILENAME = "tfds_exist.txt"
 
     def __init__(
         self, root, curr_split="train", download=True, base_resize="clip", **kwargs,
@@ -719,7 +754,7 @@ class TensorflowBaseDataset(LossylessImgDataset, ImageFolder):
         """Whether the data is available."""
         is_exist = True
         for split in self.get_available_splits():
-            check_file = self.get_dir(split) / self.CHECK_FILENAME
+            check_file = self.get_dir(split) / EXIST_DATA
             is_exist &= check_file.is_file()
         return is_exist
 
@@ -759,7 +794,7 @@ class TensorflowBaseDataset(LossylessImgDataset, ImageFolder):
                 Image.fromarray(x).save(img_file)
 
         for split in self.get_available_splits():
-            check_file = self.get_dir(split) / self.CHECK_FILENAME
+            check_file = self.get_dir(split) / EXIST_DATA
             check_file.touch()
 
         # remove all downloading files
@@ -1234,3 +1269,158 @@ class GalaxyDataModule(LossylessDataModule):
     @property
     def mode(self):
         return "image"
+
+
+# MS Coco caption dataset with clip sentences #
+
+
+class CocoClipDataset(LossylessImgDataset):
+    urls = [
+        "http://images.cocodataset.org/annotations/annotations_trainval2017.zip",
+        "http://images.cocodataset.org/zips/val2017.zip",
+        "http://images.cocodataset.org/zips/train2017.zip",
+    ]
+
+    # test annotation are not given => use val indtead
+    split_to_root = dict(test="val2017", train="train2017",)
+    split_to_annotate = dict(
+        test="annotations/captions_val2017.json",
+        train="annotations/captions_train2017.json",
+    )
+
+    def __init__(
+        self,
+        root,
+        *args,
+        base_resize="clip",
+        download=True,  # doesn't download only performs clip processing
+        curr_split="train",
+        **kwargs,
+    ):
+        check_import("pycocotools", "CocoClipDataset")
+        check_import("clip", "CocoClipDataset")
+
+        self.root = Path(root)
+        if download and not self.is_exist_data:
+            self.download()
+            self.preprocess()
+
+        self.length = len(list(self.get_dir(curr_split).glob("*.jpeg")))
+
+        super().__init__(
+            *args, base_resize=base_resize, curr_split=curr_split, **kwargs,
+        )
+
+    def get_dir(self, split=None):
+        """Return the main directory or the one for a split."""
+        main_dir = Path(self.root) / self.dataset_name
+        if split is None:
+            return main_dir
+        else:
+            return main_dir / split
+
+    @property
+    def is_exist_data(self):
+        """Whether the data is available."""
+        is_exist = True
+        for split in self.get_available_splits():
+            check_file = self.get_dir(split) / EXIST_DATA
+            is_exist &= check_file.is_file()
+        return is_exist
+
+    def download(self):
+        logger.info("Downloading Coco ...")
+
+        data_dir = self.get_dir()
+        remove_rf(data_dir, not_exist_ok=True)
+        data_dir.mkdir(parents=True)
+
+        for url in self.urls:
+            logger.info(f"Downloading {url}")
+            download_url(url, data_dir)
+
+        logger.info("Extracting Coco ...")
+
+        for filename in data_dir.glob("*.zip"):
+            logger.info(f"Unzipping {filename}")
+            unzip(filename)
+
+    def preprocess(self):
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        entire_model, _ = clip.load("ViT-B/32", device)
+        to_pil = ToPILImage()
+
+        for split in self.get_available_splits():
+            logger.info(f"Preprocessing Coco split={split}.")
+            split_path = self.get_dir(split)
+
+            remove_rf(split_path, not_exist_ok=True)
+            split_path.mkdir()
+
+            old_root = self.get_dir() / self.split_to_root[split]
+            old_annotate = self.get_dir() / self.split_to_annotate[split]
+
+            dataset = CocoCaptions(
+                root=old_root,
+                annFile=old_annotate,
+                transform=Compose([Resize(256), ToTensor()]),
+                target_transform=Lambda(
+                    lambda texts: clip.tokenize([t for t in texts])
+                ),
+            )
+
+            with torch.no_grad():
+                for i, (images, texts) in enumerate(
+                    tqdm(DataLoader(dataset, batch_size=1, num_workers=0))
+                ):
+                    image = to_pil(images.squeeze(0))
+                    text_in = texts.squeeze(0).to(device)
+                    text_features = entire_model.encode_text(text_in).cpu().numpy()
+
+                    image.save(split_path / f"{i}th_img.jpeg")
+                    np.save(split_path / f"{i}th_features.npy", text_features)
+
+            check_file = split_path / EXIST_DATA
+            check_file.touch()
+
+            remove_rf(old_root)
+            remove_rf(old_annotate)
+
+    @property
+    def shapes_x_t_Mx(self):
+        shapes = super().shapes_x_t_Mx
+        shapes["input"] = shapes.get("input", (3, 224, 224))
+        shapes["target"] = None  # no classification
+        return shapes
+
+    def get_img_target(self, index):
+        split_path = self.get_dir(self.curr_split)
+        img = default_loader(split_path / f"{index}th_img.jpeg")
+        return img, None
+
+    def get_equiv_x(self, x, index):
+        # to get an x from the same equivalence class just return one the texts (already featurized)
+        split_path = self.get_dir(self.curr_split)
+        text_features = np.load(split_path / f"{index}th_features.npy")
+
+        # index to select (multiple possible sentences)
+        selected_idx = random.randint(0, text_features.shape[0] - 1)
+
+        return text_features[selected_idx]
+
+    @property
+    def dataset_name(self):
+        return "coco_captions"
+
+    def __len__(self):
+        return self.length
+
+    @classmethod
+    def get_available_splits(cls):
+        return ["test", "train"]
+
+
+class CocoClipDataModule(LossylessImgDataModule):
+    @property
+    def Dataset(self):
+        return CocoClipDataset

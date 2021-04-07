@@ -58,9 +58,6 @@ class DirectDistortion(nn.Module):
         when comparing in case you are reconstructing the input. Currently only works for colored
         images.
 
-    prediction_loss_kwargs : dict, optional     
-        Additional arguments to `` 
-
     data_mode : {"image","distribution"}, optional      
         Mode of the data input.
 

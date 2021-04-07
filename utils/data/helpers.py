@@ -1,10 +1,49 @@
 import logging
 import math
+import urllib.request
+import zipfile
+from pathlib import Path
+
+from tqdm import tqdm
 
 import torch
 from torchvision.transforms import functional as F_trnsf
 
 logger = logging.getLogger(__name__)
+
+
+class DownloadProgressBar(tqdm):
+    """Progress bar for downlding files."""
+
+    def update_to(self, b=1, bsize=1, tsize=None):
+        if tsize is not None:
+            self.total = tsize
+        self.update(b * bsize - self.n)
+
+
+# Modified from https://stackoverflow.com/questions/15644964/python-progress-bar-and-downloads
+def download_url(url, save_dir):
+    """Download a url to `save_dir`."""
+    filename = url.split("/")[-1]
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    with DownloadProgressBar(
+        unit="B", unit_scale=True, miniters=1, desc=url.split("/")[-1]
+    ) as t:
+
+        urllib.request.urlretrieve(
+            url, filename=save_dir / filename, reporthook=t.update_to
+        )
+
+
+def unzip(filename, is_rm=True):
+    """Unzip file and optionally removes it."""
+    filename = Path(filename)
+    with zipfile.ZipFile(filename, "r") as zip_ref:
+        zip_ref.extractall(filename.parent)
+        if is_rm:
+            filename.unlink()
 
 
 def rotate(x, angle):
