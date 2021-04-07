@@ -1,17 +1,12 @@
 # @package _global_
-finetune: 
-  name: clip
-  
+defaults:
+  - base
+
 callbacks:
-  ResnetFinetuning:
+  ViTFinetuning:
     is_use: true
     kwargs:
-      resnet_name: p_ZlX.mapper.resnet
-      unfreeze_last: 0
-      unfreeze_layer4: 2
-      unfreeze_layer3: 4
-      
-      
-
- 
-  
+      model_name: p_ZlX.mapper.vit
+      unfreeze_last_layer: 0
+      unfreeze_last_block: 2
+      unfreeze_penult_block: 4

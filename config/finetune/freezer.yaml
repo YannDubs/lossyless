@@ -1,4 +1,7 @@
 # @package _global_
+defaults:
+  - base
+  
 finetune: 
   name: freezer
   

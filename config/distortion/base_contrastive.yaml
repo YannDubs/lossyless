@@ -12,7 +12,7 @@ distortion:
     is_cosine: true # recommended
     project_kwargs:
       mode: mlp
-      out_shape: 128
+      out_shape: 0.5
 
 data_feat:
   kwargs:

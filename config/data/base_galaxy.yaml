@@ -1,8 +1,9 @@
 defaults:
   - base
+  # has to use thoses bases (dirt) because can't use @data as it will go to @data_feat
   - base_notest # TODO add prediction step at the end so that can upload to kaggle
-
+  
 kwargs:
   dataset_kwargs:
-    equivalence: [x_translation, y_translation, 360_rotation, scale, hflip, vflip]
+    equivalence: [D4_group,resize_crop,color,gray] # works better than the kaggle ones (this with ince is best and for ivaer auto_imagenet works best)
     is_normalize: False # TODO: test if better (I dont' think it will)

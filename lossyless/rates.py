@@ -109,8 +109,6 @@ class RateEstimator(torch.nn.Module):
         self.warmup_k_epoch = warmup_k_epoch
         self.is_endToEnd = is_endToEnd
 
-        self.reset_parameters()
-
     def reset_parameters(self):
         weights_init(self)
 
@@ -495,13 +493,22 @@ class HRateEstimator(RateEstimator):
             z = (z + self.biasing) * self.scaling.exp()
 
         elif self.invertible_processing == "psd":
-            n_z, batch, z_dim = z.shape
-            z = einops.rearrange(z, "n_z b d -> (n_z b) d", n_z=n_z)
+            is_nz_dim = z.ndim > 2
+            batch, z_dim = z.shape[-2:]
+
+            if is_nz_dim:
+                # allow computation with n_z => resize
+                n_z = z.size(0)
+                z = einops.rearrange(z, "n_z b d -> (n_z b) d", n_z=n_z)
+
             mat = torch.mm(self.scaling, self.scaling.T) + 1e-1 * self.eye
             z = z + self.biasing
             z = torch.matmul(z, mat)
-            z = einops.rearrange(z, "(n_z b) d -> n_z b d", n_z=n_z)
+
             kwargs["mat"] = mat
+
+            if is_nz_dim:
+                z = einops.rearrange(z, "(n_z b) d -> n_z b d", n_z=n_z)
 
         return z, kwargs
 
@@ -510,14 +517,22 @@ class HRateEstimator(RateEstimator):
             z_hat = (z_hat / self.scaling.exp()) - self.biasing
 
         elif self.invertible_processing == "psd":
+            is_nz_dim = z.ndim > 2
             n_z, batch, z_dim = z_hat.shape
-            z_hat = einops.rearrange(z_hat, "n_z b d -> (n_z b) d", n_z=n_z)
+
+            if is_nz_dim:
+                # allow computation with n_z => resize
+                n_z = z.size(0)
+                z_hat = einops.rearrange(z_hat, "n_z b d -> (n_z b) d", n_z=n_z)
+
             if mat is None:
                 mat = torch.mm(self.scaling, self.scaling.T) + 1e-1 * self.eye
             chol = torch.cholesky(mat)
             z_hat = torch.cholesky_solve(z_hat.T, chol).T
             z_hat = z_hat - self.biasing
-            z_hat = einops.rearrange(z_hat, "(n_z b) d -> n_z b d", n_z=n_z)
+
+            if is_nz_dim:
+                z_hat = einops.rearrange(z_hat, "(n_z b) d -> n_z b d", n_z=n_z)
 
         return z_hat
 
@@ -840,10 +855,13 @@ class HRateSimCLR(HRateHyperprior):
 
     def __init__(self, z_dim, is_reinit=False, **kwargs):
         assert z_dim == 2048
+
         self.is_reinit = is_reinit  # wheter to start from pretraiend
         super().__init__(
             2048, side_z_dim=128, **kwargs,
         )
+
+        self.reset_parameters()
 
     def get_encoders(self):
         side_encoder = SimCLRProjector(self.z_dim, self.side_z_dim)
@@ -854,16 +872,7 @@ class HRateSimCLR(HRateHyperprior):
         return side_encoder, z_encoder
 
     def reset_parameters(self):
-        weights_init(self.z_encoder)
+        super().reset_parameters()
 
-        if self.is_reinit:
-            weights_init(self.side_encoder)
-        else:
+        if not self.is_reinit:
             self.side_encoder.load_weights_()  # reload pretrained weights
-
-        if self.invertible_processing == "diag":
-            self.scaling = torch.nn.Parameter(torch.ones(self.z_dim))
-            self.biasing = torch.nn.Parameter(torch.zeros(self.z_dim))
-        elif self.invertible_processing == "psd":
-            self.scaling = torch.nn.Parameter(torch.randn(self.z_dim, self.z_dim))
-            self.biasing = torch.nn.Parameter(torch.zeros(self.z_dim))

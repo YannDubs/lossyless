@@ -459,11 +459,24 @@ def plot_density(p, n_pts=1000, range_lim=0.7, figsize=(7, 7), title=None, ax=No
         ax.set_title(title)
 
 
-def mse_or_crossentropy_loss(Y_hat, y, is_classification, agg_over_tasks="mean"):
-    """
-    Compute the cross entropy for multilabel clf tasks or MSE for regression. `agg_over_tasks`
-    says how to aggregate over task "mean","sum","max","std",or None. The three last assume that 
-    the target shape is (Y_dim, n_tasks), or (Y_dim) if single task.
+def prediction_loss(
+    Y_hat, y, is_classification=True, agg_over_tasks="mean",
+):
+    """Compute the prediction loss for a task.
+
+    Parameters
+    ----------
+    Y_hat : Tensor
+        Predictions.
+
+    y : Tensor
+        Targets. Should be shape (batch_size, Y_dim, n_tasks), or (batch_size, Y_dim) if single task.
+
+    is_classification : bool, optional
+        Whether we are in a classification task, in which case we use log loss insteasd of (r)mse.
+
+    agg_over_tasks : {"mean","sum","max","std",or Non}
+        How to aggregate over tasks.
     """
 
     if is_classification:

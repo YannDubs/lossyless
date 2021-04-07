@@ -1,0 +1,9 @@
+
+defaults:
+  - base_imagenet
+
+name: imagenet_clip
+
+kwargs:
+  dataset_kwargs:
+    equivalence: [simclr_imagenet]

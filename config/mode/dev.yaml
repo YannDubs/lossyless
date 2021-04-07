@@ -16,11 +16,19 @@ trainer:
   limit_train_batches: 0.05
   limit_test_batches: 0.05
 
-data:
+data_feat:
   kwargs:
     # use smaller because was giving error
     batch_size: 128
     val_batch_size: 128
+    num_workers: 0
+
+data_pred:
+  kwargs:
+    # use smaller because was giving error
+    batch_size: 128
+    val_batch_size: 128
+    num_workers: 0
 
 logger:
   wandb_kwargs: 

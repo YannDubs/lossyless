@@ -6,10 +6,20 @@ defaults:
   - override /rate: H_simclr
   - override /finetune: simclr
 
+data_feat:
+  kwargs:
+    dataset_kwargs:
+      base_resize: upscale_crop_eval
+
+data_pred:
+  kwargs:
+    dataset_kwargs:
+      base_resize: upscale_crop_eval
+    
 featurizer:
   name: bottleneck_simclr
   loss:
-    beta_anneal: geometric
+    beta_anneal: linear
 
 encoder:
   z_dim: 2048

@@ -23,6 +23,7 @@ def get_simclr_augmentations(dataset, input_height):
     )
 
     data_transforms = [
+        transforms.RandomResizedCrop(size=input_height),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomApply([color_jitter], p=0.8),
         transforms.RandomGrayscale(p=0.2),
@@ -35,7 +36,6 @@ def get_simclr_augmentations(dataset, input_height):
 
         data_transforms.append(GaussianBlur(kernel_size=kernel_size, p=0.5))
         data_transforms.append(ToPILImage())  # put back to PIL
-   
 
     data_transforms = transforms.Compose(data_transforms)
 
@@ -43,8 +43,7 @@ def get_simclr_augmentations(dataset, input_height):
 
 
 # taken from pl_bolts.models.self_supervised.simclr.transforms
-def get_finetune_augmentations():
-
+def get_finetune_augmentations(input_height):
 
     jitter_strength = 1.0
 
@@ -56,11 +55,12 @@ def get_finetune_augmentations():
     )
 
     data_transforms = [
+        transforms.Resize(int(input_height * 1.1)),
+        transforms.CenterCrop(input_height),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomApply([color_jitter], p=0.8),
         transforms.RandomGrayscale(p=0.2),
     ]
- 
 
     data_transforms = transforms.Compose(data_transforms)
 

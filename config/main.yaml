@@ -14,9 +14,9 @@ defaults:
   - architecture@encoder: resnet18
   - architecture@online_evaluator: mlp_probe
   - checkpoint@checkpoint_feat: bestValLoss # NB : will not be able to use Val loss for vib because validation is meaningless for distortion. Nor for INCE in the case where you don't use data augmentations at test time
-  - optimizer@optimizer_feat: Adam_lr1e-3_w1e-4 # larger learning rate gives smaller rate but smaller acc. should stick to using adam if not changing the  beta will effectively change the lr
+  - optimizer@optimizer_feat: AdamW_lr1e-3_w1e-5 # larger learning rate gives smaller rate but smaller acc. should stick to using adam if not changing the  beta will effectively change the lr
   - scheduler@scheduler_feat: expdecay100 # expdecay also works well
-  - optimizer@optimizer_coder: Adam_lr1e-3_w1e-4 # quite robust to this but lr shouldn't be to small
+  - optimizer@optimizer_coder: Adam_lr3e-4_w1e-5 # quite robust to this but lr shouldn't be to small
   - scheduler@scheduler_coder: expdecay100
   - optimizer@optimizer_online: SGD_lr3e-1_w1e-4
   - scheduler@scheduler_online: expdecay100 # ensure that can always keep up with the chaning representation
@@ -101,7 +101,7 @@ trainer:
   #default_root_dir: ${paths.results}
   max_epochs: 200
   terminate_on_nan: false # makes it slower if true
-  progress_bar_refresh_rate: 0 # increase to show progress bar
+  progress_bar_refresh_rate: 100 # increase to show progress bar #TODO rm once prediction works
   resume_from_checkpoint: null # string to checkpoint if want to resume
   gradient_clip_val: 3 # 0 means no clip 
   reload_dataloaders_every_epoch: False
@@ -139,9 +139,10 @@ encoder:
 
 online_evaluator:
   name: ???
-  is_classification: ${data.target_is_clf}
   arch: ???
   arch_kwargs: {}
+  loss_kwargs: 
+    is_classification: ${data.target_is_clf}
 
 ### OPTIMIZER ###
 optimizer_feat: 
@@ -187,6 +188,8 @@ predictor:
   is_save_best: False # don't save the best predictor as it is not of any use (that I can see) 
   arch: ???
   arch_kwargs: {}
+  loss_kwargs: 
+    agg_over_tasks: mean
 
 ### OPTIMIZER ###
 optimizer_pred: 

@@ -16,7 +16,9 @@ import pytorch_lightning.plugins.training_type as train_plugins
 import torch
 from lossyless.callbacks import save_img
 from omegaconf import OmegaConf
+from pl_bolts.datamodules import SklearnDataModule
 from pytorch_lightning.overrides.data_parallel import LightningParallelModule
+from torch.utils.data import Subset
 
 logger = logging.getLogger(__name__)
 
@@ -329,9 +331,40 @@ def suggest_min_lr(self, skip_begin: int = 10, skip_end: int = 1):
         self._optimal_idx = None
 
 
-def apply_featurizer(datamodule, featurizer):
-    """Apply a featurizer on every example of a datamodule and return a new datamodule."""
-    # TODO
+def apply_featurizer(datamodule, featurizer, **kwargs):
+    """Apply a featurizer on every example (precomputed) of a datamodule and return a new datamodule."""
+    train_dataset = datamodule.train_dataset
+    # ensure that you will not be augmenting
+    if isinstance(train_dataset, Subset):
+        train_dataset.dataset.curr_split = "validation"
+    else:
+        train_dataset.curr_split = "validation"
+
+    X_train, Y_train = featurizer.predict(
+        dataloaders=[datamodule.train_dataloader(train_dataset=train_dataset)]
+    )[0]
+    X_val, Y_val = featurizer.predict(dataloaders=[datamodule.val_dataloader()])[0]
+    X_test, Y_test = featurizer.predict(dataloaders=[datamodule.test_dataloader()])[0]
+
+    # only select kwargs that can be given to sklearn
+    sklearn_kwargs = dict()
+    sklearn_kwargs["batch_size"] = kwargs.get("batch_size", 128)
+    sklearn_kwargs["num_workers"] = kwargs.get("num_workers", 4)
+
+    # make a datamodule from features that are precomputed
+    datamodule = SklearnDataModule(
+        X_train,
+        Y_train,
+        x_val=X_val,
+        y_val=Y_val,
+        x_test=X_test,
+        y_test=Y_test,
+        shuffle=True,
+        pin_memory=True,
+        **sklearn_kwargs,
+    )
+
+    return datamodule
 
 
 class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
@@ -365,10 +398,14 @@ class DataParallelPlugin(train_plugins.DataParallelPlugin):
         )
 
 
-def remove_rf(path):
+def remove_rf(path, not_exist_ok=False):
     """Remove a file or a folder"""
     path = Path(path)
+
+    if not path.exists() and not_exist_ok:
+        return
+
     if path.is_file():
         path.unlink()
-    else:
+    elif path.is_dir:
         shutil.rmtree(path)

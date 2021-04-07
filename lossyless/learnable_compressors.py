@@ -8,7 +8,8 @@ from pytorch_lightning.core.decorators import auto_move_data
 from .architectures import get_Architecture
 from .distortions import get_distortion_estimator
 from .distributions import CondDist
-from .helpers import BASE_LOG, Annealer, OrderedSet, Timer, append_optimizer_scheduler_
+from .helpers import (BASE_LOG, Annealer, OrderedSet, Timer,
+                      append_optimizer_scheduler_)
 from .predictors import OnlineEvaluator
 from .rates import get_rate_estimator
 
@@ -89,8 +90,24 @@ class LearnableCompressor(pl.LightningModule):
             self.hparams.encoder.z_dim,
             self.hparams.data.target_shape,
             Architecture=get_Architecture(cfgoe.arch, **cfgoe.arch_kwargs),
-            is_classification=cfgoe.is_classification,
+            **cfgoe.loss_kwargs,
         )
+
+    def predict_step(self, batch, batch_idx, dataloader_idx=None):
+        """
+        Predict function, this will represent the data and also return the correct label.
+        Which is useful in case you want to create a featurized dataset.
+        """
+        x, y = batch
+
+        if isinstance(y, (tuple, list)):
+            y = y[0]  # only return the real label assumed to be first
+
+        x_hat = self(x)
+        return x_hat, y
+
+    def predict(self, *args, **kwargs):  # TODO remove in newer version of lightning
+        return self.predict_step(*args, **kwargs)
 
     # @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_compress=False, is_features=None):

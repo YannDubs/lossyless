@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 DIR = Path(__file__).parents[2].joinpath("data")
 
 
-__all__ = ["LossylessDataset",  "LossylessDataModule"]
+__all__ = ["LossylessDataset", "LossylessDataModule"]
 
 
 ### Base Dataset ###
@@ -149,7 +149,6 @@ class LossylessDataset(abc.ABC):
         return shapes["target"], shapes[self.additional_target]
 
 
-
 ### Base Datamodule ###
 
 # cannot use abc because inheriting from lightning :( )
@@ -196,7 +195,7 @@ class LossylessDataModule(LightningDataModule):
         data_dir=DIR,
         val_size=0.1,
         test_size=None,
-        num_workers=16, 
+        num_workers=16,
         batch_size=128,
         val_batch_size=None,
         seed=123,
@@ -256,6 +255,11 @@ class LossylessDataModule(LightningDataModule):
         self.shape = dataset.shapes_x_t_Mx["input"]
         self.additional_target = dataset.additional_target
 
+    @property
+    def balancing_weights(self):
+        """Dictionary mapping every target to a weight that examples from this class should carry."""
+        return dict()
+
     def setup(self, stage=None):
         """Prepare the datasets for the current stage."""
         if stage == "fit" or stage is None:
@@ -266,18 +270,21 @@ class LossylessDataModule(LightningDataModule):
         if stage == "test" or stage is None:
             self.test_dataset = self.get_test_dataset(**self.dataset_kwargs)
 
-    def train_dataloader(self, batch_size=None, **kwargs):
+    def train_dataloader(self, batch_size=None, train_dataset=None, **kwargs):
         """Return the training dataloader while possibly modifying dataset kwargs."""
         dkwargs = kwargs.pop("dataset_kwargs", {})
         if self.reload_dataloaders_every_epoch or len(dkwargs) > 0:
             curr_kwargs = dict(self.dataset_kwargs, **dkwargs)
-            self.train_dataset = self.get_train_dataset(**curr_kwargs)
+            train_dataset = self.get_train_dataset(**curr_kwargs)
+
+        if train_dataset is None:
+            train_dataset = self.train_dataset
 
         if batch_size is None:
             batch_size = self.batch_size
 
         return DataLoader(
-            self.train_dataset,
+            train_dataset,
             batch_size=batch_size,
             shuffle=True,
             num_workers=self.num_workers,
