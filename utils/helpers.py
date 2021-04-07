@@ -340,11 +340,15 @@ def apply_featurizer(datamodule, featurizer, **kwargs):
     else:
         train_dataset.curr_split = "validation"
 
-    X_train, Y_train = featurizer.predict(
+    out_train = featurizer.predict(
         dataloaders=[datamodule.train_dataloader(train_dataset=train_dataset)]
-    )[0]
-    X_val, Y_val = featurizer.predict(dataloaders=[datamodule.val_dataloader()])[0]
-    X_test, Y_test = featurizer.predict(dataloaders=[datamodule.test_dataloader()])[0]
+    )
+    out_val = featurizer.predict(dataloaders=[datamodule.val_dataloader()])
+    out_test = featurizer.predict(dataloaders=[datamodule.test_dataloader()])
+
+    X_train, Y_train = zip(*out_train)
+    X_val, Y_val = zip(*out_val)
+    X_test, Y_test = zip(*out_test)
 
     # only select kwargs that can be given to sklearn
     sklearn_kwargs = dict()
@@ -353,12 +357,12 @@ def apply_featurizer(datamodule, featurizer, **kwargs):
 
     # make a datamodule from features that are precomputed
     datamodule = SklearnDataModule(
-        X_train,
-        Y_train,
-        x_val=X_val,
-        y_val=Y_val,
-        x_test=X_test,
-        y_test=Y_test,
+        np.concatenate(X_train, axis=0),
+        np.concatenate(Y_train, axis=0),
+        x_val=np.concatenate(X_val, axis=0),
+        y_val=np.concatenate(Y_val, axis=0),
+        x_test=np.concatenate(X_test, axis=0),
+        y_test=np.concatenate(Y_test, axis=0),
         shuffle=True,
         pin_memory=True,
         **sklearn_kwargs,

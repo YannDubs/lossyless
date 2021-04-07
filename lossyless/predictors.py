@@ -143,7 +143,7 @@ class Predictor(pl.LightningModule):
         logs.update(loss_logs)
         logs["loss"] = loss
         if self.is_clf:
-            logs["acc"] = accuracy()
+            logs["acc"] = accuracy(Y_hat.argmax(dim=-1), y)
             logs["err"] = 1 - logs["acc"]
 
         return loss, logs
@@ -151,24 +151,14 @@ class Predictor(pl.LightningModule):
     def loss(self, Y_hat, y):
         """Compute the MSE or cross entropy loss."""
 
-        loss = prediction_loss(
-            Y_hat,
-            y,
-            self.is_clf,
-            agg_over_tasks="mean",
-            **self.hparams.predictor.loss_kwargs,
-        )
+        loss = prediction_loss(Y_hat, y, self.is_clf, agg_over_tasks="mean",)
 
         logs = {}
         # assumes that shape is (Y_dim, n_tasks) or (Y_dim) for single task
         # if single task std will be nan which is ok
         for agg_over_tasks in ["max", "std"]:
             agg = prediction_loss(
-                Y_hat.detach(),
-                y,
-                self.is_clf,
-                agg_over_tasks=agg_over_tasks,
-                **self.hparams.predictor.loss_kwargs,
+                Y_hat.detach(), y, self.is_clf, agg_over_tasks=agg_over_tasks,
             )
             logs[f"tasks_{agg_over_tasks}"] = agg.mean()
 
@@ -238,13 +228,17 @@ class OnlineEvaluator(torch.nn.Module):
     Architecture : nn.Module
         Module to be instantiated by `Architecture(in_shape, out_dim)`.
 
+    is_classification : bool, optional
+        Whether or not the task is a classification one.
+
     kwargs:
         Additional kwargs to `prediction_loss`.
     """
 
-    def __init__(self, in_dim, out_dim, Architecture, **kwargs):
+    def __init__(self, in_dim, out_dim, Architecture, is_classification=True, **kwargs):
         super().__init__()
         self.model = Architecture(in_dim, out_dim)
+        self.is_classification = is_classification
         self.kwargs = kwargs
 
     def aux_parameters(self):
@@ -270,7 +264,7 @@ class OnlineEvaluator(torch.nn.Module):
             Y_hat = self.model(z)
 
         # Shape: [batch, 1]
-        loss = prediction_loss(Y_hat, y, **self.kwargs)
+        loss = prediction_loss(Y_hat, y, self.is_classification, **self.kwargs)
 
         # Shape: []
         loss = loss.mean()
