@@ -517,8 +517,8 @@ class HRateEstimator(RateEstimator):
             z_hat = (z_hat / self.scaling.exp()) - self.biasing
 
         elif self.invertible_processing == "psd":
-            is_nz_dim = z.ndim > 2
-            n_z, batch, z_dim = z_hat.shape
+            is_nz_dim = z_hat.ndim > 2
+            batch, z_dim = z_hat.shape[-2:]
 
             if is_nz_dim:
                 # allow computation with n_z => resize
