@@ -6,10 +6,22 @@ defaults:
   - override /rate: H_hyper
   - override /finetune: clip
 
+data_feat:
+  kwargs:
+    dataset_kwargs:
+      base_resize: clip
+      equivalence: [simclr_imagenet]
+
+data_pred:
+  kwargs:
+    dataset_kwargs:
+      base_resize: clip
+      equivalence: [simclr_imagenet]
+
 featurizer:
   name: bottleneck_clip
   loss:
-    beta_anneal: geometric
+    beta_anneal: linear
 
 encoder:
   z_dim: 1024

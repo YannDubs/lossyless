@@ -1,0 +1,4 @@
+# @package _global_
+callbacks:
+  LearningRateMonitor:
+    is_use : false # do not use learning rate monitor because doesn't work when adding new group in middle of training
