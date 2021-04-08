@@ -1,4 +1,5 @@
 import abc
+import copy
 import glob
 import logging
 import math
@@ -10,11 +11,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from PIL import Image
-from tqdm import tqdm
-
 import torch
 from lossyless.helpers import BASE_LOG, Normalizer, check_import
+from PIL import Image
 from torch.utils.data import random_split
 from torchvision import transforms as transform_lib
 from torchvision.datasets import CIFAR10, CIFAR100, MNIST, STL10, ImageFolder, ImageNet
@@ -30,6 +29,7 @@ from torchvision.transforms import (
     RandomRotation,
     RandomVerticalFlip,
 )
+from tqdm import tqdm
 from utils.estimators import discrete_entropy
 from utils.helpers import remove_rf
 
@@ -259,7 +259,9 @@ class LossylessImgDataset(LossylessDataset):
                 "simclr_imagenet": get_simclr_augmentations("imagenet", shape[-1]),
                 "simclr_finetune": get_finetune_augmentations(shape[-1]),
             },
-            tensor={"erasing": RandomErasing(value=0.5),},
+            tensor={
+                "erasing": RandomErasing(value=0.5),
+            },
         )
 
     @property
@@ -403,7 +405,10 @@ class LossylessImgDataset(LossylessDataset):
 class LossylessImgDataModule(LossylessDataModule):
     def get_train_val_dataset(self, **dataset_kwargs):
         dataset = self.Dataset(
-            self.data_dir, download=False, curr_split="train", **dataset_kwargs,
+            self.data_dir,
+            download=False,
+            curr_split="train",
+            **dataset_kwargs,
         )
 
         n_val = int_or_ratio(self.val_size, len(dataset))
@@ -412,6 +417,9 @@ class LossylessImgDataModule(LossylessDataModule):
             [len(dataset) - n_val, n_val],
             generator=torch.Generator().manual_seed(self.seed),
         )
+
+        # ensure that you can change the validation dataset without impacting train
+        valid.dataset = copy.deepcopy(valid.dataset)
         valid.dataset.curr_split = "validation"
 
         return train, valid
@@ -419,7 +427,10 @@ class LossylessImgDataModule(LossylessDataModule):
     def get_train_dataset(self, **dataset_kwargs):
         if "validation" in self.Dataset.get_available_splits():
             train = self.Dataset(
-                self.data_dir, curr_split="train", download=False, **dataset_kwargs,
+                self.data_dir,
+                curr_split="train",
+                download=False,
+                **dataset_kwargs,
             )
         else:
             # if there is no valdation split will compute it on the fly
@@ -441,7 +452,10 @@ class LossylessImgDataModule(LossylessDataModule):
 
     def get_test_dataset(self, **dataset_kwargs):
         test = self.Dataset(
-            self.data_dir, curr_split="test", download=False, **dataset_kwargs,
+            self.data_dir,
+            curr_split="test",
+            download=False,
+            **dataset_kwargs,
         )
         return test
 
@@ -687,7 +701,12 @@ class TensorflowBaseDataset(LossylessImgDataset, ImageFolder):
     CHECK_FILENAME = "tfds_exist.txt"
 
     def __init__(
-        self, root, curr_split="train", download=True, base_resize="clip", **kwargs,
+        self,
+        root,
+        curr_split="train",
+        download=True,
+        base_resize="clip",
+        **kwargs,
     ):
         check_import("tensorflow_datasets", "TensorflowBaseDataset")
 
@@ -1212,23 +1231,35 @@ class GalaxyDataModule(LossylessDataModule):
 
     def get_train_dataset(self, **dataset_kwargs):
         return self.Dataset(
-            self.data_dir, curr_split="train", download=False, **dataset_kwargs,
+            self.data_dir,
+            curr_split="train",
+            download=False,
+            **dataset_kwargs,
         )
 
     def get_val_dataset(self, **dataset_kwargs):
         return self.Dataset(
-            self.data_dir, curr_split="valid", download=False, **dataset_kwargs,
+            self.data_dir,
+            curr_split="valid",
+            download=False,
+            **dataset_kwargs,
         )
 
     def get_test_dataset(self, **dataset_kwargs):
         return self.Dataset(
-            self.data_dir, curr_split="test", download=False, **dataset_kwargs,
+            self.data_dir,
+            curr_split="test",
+            download=False,
+            **dataset_kwargs,
         )
 
     def prepare_data(self):
         for split in ["train", "valid", "test"]:
             self.Dataset(
-                self.data_dir, curr_split=split, download=True, **self.dataset_kwargs,
+                self.data_dir,
+                curr_split=split,
+                download=True,
+                **self.dataset_kwargs,
             )
 
     @property
