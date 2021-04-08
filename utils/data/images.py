@@ -1,4 +1,5 @@
 import abc
+import copy
 import glob
 import logging
 import math
@@ -354,13 +355,7 @@ class LossylessImgDataset(LossylessDataset):
                     CenterCrop((shape[1], shape[2])),
                 ]
         elif self.base_resize == "clip":
-            if self.is_train:
-                trnsfs += [
-                    # make sure that slightly larger than final => translation
-                    # TODO will have to change if adds text (just use cropping randomly anywahere)
-                    Resize(256, interpolation=Image.BICUBIC)
-                ]
-            else:
+            if not self.is_train:
                 trnsfs += [
                     # resize smallest to 224
                     Resize(224, interpolation=Image.BICUBIC),
@@ -448,6 +443,9 @@ class LossylessImgDataModule(LossylessDataModule):
             [len(dataset) - n_val, n_val],
             generator=torch.Generator().manual_seed(self.seed),
         )
+
+        # ensure that you can change the validation dataset without impacting train
+        valid.dataset = copy.deepcopy(valid.dataset)
         valid.dataset.curr_split = "validation"
 
         return train, valid
@@ -1313,6 +1311,9 @@ class CocoClipDataset(LossylessImgDataset):
 
     def get_dir(self, split=None):
         """Return the main directory or the one for a split."""
+        if split == "validation":
+            split = "train"  # validatoin split comes from train
+
         main_dir = Path(self.root) / self.dataset_name
         if split is None:
             return main_dir
