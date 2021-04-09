@@ -31,12 +31,12 @@ $add_kwargs
 # sweeping arguments
 kwargs_hypopt="
 hydra/sweeper=optuna
-hypopt=multi_optuna
-hydra.sweeper.optuna_config.n_trials=225
-hydra.sweeper.optuna_config.n_jobs=75
+hydra/sweeper/sampler=random
+hypopt=optuna
+hydra.sweeper.n_trials=225
+hydra.sweeper.n_jobs=75
 monitor_direction=[minimize,minimize]
 monitor_return=[test/pred/err,test/feat/rate]
-hydra.sweeper.optuna_config.sampler=random
 "
 
 # here the random sampler means that we are not actually doing smart hyperparametr tuning use `nsgaii` if you want

@@ -1,8 +1,0 @@
-# @package _global_
-defaults:
-  - optuna
-
-hydra:
-  sweeper:
-    optuna_config:
-      sampler: nsgaii 
