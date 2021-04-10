@@ -4,4 +4,4 @@ defaults:
 is_learnable: True 
 
 loss:
-  beta_anneal: constant
+  beta_anneal: linear

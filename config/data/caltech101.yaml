@@ -1,0 +1,6 @@
+
+defaults:
+  - base
+
+name: caltech101
+dataset: caltech101

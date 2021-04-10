@@ -2,9 +2,9 @@
 defaults:
   - neural_feat@featurizer
   - override /architecture@encoder: clip
-  - override /distortion: ince
+  - override /distortion: lossyZ
   - override /rate: H_hyper
-  - override /finetune: clip
+  - override /finetune: freezer
 
 data_feat:
   kwargs:
@@ -19,20 +19,13 @@ data_pred:
       equivalence: ["resize","crop"]
 
 featurizer:
-  name: bottleneck_clip
+  name: bottleneck_clip_lossyZ
   loss:
     beta_anneal: linear
 
 encoder:
   z_dim: 512
 
-distortion:
-  kwargs:
-    temperature: 0.01
-    is_cosine: True
-    is_project: False
-    is_already_featurized: true
-
 rate:
   kwargs: 
-    warmup_k_epoch: 1 # really important to warmup
+    is_endToEnd: False # shouldn't be needed becasue already frozen encoder

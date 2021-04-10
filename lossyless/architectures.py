@@ -10,8 +10,14 @@ from compressai.layers import GDN
 from pl_bolts.models.self_supervised import SimCLR
 from torchvision import transforms as transform_lib
 
-from .helpers import (batch_flatten, batch_unflatten, closest_pow, is_pow2,
-                      prod, weights_init)
+from .helpers import (
+    batch_flatten,
+    batch_unflatten,
+    closest_pow,
+    is_pow2,
+    prod,
+    weights_init,
+)
 
 try:
     import clip
@@ -534,7 +540,7 @@ class CNN(nn.Module):
                 # the model will first resize to power of 2
                 resizer = transform_lib.Resize((in_shape_pow2[1], in_shape_pow2[2]))
 
-            logger.warn(
+            logger.warning(
                 f"The input shape={in_shape} is not powers of 2 so we will rescale it and work with shape {in_shape_pow2}."
             )
             # for the rest treat the image as if pow 2

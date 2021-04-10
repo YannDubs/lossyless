@@ -10,16 +10,14 @@ data_feat:
   kwargs:
     dataset_kwargs:
       base_resize: clip
-      equivalence: ["resize","crop"]
 
 data_pred:
   kwargs:
     dataset_kwargs:
       base_resize: clip
-      equivalence: ["resize","crop"]
 
 featurizer:
-  name: bottleneck_clip
+  name: bottleneck_clip_img
   loss:
     beta_anneal: linear
 
@@ -31,7 +29,6 @@ distortion:
     temperature: 0.01
     is_cosine: True
     is_project: False
-    is_already_featurized: true
 
 rate:
   kwargs: 

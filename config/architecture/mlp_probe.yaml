@@ -1,7 +1,7 @@
 name: mlp_probe
 arch: mlp 
 arch_kwargs:
-  hid_dim: 1024
+  hid_dim: 2048
   norm_layer: batchnorm
   n_hid_layers: 2
   activation: ReLU

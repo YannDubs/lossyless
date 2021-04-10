@@ -30,6 +30,9 @@ def get_distortion_estimator(mode, p_ZlX, **kwargs):
     elif mode == "contrastive":
         return ContrastiveDistortion(p_ZlX=p_ZlX, **kwargs)
 
+    elif mode == "lossyZ":
+        return LossyZDistortion(**kwargs)
+
     else:
         raise ValueError(f"Unkown disotrtion.mode={mode}.")
 
@@ -59,11 +62,11 @@ class DirectDistortion(nn.Module):
         when comparing in case you are reconstructing the input. Currently only works for colored
         images.
 
-    data_mode : {"image","distribution"}, optional      
+    data_mode : {"image","distribution"}, optional
         Mode of the data input.
 
-    kwargs : 
-        Additional arguments to `prediction_loss`. 
+    kwargs :
+        Additional arguments to `prediction_loss`.
     """
 
     def __init__(
@@ -194,10 +197,11 @@ class ContrastiveDistortion(nn.Module):
         Instantiated conditional distribution. Used to represent all the other positives.
 
     temperature : float, optional
-        Temperature scaling in InfoNCE. Recommended less than 1. 
+        Temperature scaling in InfoNCE. Recommended less than 1.
 
-    is_train_temperature : bool, optional 
+    is_train_temperature : bool, optional
         Whether to treat the temperature as a parameter. Uses the same sceme as CLIP.
+        If true then `temperature` becomes the lower bound on temperature.
 
     is_symmetric : bool, optional
         Whether to use symmetric logits in the case of probabilistic InfoNCE.
@@ -220,11 +224,16 @@ class ContrastiveDistortion(nn.Module):
         as negatives is necesary to ensure the representations are not invariant. THis is used
         for nce (but not ince).
 
+    is_already_featurized : bool, optional
+        Whether the posivite examples are already featurized => no need to use p_ZlX again.
+        In this case `p_ZlX` will be replaced by a placeholder distribution. Useful
+        for clip, where the positive examples are text sentences that are already featuized.
+
     is_project : bool, optional
         Whether to use a porjection head. True seems to work better.
 
     project_kwargs : dict, optional
-        Additional arguments to `Projector` in case `is_project`. Noe that is `out_shape` is <= 1 
+        Additional arguments to `Projector` in case `is_project`. Noe that is `out_shape` is <= 1
         it will be a percentage of z_dim.
 
     References
@@ -236,19 +245,20 @@ class ContrastiveDistortion(nn.Module):
     def __init__(
         self,
         p_ZlX,
-        temperature=0.1,
+        temperature=0.01,
         is_train_temperature=True,
         is_symmetric=True,
         is_cosine=True,
         effective_batch_size=None,
         is_invariant=True,
+        is_already_featurized=False,
         is_project=True,
         project_kwargs={"mode": "mlp", "out_shape": 128},
     ):
         super().__init__()
-        self.p_ZlX = p_ZlX
+        self.p_ZlX = p_ZlX if not is_already_featurized else Deterministic
         self.temperature = temperature
-        self.is_train_temp = is_train_temp
+        self.is_train_temperature = is_train_temperature
         self.is_symmetric = is_symmetric
         self.is_cosine = is_cosine
         self.effective_batch_size = effective_batch_size
@@ -266,7 +276,7 @@ class ContrastiveDistortion(nn.Module):
         else:
             self.projector = torch.nn.Identity()
 
-        if self.is_train_temp:
+        if self.is_train_temperature:
             # Same initialization as clip
             self.logit_scale = nn.Parameter(torch.log(torch.tensor(1 / 0.07)))
 
@@ -366,8 +376,8 @@ class ContrastiveDistortion(nn.Module):
             # if you are using a deterministic representation then use standard InfoNCE
             # because if not KL is none differentiable
             # z,z_pos. shape: [batch_size,z_dim]
-            z = p_Zlx.base_dist.loc
-            z_pos = p_Zlp.base_dist.loc
+            z = p_Zlx.mean
+            z_pos = p_Zlp.mean
 
             z = self.projector(z)
             z_pos = self.projector(z_pos)
@@ -381,6 +391,9 @@ class ContrastiveDistortion(nn.Module):
 
             # shape: [2*batch_size, 2*batch_size]
             logits = zs @ zs.T
+
+            # NB: in the case of CLIP this is actually slightly different because we also compare
+            # the logits images with images and text with text. We do so to double number of negatives.
 
         else:
             raise ValueError(f"Unkown type(p_Zlx)={type(p_Zlx)}.")
@@ -446,7 +459,9 @@ class ContrastiveDistortion(nn.Module):
             effective_n_classes = n_classes
 
         if self.is_train_temperature:
-            temperature = 1 / torch.clamp(self.logit_scale.exp(), max=100)
+            temperature = 1 / torch.clamp(
+                self.logit_scale.exp(), max=1 / self.temperature
+            )
         else:
             temperature = self.temperature
 
@@ -468,3 +483,60 @@ class ContrastiveDistortion(nn.Module):
         )
 
         return hat_H_mlz, logs
+
+
+class LossyZDistortion(nn.Module):
+    """Computes the distortion by simply trying to reconstruct the given Z => Lossy compression of the
+    representation without looking at X. Uses Mikowsky distance between z and z_hat.
+
+    Parameters
+    ----------
+    p_norm : float, optional
+        Which Lp norm to use for computing the distance.
+    """
+
+    def __init__(self, p_norm=1):
+        super().__init__()
+        self.distance = nn.PairwiseDistance(p=p_norm)
+
+    def forward(self, z_hat, _, p_Zlx):
+        """Compute the distortion.
+
+        Parameters
+        ----------
+        z_hat : Tensor shape=[n_z, batch_size, z_dim]
+            Reconstructed representations. WIll take
+
+        p_Zlx : torch.Distribution batch_shape=[batch_size] event_shape=[z_dim]
+            Encoded distribution of Z. Will take the mean to get the target z.
+
+        Returns
+        -------
+        distortions : torch.Tensor shape=[n_z_dim, batch_shape]
+            Estimates distortion.
+
+        logs : dict
+            Additional values to log.
+
+        other : dict
+            Additional values to return.
+        """
+        n_z = z_hat.size(0)
+
+        # shape=[n_z*batch_size, z_dim]
+        flat_z_hat = einops.rearrange(z_hat, "n_z b d -> (n_z b) d")
+
+        # shape=[n_z*batch_size, z_dim]
+        z_mean = p_Zlx.base_dist.mean
+        z_mean = einops.repeat(z_mean, "b d -> (n_z b) d", n_z=n_z)
+
+        # shape=[n_z*batch_size]
+        dist = self.distance(flat_z_hat, z_mean)
+
+        # shape: [n_z, batch_size]
+        dist = einops.rearrange(dist, "(n_z b)  -> n_z b", n_z=n_z)
+
+        logs = dict()
+        other = dict()
+
+        return dist, logs, other

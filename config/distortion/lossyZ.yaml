@@ -1,0 +1,15 @@
+# @package _global_
+defaults:
+  - base@distortion
+
+distortion:
+  name: lossyZ 
+  factor_beta: 0.1 # ?
+  p_norm: 1
+  mode: lossyZ # minimizes reconstruction of z
+  
+data_feat:
+  kwargs:
+    dataset_kwargs:
+      additional_target:  "target" # anything woiuld work as we won't be using that
+

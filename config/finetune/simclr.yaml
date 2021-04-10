@@ -2,6 +2,9 @@
 defaults:
   - base
   
+finetune: 
+  name: simclr
+
 callbacks:
   ResnetFinetuning:
     is_use: true

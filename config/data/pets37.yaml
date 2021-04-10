@@ -1,0 +1,6 @@
+
+defaults:
+  - base
+
+name: pets37
+dataset: pets37
