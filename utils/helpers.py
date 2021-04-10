@@ -11,12 +11,12 @@ from pathlib import Path
 
 import numpy as np
 
+import pl_bolts
 import pytorch_lightning as pl
 import pytorch_lightning.plugins.training_type as train_plugins
 import torch
 from lossyless.callbacks import save_img
 from omegaconf import OmegaConf
-from pl_bolts.datamodules import SklearnDataModule
 from pytorch_lightning.overrides.data_parallel import LightningParallelModule
 from torch.utils.data import Subset
 
@@ -57,6 +57,7 @@ def dict2namespace(d, is_allow_missing=False, all_keys=""):
     parent is not a dict.
     """
     namespace = NamespaceMap(d)
+
     for k, v in d.items():
         if v == "???" and not is_allow_missing:
             raise ValueError(f"Missing value for {all_keys}.{k}.")
@@ -329,6 +330,16 @@ def suggest_min_lr(self, skip_begin: int = 10, skip_end: int = 1):
             "Failed to compute suggesting for `lr`. There might not be enough points."
         )
         self._optimal_idx = None
+
+
+class SklearnDataModule(pl_bolts.datamodules.SklearnDataModule):
+    # so that same as LossylessDataModule
+    def eval_dataloader(self, is_eval_on_test, **kwargs):
+        """Return the evaluation dataloader (test or val)."""
+        if is_eval_on_test:
+            return self.test_dataloader(**kwargs)
+        else:
+            return self.val_dataloader(**kwargs)
 
 
 def apply_featurizer(datamodule, featurizer, **kwargs):
