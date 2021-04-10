@@ -3,13 +3,13 @@ import math
 
 import pytorch_lightning as pl
 import torch
+from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.core.decorators import auto_move_data
 
 from .architectures import get_Architecture
 from .distortions import get_distortion_estimator
-from .distributions import CondDist
-from .helpers import (BASE_LOG, Annealer, OrderedSet, Timer,
-                      append_optimizer_scheduler_)
+from .distributions import CondDist, Deterministic
+from .helpers import BASE_LOG, Annealer, OrderedSet, Timer, append_optimizer_scheduler_
 from .predictors import OnlineEvaluator
 from .rates import get_rate_estimator
 
@@ -28,7 +28,9 @@ class LearnableCompressor(pl.LightningModule):
         self.p_ZlX = self.get_encoder()  # p_{Z | X}
         self.rate_estimator = self.get_rate_estimator()
         self.distortion_estimator = self.get_distortion_estimator()
-        self.online_evaluator = self.get_online_evaluator()
+
+        if self.hparams.evaluation.featurizer.is_online:
+            self.online_evaluator = self.get_online_evaluator()
 
         #! careful this is actually 1/beta from the paper (oops)
         final_beta = self.final_beta_labda[0]
@@ -48,6 +50,8 @@ class LearnableCompressor(pl.LightningModule):
             if self.is_features
             else self.hparams.data.shape
         )
+
+        self.stage = self.hparams.stage  # allow changing to stages
 
     def get_encoder(self):
         """Return encoder: a mapping to a torch.Distribution (conditional distribution)."""
@@ -163,8 +167,8 @@ class LearnableCompressor(pl.LightningModule):
 
         return out
 
-    def step(self, batch):
-        x, (_, aux_target) = batch
+    def step(self, batch, is_rate_only=False):
+        x, targets = batch
         n_z = self.hparams.featurizer.loss.n_z_samples
 
         with Timer() as encoder_timer:
@@ -177,6 +181,20 @@ class LearnableCompressor(pl.LightningModule):
         # z_hat. shape: [n_z, batch_size, z_dim]
         z_hat, rates, r_logs, r_other = self.rate_estimator(z, p_Zlx, self)
 
+        if "n_bits" in r_logs:
+            batch_size = x.size(0)
+            r_logs["encoder_time"] = encoder_timer.duration / batch_size
+            r_logs["sender_time"] = r_logs["encoder_time"] + r_logs["compress_time"]
+
+            if self.hparams.data.mode == "image":
+                _, __, height, width = x.shape
+                r_logs["bpp"] = r_logs["n_bits"] / (height * width)
+
+        if is_rate_only:
+            r_logs["rate"] = rates.mean() / math.log(BASE_LOG)
+            return rates, r_logs, r_other
+
+        _, aux_target = targets
         distortions, d_logs, d_other = self.distortion_estimator(
             z_hat, aux_target, p_Zlx
         )
@@ -187,14 +205,6 @@ class LearnableCompressor(pl.LightningModule):
         logs.update(r_logs)
         logs.update(d_logs)
         logs.update(dict(zmin=z_hat.min(), zmax=z_hat.max(), zmean=z_hat.mean()))
-        if "n_bits" in logs:
-            batch_size = x.size(0)
-            logs["encoder_time"] = encoder_timer.duration / batch_size
-            logs["sender_time"] = logs["encoder_time"] + logs["compress_time"]
-
-            if self.hparams.data.mode == "image":
-                _, __, height, width = x.shape
-                logs["bpp"] = logs["n_bits"] / (height * width)
 
         # any additional information that can be useful (dict)
         other.update(r_other)
@@ -282,7 +292,9 @@ class LearnableCompressor(pl.LightningModule):
         else:
             raise ValueError(f"Unkown curr_step={curr_step}.")
 
-        self.log_dict({f"train/feat/{k}": v for k, v in logs.items()}, sync_dist=True)
+        self.log_dict(
+            {f"train/{self.stage}/{k}": v for k, v in logs.items()}, sync_dist=True
+        )
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -295,7 +307,7 @@ class LearnableCompressor(pl.LightningModule):
             logs.update(online_logs)
 
         self.log_dict(
-            {f"val/feat/{k}": v for k, v in logs.items()},
+            {f"val/{self.stage}/{k}": v for k, v in logs.items()},
             on_epoch=True,
             on_step=False,
             sync_dist=True,
@@ -303,14 +315,16 @@ class LearnableCompressor(pl.LightningModule):
         return loss
 
     def test_step(self, batch, batch_idx):
-        loss, logs, _ = self.step(batch)
+        # when commuicating only compute rate
+        is_communicate = self.stage == "comm"
+        loss, logs, _ = self.step(batch, is_rate_only=is_communicate)
 
         if self.hparams.evaluation.featurizer.is_online:
             _, online_logs = self.online_evaluator(batch, self)
             logs.update(online_logs)
 
         self.log_dict(
-            {f"test/feat/{k}": v for k, v in logs.items()},
+            {f"test/{self.stage}/{k}": v for k, v in logs.items()},
             on_epoch=True,
             on_step=False,
             sync_dist=True,
@@ -325,8 +339,13 @@ class LearnableCompressor(pl.LightningModule):
         """Returns an iterator over the desired model parameters."""
         all_param = OrderedSet(self.parameters())
         coder_param = OrderedSet(self.rate_estimator.aux_parameters())
-        online_param = OrderedSet(self.online_evaluator.aux_parameters())
         rate_param = OrderedSet(self.rate_estimator.parameters()) - coder_param
+
+        if self.hparams.evaluation.featurizer.is_online:
+            online_param = OrderedSet(self.online_evaluator.aux_parameters())
+        else:
+            online_param = OrderedSet([])
+
         notrate_param = all_param - (coder_param | online_param | rate_param)
         if mode == "all":
             return all_param
@@ -410,3 +429,17 @@ class LearnableCompressor(pl.LightningModule):
         self.freeze()
         self.eval()
         self.rate_estimator.make_pickable_()
+
+    def on_load_checkpoint(self, checkpoint):
+        # has to change the checkpoint to ensure that you can load a previous checkpoint even if
+        # the number of groups in the optimizer changes. This is needed when using finetuning
+        # as the number of parameters will change during training
+
+        if self.trainer is not None:  # only if resuming
+            #! waiting for https://github.com/PyTorchLightning/pytorch-lightning/issues/6891
+            for callback in self.trainer.callbacks:
+                if isinstance(callback, BaseFinetuning):
+                    callback.loaded_epoch = checkpoint["epoch"]
+                    callback.on_before_accelerator_backend_setup(self.trainer, self)
+                    callback.on_train_epoch_start(self.trainer, self)
+                    callback.loaded_epoch = -1

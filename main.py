@@ -62,11 +62,9 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
-COMPRESSOR_CHCKPNT = "best_compressor.ckpt"
-PREDICTOR_CHCKPNT = "best_predictor.ckpt"
+BEST_CHCKPNT = "best_{stage}.ckpt"
+RESULTS_FILE = "results_{stage}.csv"
 LAST_CHCKPNT = "last.ckpt"
-COMPRESSOR_RES = "results_compressor.csv"
-PREDICTOR_RES = "results_predictor.csv"
 FILE_END = "end.txt"
 CONFIG_FILE = "config.yaml"
 
@@ -86,10 +84,12 @@ def main(cfg):
     ############## STARTUP ##############
     logger.info("Stage : Startup")
     begin(cfg)
+    finalize_kwargs = dict(modules={}, trainers={}, datamodules={}, cfgs={}, results={})
 
     ############## COMPRESSOR (i.e. sender) ##############
     logger.info("Stage : Compressor")
-    comp_cfg = set_cfg(cfg, mode="featurizer")
+    stage = "featurizer"
+    comp_cfg = set_cfg(cfg, stage)
     comp_datamodule = instantiate_datamodule_(comp_cfg)
     comp_cfg = omegaconf2namespace(comp_cfg)  # ensure real python types
 
@@ -99,53 +99,52 @@ def main(cfg):
         comp_trainer = get_trainer(comp_cfg, compressor, is_featurizer=True,)
         placeholder_fit(comp_trainer, compressor, comp_datamodule)
 
-    elif comp_cfg.featurizer.is_train and not is_trained(comp_cfg, COMPRESSOR_CHCKPNT):
+    elif comp_cfg.featurizer.is_train and not is_trained(comp_cfg, stage):
         compressor = LearnableCompressor(hparams=comp_cfg)
         comp_trainer = get_trainer(comp_cfg, compressor, is_featurizer=True)
         initialize_compressor_(compressor, comp_datamodule, comp_trainer, comp_cfg)
 
         logger.info("Train compressor ...")
         comp_trainer.fit(compressor, datamodule=comp_datamodule)
-        save_pretrained(comp_cfg, comp_trainer, COMPRESSOR_CHCKPNT)
+        save_pretrained(comp_cfg, comp_trainer, stage)
     else:
         logger.info("Load pretrained compressor ...")
-        compressor = load_pretrained(comp_cfg, LearnableCompressor, COMPRESSOR_CHCKPNT)
+        compressor = load_pretrained(comp_cfg, LearnableCompressor, stage)
         comp_trainer = get_trainer(comp_cfg, compressor, is_featurizer=True)
         placeholder_fit(comp_trainer, compressor, comp_datamodule)
         comp_cfg.evaluation.featurizer.ckpt_path = None  # eval loaded model
 
     if comp_cfg.evaluation.featurizer.is_evaluate:
         logger.info("Evaluate compressor ...")
-        feat_res = evaluate(
-            comp_trainer,
-            comp_datamodule,
-            comp_cfg,
-            COMPRESSOR_RES,
-            is_est_entropies(comp_cfg),
-            ckpt_path=comp_cfg.evaluation.featurizer.ckpt_path,
-            is_featurizer=True,
-        )
+        feat_res = evaluate(comp_trainer, comp_datamodule, comp_cfg, stage)
     else:
         feat_res = dict()
 
-    finalize_stage(comp_cfg, compressor, comp_trainer)
+    finalize_stage_(
+        stage,
+        comp_cfg,
+        compressor,
+        comp_trainer,
+        comp_datamodule,
+        feat_res,
+        finalize_kwargs,
+        is_save_best=True,
+    )
     if comp_cfg.is_only_feat:
-        return finalize(
-            modules=dict(featurizer=compressor),
-            trainers=dict(featurizer=comp_trainer),
-            datamodules=dict(featurizer=comp_datamodule),
-            cfgs=dict(featurizer=comp_cfg),
-            results=dict(featurizer=feat_res),
-        )
-    if not comp_cfg.is_return:
-        comp_datamodule = None  # not used anymore and can be large
+        return finalize(to_finalize)
+
+    del comp_datamodule  # not used anymore and can be large
 
     ############## COMMUNICATION (compress and decompress the datamodule) ##############
     logger.info("Stage : Communication")
+    stage = "communication"
+    comm_cfg = set_cfg(cfg, stage)
+    comm_datamodule = instantiate_datamodule_(comm_cfg)
+    comm_cfg = omegaconf2namespace(comm_cfg)
+
     if comp_cfg.featurizer.is_on_the_fly:
-        # this will perform compression on the fly
-        #! one issue is that if using data augmentations you will augment before the featurizer
-        # which is less realisitic (normalization is dealt with correctly though)
+        # this will perform compression on the fly. Issue is that augmentations will be applies
+        # before the featurizer which is less realisitic (normalization is dealt correctly though)
         onfly_featurizer = compressor
         pre_featurizer = None
     else:
@@ -153,58 +152,61 @@ def main(cfg):
         onfly_featurizer = None
         pre_featurizer = comp_trainer
 
+    if comm_cfg.evaluation.communication.is_evaluate:
+        logger.info("Evaluate communication ...")
+        comm_res = evaluate(comp_trainer, comm_datamodule, comm_cfg, stage)
+    else:
+        comm_res = dict()
+
+    finalize_stage_(
+        stage, comm_cfg, None, None, comm_datamodule, comm_res, finalize_kwargs
+    )
+
+    del comm_datamodule  # not used anymore and can be large
+
     ############## DOWNSTREAM PREDICTOR (i.e. receiver) ##############
     logger.info("Stage : Predictor")
-    pred_cfg = set_cfg(cfg, mode="predictor")
+    stage = "predictor"
+    pred_cfg = set_cfg(cfg, stage)
     pred_datamodule = instantiate_datamodule_(pred_cfg, pre_featurizer=pre_featurizer)
-    pred_cfg = omegaconf2namespace(
-        pred_cfg
-    )  # ensure real python types (only once cfg are fixed)
+    pred_cfg = omegaconf2namespace(pred_cfg)
 
-    if pred_cfg.predictor.is_train and not is_trained(comp_cfg, PREDICTOR_CHCKPNT):
+    if pred_cfg.predictor.is_train and not is_trained(comp_cfg, stage):
         predictor = Predictor(hparams=pred_cfg, featurizer=onfly_featurizer)
         pred_trainer = get_trainer(pred_cfg, predictor, is_featurizer=False)
         initialize_predictor_(predictor, pred_datamodule, pred_trainer, pred_cfg)
 
         logger.info("Train predictor ...")
         pred_trainer.fit(predictor, datamodule=pred_datamodule)
-        save_pretrained(pred_cfg, pred_trainer, PREDICTOR_CHCKPNT)
+        save_pretrained(pred_cfg, pred_trainer, stage)
 
     else:
         logger.info("Load pretrained predictor ...")
         FeatPred = get_featurizer_predictor(onfly_featurizer)
-        predictor = load_pretrained(pred_cfg, FeatPred, PREDICTOR_CHCKPNT)
+        predictor = load_pretrained(pred_cfg, FeatPred, stage)
         pred_trainer = get_trainer(pred_cfg, predictor, is_featurizer=False)
         placeholder_fit(pred_trainer, predictor, pred_datamodule)
         pred_cfg.evaluation.predictor.ckpt_path = None  # eval loaded model
 
     if pred_cfg.evaluation.predictor.is_evaluate:
         logger.info("Evaluate predictor ...")
-        pred_res = evaluate(
-            pred_trainer,
-            pred_datamodule,
-            pred_cfg,
-            PREDICTOR_RES,
-            False,
-            ckpt_path=pred_cfg.evaluation.predictor.ckpt_path,
-            is_featurizer=False,
-        )
+        pred_res = evaluate(pred_trainer, pred_datamodule, pred_cfg, stage)
     else:
         pred_res = dict()
 
-    finalize_stage(
-        pred_cfg, predictor, pred_trainer, is_save_best=pred_cfg.predictor.is_save_best
+    finalize_stage_(
+        stage,
+        pred_cfg,
+        predictor,
+        pred_trainer,
+        pred_datamodule,
+        pred_res,
+        finalize_kwargs,
     )
 
     ############## SHUTDOWN ##############
 
-    return finalize(
-        modules=dict(featurizer=compressor, predictor=predictor),
-        trainers=dict(featurizer=comp_trainer, predictor=pred_trainer),
-        datamodules=dict(featurizer=comp_datamodule, predictor=pred_datamodule),
-        cfgs=dict(featurizer=comp_cfg, predictor=pred_cfg),
-        results=dict(featurizer=feat_res, predictor=pred_res),
-    )
+    return finalize(**finalize_kwargs)
 
 
 def begin(cfg):
@@ -234,14 +236,14 @@ def get_stage_name(mode):
     return mode[:4]
 
 
-def set_cfg(cfg, mode):
+def set_cfg(cfg, stage):
     """Set the configurations for a specific mode."""
     cfg = copy.deepcopy(cfg)  # not inplace
 
     with omegaconf.open_dict(cfg):
-        if mode == "featurizer":
+        if stage == "featurizer":
 
-            cfg.stage = get_stage_name(mode)
+            cfg.stage = get_stage_name(stage)
             cfg.long_name = cfg.long_name_feat
 
             cfg.data = OmegaConf.merge(cfg.data, cfg.data_feat)
@@ -250,8 +252,17 @@ def set_cfg(cfg, mode):
 
             logger.info(f"Name : {cfg.long_name}.")
 
-        elif mode == "predictor":
-            cfg.stage = get_stage_name(mode)
+        elif stage == "communication":
+            cfg.stage = get_stage_name(stage)
+            cfg.long_name = cfg.long_name_comm
+
+            # currntly only communicate data_pred. But easy to change
+            cfg.data = OmegaConf.merge(cfg.data, cfg.data_pred)
+
+            logger.info(f"Name : {cfg.long_name}.")
+
+        elif stage == "predictor":
+            cfg.stage = get_stage_name(stage)
             cfg.long_name = cfg.long_name_pred
 
             cfg.data = OmegaConf.merge(cfg.data, cfg.data_pred)
@@ -264,7 +275,7 @@ def set_cfg(cfg, mode):
             logger.info(f"Name : {cfg.long_name}.")
 
         else:
-            raise ValueError(f"Unkown mode={mode}.")
+            raise ValueError(f"Unkown stage={stage}.")
 
     if not cfg.is_no_save:
         # make sure all paths exist
@@ -279,11 +290,14 @@ def set_cfg(cfg, mode):
         logger.info(f"Skipping most of {cfg.stage} as {file_end} exists.")
 
         with omegaconf.open_dict(cfg):
-            if mode == "featurizer":
+            if stage == "featurizer":
                 cfg.featurizer.is_train = False
                 cfg.evaluation.featurizer.is_evaluate = False
 
-            elif mode == "predictor":  # improbable
+            elif stage == "communication":
+                cfg.evaluation.communication.is_evaluate = False
+
+            elif stage == "predictor":  # improbable
                 cfg.predictor.is_train = False
                 cfg.evaluation.predictor.is_evaluate = False
 
@@ -523,7 +537,7 @@ def placeholder_fit(trainer, module, datamodule):
     trainer.model = module
 
 
-def save_pretrained(cfg, trainer, file):
+def save_pretrained(cfg, trainer, stage):
     """Send best checkpoint for compressor to main directory."""
 
     # restore best checkpoint
@@ -534,20 +548,23 @@ def save_pretrained(cfg, trainer, file):
     # save
     dest_path = Path(cfg.paths.pretrained.save)
     dest_path.mkdir(parents=True, exist_ok=True)
-    trainer.save_checkpoint(dest_path / file, weights_only=True)
+    filename = BEST_CHCKPNT.format(stage=stage)
+    trainer.save_checkpoint(dest_path / filename, weights_only=True)
 
 
-def is_trained(cfg, file):
+def is_trained(cfg, stage):
     """Test whether already saved the checkpoint, if yes then you already trained but might have preempted."""
     dest_path = Path(cfg.paths.pretrained.save)
-    return (dest_path / file).is_file()
+    filename = BEST_CHCKPNT.format(stage=stage)
+    return (dest_path / filename).is_file()
 
 
-def load_pretrained(cfg, Module, file, **kwargs):
+def load_pretrained(cfg, Module, stage, **kwargs):
     """Load the best checkpoint from the latest run that has the same name as current run."""
     save_path = Path(cfg.paths.pretrained.load)
+    filename = BEST_CHCKPNT.format(stage=stage)
     # select the latest checkpoint matching the path
-    chckpnt = get_latest_match(save_path / file)
+    chckpnt = get_latest_match(save_path / filename)
 
     loaded_module = Module.load_from_checkpoint(chckpnt, **kwargs)
 
@@ -562,52 +579,38 @@ def is_est_entropies(cfg):
     return cfg.evaluation.is_est_entropies
 
 
-def evaluate(
-    trainer,
-    datamodule,
-    cfg,
-    file,
-    is_est_entropies=False,
-    ckpt_path="best",
-    is_featurizer=True,
-):
+def evaluate(trainer, datamodule, cfg, stage):
     """
-    Evaluate the trainer by loging all the metrics from the training and test set from the best model.
-    Can also compute sample estimates of soem entropies, which should be better estimates than the
-    lower bounds used during training. Only estimate entropies if `is_featurizer`.
+    Evaluate the trainer by loging all the metrics from the test set from the best model.
+    Can also compute sample estimates of some entropies, which should be better estimates than the
+    lower bounds used during training. 
     """
     try:
-        # Evaluation
+        trainer.lightning_module.stage = cfg.stage  # logging correct stage
         eval_dataloader = datamodule.eval_dataloader(cfg.evaluation.is_eval_on_test)
+        ckpt_path = cfg.evaluation[stage].ckpt_path
         test_res = trainer.test(test_dataloaders=eval_dataloader, ckpt_path=ckpt_path)[
             0
         ]
-        if is_est_entropies and is_featurizer:
-            append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
+
+        if is_est_entropies(cfg):
+            try:
+                append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
+            except:
+                logger.exception("Failed to Compute entropies. Skipping this error:")
+
         log_dict(trainer, test_res, is_param=False)
 
         test_res_rep = replace_keys(test_res, "test/", "")
         tosave = dict(test=test_res_rep)
 
-        # Evaluation on train
-        if cfg.data.length < 1e5:
-            # don't eval on data if big
-            train_res = trainer.test(
-                test_dataloaders=datamodule.train_dataloader(), ckpt_path=ckpt_path
-            )[0]
-            train_res = replace_keys(train_res, "test", "testtrain")
-            if is_est_entropies and is_featurizer:
-                append_entropy_est_(train_res, trainer, datamodule, cfg, is_test=False)
-            log_dict(trainer, train_res, is_param=False)
-
-            train_res = replace_keys(train_res, "testtrain/", "")
-            tosave["train"] = train_res
-
         # save results
         results = pd.DataFrame.from_dict(tosave)
-        path = Path(cfg.paths.results) / file
+        filename = RESULTS_FILE.format(stage=stage)
+        path = Path(cfg.paths.results) / filename
         results.to_csv(path, header=True, index=True)
         logger.info(f"Logging results to {path}.")
+
     except:
         logger.exception("Failed to evaluate. Skipping this error:")
         test_res = dict()
@@ -656,22 +659,33 @@ def initialize_predictor_(module, datamodule, trainer, cfg):
             module.hparams.optimizer_pred.kwargs.lr = old_lr
 
 
-def finalize_stage(cfg, module, trainer, is_save_best=True):
+def finalize_stage_(
+    stage,
+    cfg,
+    module,
+    trainer,
+    datamodule,
+    results,
+    finalize_kwargs,
+    is_save_best=False,
+):
     """Finalize the current stage."""
-    logger.info(f"Finalizing {cfg.stage}.")
+    logger.info(f"Finalizing {stage}.")
 
-    assert (
-        cfg.checkpoint.kwargs.dirpath != cfg.paths.pretrained.save
-    ), "This will remove diesired checkpoints"
+    if stage != "communication":
+        # no checkpoints during communication
+        assert (
+            cfg.checkpoint.kwargs.dirpath != cfg.paths.pretrained.save
+        ), "This will remove diesired checkpoints"
 
-    for checkpoint in Path(cfg.checkpoint.kwargs.dirpath).glob("*.ckpt"):
-        checkpoint.unlink()  # remove all checkpoints as best is already saved elsewhere
+        for checkpoint in Path(cfg.checkpoint.kwargs.dirpath).glob("*.ckpt"):
+            checkpoint.unlink()  # remove all checkpoints as best is already saved elsewhere
 
-    # don't keep the pretrained model
-    if not is_save_best:
-        dest_path = Path(cfg.paths.pretrained.save)
-        for checkpoint in dest_path.glob("*.ckpt"):
-            checkpoint.unlink()  # remove all checkpoints
+        # don't keep the pretrained model
+        if not is_save_best:
+            dest_path = Path(cfg.paths.pretrained.save)
+            for checkpoint in dest_path.glob("*.ckpt"):
+                checkpoint.unlink()  # remove all checkpoints
 
     if not cfg.is_no_save:
         # save end file to make sure that you don't retrain if preemption
@@ -680,6 +694,15 @@ def finalize_stage(cfg, module, trainer, is_save_best=True):
 
         # save config to results
         cfg_save(cfg, Path(cfg.paths.results) / f"{cfg.stage}_{CONFIG_FILE}")
+
+    finalize_kwargs["results"][stage] = results
+    finalize_kwargs["cfgs"][stage] = cfg
+
+    if cfg.is_return:
+        # don't store large stuff if uneccessary
+        finalize_kwargs["modules"][stage] = module
+        finalize_kwargs["trainers"][stage] = trainer
+        finalize_kwargs["datamodules"][stage] = datamodule
 
 
 def finalize(modules, trainers, datamodules, cfgs, results):

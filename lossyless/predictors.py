@@ -7,13 +7,8 @@ from torchmetrics.functional import accuracy
 
 from .architectures import get_Architecture
 from .distortions import prediction_loss
-from .helpers import (
-    Normalizer,
-    Timer,
-    append_optimizer_scheduler_,
-    is_img_shape,
-    to_numpy,
-)
+from .helpers import (Normalizer, Timer, append_optimizer_scheduler_,
+                      is_img_shape, to_numpy)
 
 __all__ = ["Predictor", "OnlineEvaluator"]
 
@@ -44,6 +39,7 @@ class Predictor(pl.LightningModule):
         if featurizer is not None:
             # ensure not saved in checkpoint and frozen
             featurizer.set_featurize_mode_()
+            featurizer.stage = "predfeat" 
             self.featurizer = featurizer
             pred_in_shape = featurizer.out_shape
 
@@ -62,6 +58,8 @@ class Predictor(pl.LightningModule):
         cfg_pred = self.hparams.predictor
         Architecture = get_Architecture(cfg_pred.arch, **cfg_pred.arch_kwargs)
         self.predictor = Architecture(pred_in_shape, self.hparams.data.target_shape)
+
+        self.stage = self.hparams.stage
 
     # @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_logits=True, is_return_logs=False):
@@ -166,13 +164,13 @@ class Predictor(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
-        self.log_dict({f"train/pred/{k}": v for k, v in logs.items()}, sync_dist=True)
+        self.log_dict({f"train/{self.stage}/{k}": v for k, v in logs.items()}, sync_dist=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
         self.log_dict(
-            {f"val/pred/{k}": v for k, v in logs.items()},
+            {f"val/{self.stage}/{k}": v for k, v in logs.items()},
             on_epoch=True,
             on_step=False,
             sync_dist=True,
@@ -182,7 +180,7 @@ class Predictor(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
         self.log_dict(
-            {f"test/pred/{k}": v for k, v in logs.items()},
+            {f"test/{self.stage}/{k}": v for k, v in logs.items()},
             on_epoch=True,
             on_step=False,
             sync_dist=True,
@@ -190,7 +188,8 @@ class Predictor(pl.LightningModule):
         return loss
 
     def on_test_epoch_start(self):
-        self.featurizer.on_test_epoch_start()
+        if hasattr(self.featurizer, "on_test_epoch_start"):
+            self.featurizer.on_test_epoch_start()
 
     def configure_optimizers(self):
 
