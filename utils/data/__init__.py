@@ -7,6 +7,8 @@ def get_datamodule(datamodule):
     datamodule = datamodule.lower()
     if datamodule == "cifar10":
         return Cifar10DataModule
+    if datamodule == "cifar100":
+        return Cifar100DataModule
     elif datamodule == "mnist":
         return MnistDataModule
     elif datamodule == "imagenet":
