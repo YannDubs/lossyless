@@ -422,7 +422,15 @@ class LossylessImgDataset(LossylessDataset):
     @property
     def shapes_x_t_Mx(self):
         #! In each child should assign "input" and "target"
-        shapes_x_t_Mx = dict(max_inv=(len(self),))
+        shapes_x_t_Mx = dict()
+
+        try:
+            # TODO len(self) might not be initialized in constructor
+            # this is dirty trick which works because you never need shapes_x_t_Mx["max_inv"]
+            # before init
+            shapes_x_t_Mx["max_inv"] = (len(self),)
+        except:
+            pass
 
         if self.base_resize == "clip":
             # when using clip the shape should always be 224x224
@@ -725,8 +733,7 @@ class TensorflowBaseDataset(LossylessImgDataset, ImageFolder):
         check_import("tensorflow_datasets", "TensorflowBaseDataset")
 
         self.root = root
-        self.curr_split = curr_split
-        self._length = None
+        self._curr_split = curr_split  #  for get dir (but cannot set curr_split yet)
 
         if download and not self.is_exist_data:
             self.download()
@@ -1397,7 +1404,7 @@ class CocoClipDataset(LossylessImgDataset):
     def get_img_target(self, index):
         split_path = self.get_dir(self.curr_split)
         img = default_loader(split_path / f"{index}th_img.jpeg")
-        return img, None
+        return img, -1  # target -1 means missing for torcvhvision (see stl10)
 
     def get_equiv_x(self, x, index):
         # to get an x from the same equivalence class just return one the texts (already featurized)
