@@ -10,7 +10,7 @@ featurizer:
   name: clip_freeze
 
 encoder:
-  z_dim: 1024
+  z_dim: 512
 
 distortion:
   kwargs:

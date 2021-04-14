@@ -15,7 +15,7 @@ import seaborn as sns
 
 import hydra
 from lossyless.helpers import BASE_LOG, check_import
-from main import COMPRESSOR_RES, CONFIG_FILE, get_stage_name
+from main import CONFIG_FILE, get_stage_name
 from omegaconf import OmegaConf
 from utils.helpers import cfg_load, cfg_save, getattr_from_oneof, omegaconf2namespace
 from utils.postplotting import (
@@ -138,7 +138,7 @@ class ResultAggregator(PostPlotter):
 
     def collect_data(
         self,
-        pattern=f"results/**/{COMPRESSOR_RES}",
+        pattern=f"results/**/results_compressor.csv",
         table_name="featurizer",
         params_to_rm=["jid"],
         params_to_add={},

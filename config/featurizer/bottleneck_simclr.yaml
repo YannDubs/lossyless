@@ -3,7 +3,7 @@ defaults:
   - neural_feat@featurizer
   - override /architecture@encoder: simclr
   - override /distortion: ince
-  - override /rate: H_simclr
+  - override /rate: H_hyper
   - override /finetune: simclr
 
 data_feat:

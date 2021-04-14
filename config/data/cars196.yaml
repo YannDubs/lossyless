@@ -1,0 +1,6 @@
+
+defaults:
+  - base
+
+name: cars196
+dataset: cars196

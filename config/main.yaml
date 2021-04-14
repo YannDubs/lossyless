@@ -29,8 +29,8 @@ defaults:
   - data@data_pred: data_feat # use same as data_feat
   - architecture@predictor: resnet18
   - checkpoint@checkpoint_pred: bestValLoss  # really important if using cosine sceduler
-  - optimizer@optimizer_pred: SGD_lr3e-1_w1e-4
-  - scheduler@scheduler_pred: cosine
+  - optimizer@optimizer_pred: Adam_lr1e-3_w1e-4
+  - scheduler@scheduler_pred: cosine_restart
 
   # OVERIDES #
   - override hydra/job_logging: colorlog
@@ -44,7 +44,8 @@ seed: 123
 timeout: 1440 # 24 hours
 time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is not when job runs
 long_name_feat: exp_${experiment}/datafeat_${data_feat.name}/feat_${featurizer.name}/dist_${distortion.name}/enc_${encoder.name}/rate_${rate.name}/optfeat_${optimizer_feat.name}/schedfeat_${scheduler_feat.name}/zdim_${encoder.z_dim}/zs_${featurizer.loss.n_z_samples}/beta_${format:${featurizer.loss.beta},.1e}/seed_${seed}/addfeat_${other.add_feat}
-long_name_pred: ${long_name_feat}/datapred_${data_pred.name}/optpred_${optimizer_pred.name}/schedpred_${scheduler_pred.name}/addpred_${other.add_pred}
+long_name_comm: ${long_name_feat}/datapred_${data_pred.name}
+long_name_pred: ${long_name_comm}/optpred_${optimizer_pred.name}/schedpred_${scheduler_pred.name}/addpred_${other.add_pred}
 is_only_feat: false # run rpredicotr?
 is_return: false # will return everything (the data, the models, ...)
 monitor_return: [] # normal return of the functio. THis is especially useful for hyperparameter tuning
@@ -87,6 +88,9 @@ evaluation:
   predictor:
     ckpt_path: "best"
     is_evaluate: ${predictor.is_train}
+  communication:
+    ckpt_path: ${paths.base_dir}/pretrained/${long_name_feat}/jid_${job_id}/best_featurizer.ckpt # uses the best from the featuization step
+    is_evaluate: True
 
 callbacks: # can use any callback name of lossyless.calllbacks, pl_bolts.callbacks, pl.callbacks
   is_force_no_additional_callback: false # force empty callback
@@ -185,7 +189,6 @@ data_pred: {}
 predictor:
   name: ???
   is_train: True
-  is_save_best: False # don't save the best predictor as it is not of any use (that I can see) 
   arch: ???
   arch_kwargs: {}
 

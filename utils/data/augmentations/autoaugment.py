@@ -9,6 +9,8 @@ import random
 import numpy as np
 from PIL import Image, ImageEnhance, ImageOps
 
+import torch
+
 __all__ = ["ImageNetPolicy", "CIFAR10Policy", "SVHNPolicy"]
 
 
@@ -54,7 +56,7 @@ class ImageNetPolicy(object):
         ]
 
     def __call__(self, img):
-        policy_idx = random.randint(0, len(self.policies) - 1)
+        policy_idx = torch.randint(len(self.policies) - 1, (1,)).item()
         return self.policies[policy_idx](img)
 
     def __repr__(self):
@@ -103,7 +105,7 @@ class CIFAR10Policy(object):
         ]
 
     def __call__(self, img):
-        policy_idx = random.randint(0, len(self.policies) - 1)
+        policy_idx = torch.randint(len(self.policies) - 1, (1,)).item()
         return self.policies[policy_idx](img)
 
     def __repr__(self):
@@ -152,13 +154,17 @@ class SVHNPolicy(object):
         ]
 
     def __call__(self, img):
-        policy_idx = random.randint(0, len(self.policies) - 1)
+        policy_idx = torch.randint(len(self.policies) - 1, (1,)).item()
         return self.policies[policy_idx](img)
 
     def __repr__(self):
         return "AutoAugment SVHN Policy"
 
 
+#! this is probably the same for each example in a batch as it doesn't use torch random
+#! see: https://github.com/PyTorchLightning/pytorch-lightning/discussions/6957
+# this is partly solved by the fact that I use torch.randint to select which policy to apply
+# => the policy will usually be different (but that's not enough)
 class SubPolicy(object):
     def __init__(
         self,

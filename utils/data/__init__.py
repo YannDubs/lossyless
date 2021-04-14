@@ -7,6 +7,8 @@ def get_datamodule(datamodule):
     datamodule = datamodule.lower()
     if datamodule == "cifar10":
         return Cifar10DataModule
+    if datamodule == "cifar100":
+        return Cifar100DataModule
     elif datamodule == "mnist":
         return MnistDataModule
     elif datamodule == "imagenet":
@@ -15,6 +17,8 @@ def get_datamodule(datamodule):
         return STL10DataModule
     elif datamodule == "stl10unlabeled":
         return STL10UnlabeledDataModule
+    elif datamodule == "coco":
+        return CocoClipDataModule
     elif datamodule == "food101":
         return Food101DataModule
     elif datamodule == "sun397":  # download does not seem to be working
@@ -29,7 +33,7 @@ def get_datamodule(datamodule):
         return PCamDataModule
     elif datamodule == "flowers102":  # might drop
         return Flowers102DataModule  # should use mean per class
-    elif "galaxy" in datamodule:
+    elif datamodule == "galaxy":
         return GalaxyDataModule
     elif datamodule == "banana":
         return BananaDataModule

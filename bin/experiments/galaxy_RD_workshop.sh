@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-export MKL_SERVICE_FORCE_INTEL=1 # avoid learnfair error
-
 experiment="galaxy_RD_workshop"
 notes=" "
 
@@ -18,12 +16,10 @@ architecture@predictor=resnet18
 distortion.kwargs.arch_kwargs.complexity=3
 encoder.z_dim=128
 rate=H_hyper
-is_only_feat=False
 optimizer@optimizer_pred=sgd 
 scheduler@scheduler_pred=multistep
 trainer.max_epochs=200
 $add_kwargs
-logger=tensorboard
 "
 
 # every arguments that you are sweeping over
@@ -31,7 +27,6 @@ logger=tensorboard
 kwargs_multi="
 seed=1
 "
-
 
 if [ "$is_plot_only" = false ] ; then
   # this performs sweepingfor dependent / conditional arguments

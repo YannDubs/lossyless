@@ -17,7 +17,7 @@ from compressai.entropy_models.entropy_models import (
 )
 from compressai.models.utils import update_registered_buffers
 
-from .architectures import MLP, SimCLRProjector
+from .architectures import MLP
 from .distributions import get_marginalDist
 from .helpers import (
     BASE_LOG,
@@ -44,9 +44,6 @@ def get_rate_estimator(mode, z_dim=None, p_ZlX=None, n_z_samples=None, **kwargs)
 
     elif mode == "H_hyper":
         return HRateHyperprior(z_dim, n_z_samples=n_z_samples, **kwargs)
-
-    elif mode == "H_simclr":
-        return HRateSimCLR(z_dim, n_z_samples=n_z_samples, **kwargs)
 
     elif mode == "MI":
         q_Z = get_marginalDist(
@@ -112,6 +109,7 @@ class RateEstimator(torch.nn.Module):
     def reset_parameters(self):
         weights_init(self)
 
+    @torch.cuda.amp.autocast(False)  # precision here is important
     def forward(self, z, p_Zlx, parent=None):
         """Performs the approx compression and returns loss.
 
@@ -474,16 +472,6 @@ class HRateEstimator(RateEstimator):
             self.scaling = torch.nn.Parameter(torch.randn(self.z_dim, self.z_dim))
             self.biasing = torch.nn.Parameter(torch.zeros(self.z_dim))
 
-    @torch.cuda.amp.autocast(False)
-    def forward(self, z, p_Zlx, parent=None):
-        # precison here is important and the following is not memory intensive => use float32
-        # and don't allow autocasting
-        z_in, kwargs = self.process_z_in(z)
-        z_hat, rates, r_logs, r_other = super().forward(z_in, p_Zlx, parent=parent)
-        z_hat = self.process_z_out(z_hat, **kwargs)
-
-        return z_hat, rates, r_logs, r_other
-
     def process_z_in(self, z):
         z = z.float()
         kwargs = dict()
@@ -494,7 +482,6 @@ class HRateEstimator(RateEstimator):
 
         elif self.invertible_processing == "psd":
             is_nz_dim = z.ndim > 2
-            batch, z_dim = z.shape[-2:]
 
             if is_nz_dim:
                 # allow computation with n_z => resize
@@ -518,7 +505,6 @@ class HRateEstimator(RateEstimator):
 
         elif self.invertible_processing == "psd":
             is_nz_dim = z_hat.ndim > 2
-            batch, z_dim = z_hat.shape[-2:]
 
             if is_nz_dim:
                 # allow computation with n_z => resize
@@ -632,7 +618,9 @@ class HRateFactorizedPrior(HRateEstimator):
 
     def forward_help(self, z, _, parent=None):
 
-        z_hat, q_z = self.entropy_bottleneck(z)
+        z_in, kwargs = self.process_z_in(z)
+
+        z_hat, q_z = self.entropy_bottleneck(z_in)
 
         # - log q(z). shape :  [n_z_dim, batch_shape]
         neg_log_q_z = -torch.log(q_z).sum(-1)
@@ -645,6 +633,8 @@ class HRateFactorizedPrior(HRateEstimator):
             logs["n_bits"] = n_bits
 
         other = dict()
+
+        z_hat = self.process_z_out(z_hat, **kwargs)
 
         return z_hat, neg_log_q_z, logs, other
 
@@ -731,9 +721,10 @@ class HRateHyperprior(HRateEstimator):
         return scales_hat, means_hat
 
     def forward_help(self, z, _, __):
+        z_in, kwargs = self.process_z_in(z)
 
         # shape: [n_z_dim, batch_shape, side_z_dim]
-        side_z = self.side_encoder(z)
+        side_z = self.side_encoder(z_in)
         side_z_hat, q_s = self.entropy_bottleneck(side_z)
 
         # scales_hat and means_hat (if not None). shape: [n_z_dim, batch_shape, z_dim]
@@ -741,7 +732,7 @@ class HRateHyperprior(HRateEstimator):
         scales_hat, means_hat = self.chunk_params(gaussian_params)
 
         # shape: [n_z_dim, batch_shape, z_dim]
-        z_hat, q_zls = self.gaussian_conditional(z, scales_hat, means=means_hat)
+        z_hat, q_zls = self.gaussian_conditional(z_in, scales_hat, means=means_hat)
 
         # - log q(s). shape :  [n_z_dim, batch_shape]
         neg_log_q_s = -torch.log(q_s).sum(-1)
@@ -766,6 +757,8 @@ class HRateHyperprior(HRateEstimator):
             logs["n_bits"] = n_bits
 
         other = dict()
+
+        z_hat = self.process_z_out(z_hat, **kwargs)
 
         return z_hat, neg_log_q_zs, logs, other
 
@@ -846,33 +839,3 @@ class HRateHyperprior(HRateEstimator):
             unexpected_keys,
             error_msgs,
         )
-
-
-class HRateSimCLR(HRateHyperprior):
-    """
-    HRateHyperprior but initializes side information encoder with simclr projection head.
-    """
-
-    def __init__(self, z_dim, is_reinit=False, **kwargs):
-        assert z_dim == 2048
-
-        self.is_reinit = is_reinit  # wheter to start from pretraiend
-        super().__init__(
-            2048, side_z_dim=128, **kwargs,
-        )
-
-        self.reset_parameters()
-
-    def get_encoders(self):
-        side_encoder = SimCLRProjector(self.z_dim, self.side_z_dim)
-        if self.is_reinit:
-            weights_init(side_encoder)
-
-        _, z_encoder = super().get_encoders()
-        return side_encoder, z_encoder
-
-    def reset_parameters(self):
-        super().reset_parameters()
-
-        if not self.is_reinit:
-            self.side_encoder.load_weights_()  # reload pretrained weights

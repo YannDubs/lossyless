@@ -17,8 +17,16 @@ from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from pytorch_lightning.utilities import rank_zero_only
 
-from .helpers import (BASE_LOG, UnNormalizer, is_colored_img, plot_config,
-                      plot_density, setup_grid, tensors_to_fig, to_numpy)
+from .helpers import (
+    BASE_LOG,
+    UnNormalizer,
+    is_colored_img,
+    plot_config,
+    plot_density,
+    setup_grid,
+    tensors_to_fig,
+    to_numpy,
+)
 
 try:
     import wandb
@@ -593,6 +601,7 @@ class ResnetFinetuning(BaseFinetuning):
         self.lr_factor_last_block = lr_factor_last_block
         self.lr_factor_penult_block = lr_factor_penult_block
         self.train_bn = train_bn
+        self.loaded_epoch = -1
 
     def get_model(self, pl_module):
         model = pl_module
@@ -606,8 +615,13 @@ class ResnetFinetuning(BaseFinetuning):
         model = self.get_model(pl_module)
         self.freeze(modules=model, train_bn=self.train_bn)
 
-    def finetune_function(self, pl_module, current_epoch, optimizer, optimizer_idx):
-        if optimizer_idx == 0 and current_epoch == self.unfreeze_last_layer:
+    def is_unfreeze(self, curr_epoch, target_epoch):
+        #! waiting for https://github.com/PyTorchLightning/pytorch-lightning/issues/6891
+        return (curr_epoch == target_epoch) or (self.loaded_epoch >= target_epoch)
+
+    def finetune_function(self, pl_module, curr_epoch, optimizer, opt_idx):
+
+        if opt_idx == 0 and self.is_unfreeze(curr_epoch, self.unfreeze_last_layer):
             resnet = self.get_model(pl_module)
 
             if hasattr(resnet, "attnpool"):
@@ -626,7 +640,7 @@ class ResnetFinetuning(BaseFinetuning):
                 initial_denom_lr=self.lr_factor_last_layer,
             )
 
-        if optimizer_idx == 0 and current_epoch == self.unfreeze_last_block:
+        if opt_idx == 0 and self.is_unfreeze(curr_epoch, self.unfreeze_last_block):
             resnet = self.get_model(pl_module)
             last_block = resnet.layer4
             self.unfreeze_and_add_param_group(
@@ -636,7 +650,7 @@ class ResnetFinetuning(BaseFinetuning):
                 initial_denom_lr=self.lr_factor_last_block,
             )
 
-        if optimizer_idx == 0 and current_epoch == self.unfreeze_penult_block:
+        if opt_idx == 0 and self.is_unfreeze(curr_epoch, self.unfreeze_penult_block):
             resnet = self.get_model(pl_module)
             penult_block = resnet.layer3
             self.unfreeze_and_add_param_group(
@@ -649,8 +663,9 @@ class ResnetFinetuning(BaseFinetuning):
 
 class ViTFinetuning(ResnetFinetuning):
     # finetuning of CLIP visual tranformer
-    def finetune_function(self, pl_module, current_epoch, optimizer, optimizer_idx):
-        if optimizer_idx == 0 and current_epoch == self.unfreeze_last_layer:
+    def finetune_function(self, pl_module, curr_epoch, optimizer, opt_idx):
+
+        if opt_idx == 0 and self.is_unfreeze(curr_epoch, self.unfreeze_last_layer):
 
             vit = self.get_model(pl_module)
             last_layer = vit.proj
@@ -658,9 +673,17 @@ class ViTFinetuning(ResnetFinetuning):
             # last layer is just a matrix of parameters, not a layer
             last_layer.requires_grad = True
             lr = optimizer.param_groups[0]["lr"] / self.lr_factor_last_layer
-            optimizer.add_param_group({"params": [last_layer], "lr": lr})
 
-        if optimizer_idx == 0 and current_epoch == self.unfreeze_last_block:
+            if any(
+                torch.equal(p, last_layer)
+                for group in optimizer.param_groups
+                for p in group["params"]
+            ):
+                logger.warning("Skipping last_layer freezing as already in optimizer.")
+            else:
+                optimizer.add_param_group({"params": [last_layer], "lr": lr})
+
+        if opt_idx == 0 and self.is_unfreeze(curr_epoch, self.unfreeze_last_block):
 
             vit = self.get_model(pl_module)
             last_block = vit.transformer.resblocks[-1]
@@ -671,7 +694,7 @@ class ViTFinetuning(ResnetFinetuning):
                 initial_denom_lr=self.lr_factor_last_block,
             )
 
-        if optimizer_idx == 0 and current_epoch == self.unfreeze_penult_block:
+        if opt_idx == 0 and self.is_unfreeze(curr_epoch, self.unfreeze_penult_block):
 
             vit = self.get_model(pl_module)
             penult_block = vit.transformer.resblocks[-2]

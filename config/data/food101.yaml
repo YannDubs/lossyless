@@ -1,0 +1,6 @@
+
+defaults:
+  - base
+
+name: food101
+dataset: food101

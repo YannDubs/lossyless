@@ -178,11 +178,11 @@ def get_featurized_data(
 if __name__ == "__main__":
     for model in ["CLIP_ViT"]:  # ["CLIP_ViT", "CLIP_RN50","SimCLR"]:
         Datasets = dict(
-            # CIFAR10=CIFAR10,
+            CIFAR10=CIFAR10,
             # CIFAR100=CIFAR100,
             # ImagenetteDataset=ImagenetteDataset,
             # ImagenetDataset=ImagenetDataset,
-            STL10=STL10Dataset
+            # STL10=STL10Dataset
         )
         device = "cuda" if torch.cuda.is_available() else "cpu"
         features = get_featurized_data(

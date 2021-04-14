@@ -3,13 +3,13 @@ defaults:
   - base
 
 finetune: 
-  name: clip
-
+  name: clip_vslow
+  
 callbacks:
   ViTFinetuning:
     is_use: true
     kwargs:
       model_name: p_ZlX.mapper.vit
       unfreeze_last_layer: 0
-      unfreeze_last_block: 2
-      unfreeze_penult_block: 4
+      unfreeze_last_block: 5
+      unfreeze_penult_block: 10

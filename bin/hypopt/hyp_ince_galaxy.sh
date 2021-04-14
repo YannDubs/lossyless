@@ -2,7 +2,7 @@
 
 experiment="hyp_ince_galaxy"
 notes="
-**Goal**: Hyperparameter tuning for ince on galaxy
+**Goal**: Hyperparameter tuning for ince on the new galaxy dataset
 "
 
 # parses special mode for running the script
@@ -22,6 +22,9 @@ rate=H_hyper
 trainer.max_epochs=50
 +update_trainer_pred.max_epochs=100
 distortion=ince
+featurizer.loss.beta_anneal=linear
+rate.kwargs.invertible_processing=diag
+predictor.arch_kwargs.hid_dim=2048
 $add_kwargs
 "
 #TODO increase epochs before pushing
@@ -30,12 +33,12 @@ $add_kwargs
 # sweeping arguments
 kwargs_hypopt="
 hydra/sweeper=optuna
-hypopt=multi_optuna
-hydra.sweeper.optuna_config.n_trials=225
-hydra.sweeper.optuna_config.n_jobs=75
+hydra/sweeper/sampler=random
+hypopt=optuna
+hydra.sweeper.n_trials=100
+hydra.sweeper.n_jobs=50
 monitor_direction=[minimize,minimize]
-monitor_return=[test/pred/err,test/feat/rate]
-hydra.sweeper.optuna_config.sampler=random
+monitor_return=[test/pred/err,test/comm/rate]
 "
 
 # here the random sampler means that we are not actually doing smart hyperparametr tuning use `nsgaii` if you want
@@ -46,23 +49,21 @@ hydra.sweeper.optuna_config.sampler=random
 # if the values that are swept over are not understandable from the names `interval` `log`.. check : https://hydra.cc/docs/next/plugins/optuna_sweeper
 kwargs_multi="
 $kwargs_hypopt
-data_feat.kwargs.batch_size=tag(log,int(interval(64,256)))
-encoder.z_dim=tag(log,int(interval(32,512)))
-featurizer.loss.beta_anneal=linear,constant
-featurizer.loss.beta=tag(log,interval(1e-8,1e-2))
+data_feat.kwargs.batch_size=tag(log,int(interval(128,256)))
+encoder.z_dim=tag(log,int(interval(128,1024)))
+featurizer.loss.beta=tag(log,interval(3e-6,1e-3))
 distortion.factor_beta=tag(log,interval(1e-5,1e-1))
-rate.kwargs.warmup_k_epoch=int(interval(0,3))
-rate.kwargs.invertible_processing=null,diag,psd
 optimizer@optimizer_feat=Adam,AdamW
+rate.kwargs.warmup_k_epoch=int(interval(0,5))
 optimizer_feat.kwargs.weight_decay=tag(log,interval(1e-8,1e-4))
-optimizer_feat.kwargs.lr=tag(log,interval(1e-4,3e-3))
-optimizer_coder.kwargs.weight_decay=tag(log,interval(1e-7,5e-4))
-optimizer_coder.kwargs.lr=tag(log,interval(1e-4,1e-3))
+optimizer_feat.kwargs.lr=tag(log,interval(5e-5,1e-3))
+optimizer_coder.kwargs.weight_decay=tag(log,interval(3e-6,1e-4))
+optimizer_coder.kwargs.lr=tag(log,interval(3e-4,1e-3))
 scheduler@scheduler_feat=cosine,expdecay100,expdecay1000,unifmultistep1000
 scheduler@scheduler_coder=cosine_restart,expdecay100,unifmultistep1000,unifmultistep100
-seed=0,1,2,3,4
+seed=0,1,2,3,4,5,6,7,8,9
 distortion.kwargs.project_kwargs.out_shape=tag(log,interval(0.05,0.5))
-distortion.kwargs.temperature=tag(log,interval(0.01,0.3))
+distortion.kwargs.temperature=tag(log,interval(0.01,0.2))
 " 
 # distortion.factor_beta : instead of deacreasing weight given to rate will increase weight given to distortion
 # BATCH SIZE: for INCE it can be beneficial to use larger batches. THe issues is that this might be worst for other parts of the networks. SOme papers say using `is_lars=True` can mititgate the issue when using large batches
@@ -72,16 +73,26 @@ distortion.kwargs.temperature=tag(log,interval(0.01,0.3))
 # PREDICTOR
 kwargs_multi="
 $kwargs_multi
-data_pred.kwargs.batch_size=tag(log,int(interval(16,128)))
-predictor.arch_kwargs.hid_dim=tag(log,int(interval(512,4096)))
+data_pred.kwargs.batch_size=tag(log,int(interval(32,64)))
 predictor.arch_kwargs.dropout_p=interval(0.,0.5)
-predictor.arch_kwargs.n_hid_layers=1,2
 optimizer@optimizer_pred=SGD_likeadam,Adam,AdamW
 optimizer_pred.kwargs.weight_decay=tag(log,interval(1e-8,1e-4))
-optimizer_pred.kwargs.lr=tag(log,interval(1e-4,1e-3))
-scheduler@scheduler_pred=cosine,plateau_quick,cosine_restart,expdecay100,expdecay1000,unifmultistep100
+optimizer_pred.kwargs.lr=tag(log,interval(5e-4,3e-3))
+scheduler@scheduler_pred=cosine_restart,expdecay100,plateau_quick,unifmultistep1000
 " 
 
+
+# kwargs_multi="
+# trainer.max_epochs=1
+# ++update_trainer_pred.max_epochs=1
+# mode=dev
+# +update_trainer_pred.limit_val_batches=1.0
+# +update_trainer_pred.limit_test_batches=0.5
+# evaluation.featurizer.is_evaluate=True
+# data_feat.kwargs.batch_size=64
+# data_pred.kwargs.batch_size=64
+# optimizer_pred.kwargs.lr=1e-3
+# "
 
 if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in  ""        

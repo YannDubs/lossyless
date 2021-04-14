@@ -1,0 +1,7 @@
+
+defaults:
+  - base
+  - base_unlabeled
+
+name: coco
+dataset: coco
