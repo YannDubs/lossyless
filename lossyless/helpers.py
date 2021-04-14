@@ -269,8 +269,8 @@ def kl_divergence(p, q, z_samples=None, is_lower_var=False, is_reduce=True):
 MEANS = dict(
     imagenet=[0.485, 0.456, 0.406],
     cifar10=[0.4914009, 0.48215896, 0.4465308],
-    galaxy64=[0.03341029, 0.04443058, 0.05051352],
-    galaxy128=[0.03294565, 0.04387402, 0.04995899],
+    # this is galaxy 128 but shouldn't change much as resizing shouldn't impact much
+    galaxy=[0.03294565, 0.04387402, 0.04995899],
     clip=[0.48145466, 0.4578275, 0.40821073],
     stl10=[0.43, 0.42, 0.39],
     stl10unlabeled=[0.43, 0.42, 0.39],
@@ -278,8 +278,7 @@ MEANS = dict(
 STDS = dict(
     imagenet=[0.229, 0.224, 0.225],
     cifar10=[0.24703279, 0.24348423, 0.26158753],
-    galaxy64=[0.06985303, 0.07943781, 0.09557958],
-    galaxy128=[0.07004886, 0.07964786, 0.09574898],
+    galaxy=[0.07004886, 0.07964786, 0.09574898],
     clip=[0.26862954, 0.26130258, 0.27577711],
     stl10=[0.27, 0.26, 0.27],
     stl10unlabeled=[0.27, 0.26, 0.27],
@@ -535,13 +534,13 @@ def get_lr_scheduler(
         Number of epochs during training.
 
     decay_factor : int, optional
-        By how much to reduce learning rate during training. Only if 
+        By how much to reduce learning rate during training. Only if
         `name in ["expdecay","UniformMultiStepLR"]`.
 
-    k_steps : int, optional 
-        Number of steps for decreasing the learning rate in `"UniformMultiStepLR"`. 
+    k_steps : int, optional
+        Number of steps for decreasing the learning rate in `"UniformMultiStepLR"`.
 
-    name : str, optional    
+    name : str, optional
         Name of the scheduler for logging.
 
     kwargs_config_scheduler : dict, optional

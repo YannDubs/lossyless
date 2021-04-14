@@ -16,7 +16,7 @@ data_pred:
   kwargs:
     dataset_kwargs:
       base_resize: clip
-      equivalence: ["resize","crop"]
+      equivalence: ["resize","crop"] 
 
 featurizer:
   name: bottleneck_clip

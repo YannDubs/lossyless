@@ -33,7 +33,7 @@ def get_datamodule(datamodule):
         return PCamDataModule
     elif datamodule == "flowers102":  # might drop
         return Flowers102DataModule  # should use mean per class
-    elif "galaxy" in datamodule:
+    elif datamodule == "galaxy":
         return GalaxyDataModule
     elif datamodule == "banana":
         return BananaDataModule

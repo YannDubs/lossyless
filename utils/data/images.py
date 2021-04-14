@@ -28,7 +28,6 @@ from torchvision.datasets import (
     ImageFolder,
     ImageNet,
 )
-from torchvision.datasets.folder import default_loader
 from torchvision.transforms import (
     CenterCrop,
     ColorJitter,
@@ -63,13 +62,14 @@ from .helpers import (
     Flowers102BalancingWeights,
     Pets37BalancingWeights,
     download_url,
+    image_loader,
     int_or_ratio,
     npimg_resize,
     unzip,
 )
 
 try:
-    import kaggle  # only used for galaxy so skip if not needed
+    import kaggle
 except (ImportError, OSError):
     pass
 
@@ -370,7 +370,7 @@ class LossylessImgDataset(LossylessDataset):
 
         if self.is_normalize and self.is_color:
             # only normalize colored images
-            # raise if can't normalize because you specifrically gave `is_normalize`
+            # raise if can't normalize because you specifically gave `is_normalize`
             trnsfs += [self.normalizer()]
 
         return Compose(trnsfs)
@@ -696,7 +696,7 @@ class ImagenetDataModule(LossylessImgDataModule):
 
 ### Tensorflow Datasets Modules ###
 class TensorflowBaseDataset(LossylessImgDataset, ImageFolder):
-    """Base class for tensorflow-datasets. This will download using save as hdf5.
+    """Base class for tensorflow-datasets.
 
     Notes
     -----
@@ -714,8 +714,8 @@ class TensorflowBaseDataset(LossylessImgDataset, ImageFolder):
     download : bool, optional
         Whether to download the data if it is not existing.
 
-    n_pixels : int, optional
-        Size of square crops to take.
+    kwargs :
+        Additional arguments to `LossylessImgDataset` and `ImageFolder`.
 
     class attributes
     ----------------
@@ -1014,55 +1014,175 @@ class Caltech101DataModule(LossylessImgDataModule):
 
 
 ### Other Datasets ###
+class ExternalImgDataset(LossylessImgDataset):
+    """Base class for external datasets that are neither torchvision nor tensorflow. Images will be
+    saved as jpeg.
+
+    Parameters
+    ----------
+    root : str or Path
+        Base path to directory for saving data.
+
+    download : bool, optional
+        Whether to download the data if it does not exist.
+
+    kwargs :
+        Additional arguments to `LossylessImgDataset`.
+
+    class attributes
+    ----------------
+    min_size : int, optional
+        Resizing of the smaller size of an edge to a certain value. If `None` does not resize.
+        Recommended for images that will be always rescaled to a smaller version (for memory gains).
+        Only used when downloading.
+    """
+
+    min_size = 256
+    required_packages = []
+
+    def __init__(
+        self, root, *args, download=True, curr_split="train", **kwargs,
+    ):
+        for p in self.required_packages:
+            check_import(p, type(self).__name__)
+
+        self.root = Path(root)
+        if download and not self.is_exist_data:
+            self.download_extract()
+            self.preprocess()
+
+        self.load_data_(curr_split)
+        self.length = len(list(self.get_dir(curr_split).glob("*.jpeg")))
+
+        super().__init__(
+            *args, curr_split=curr_split, **kwargs,
+        )
+
+    def get_dir(self, split=None):
+        """Return the main directory or the one for a split."""
+        if split == "validation":
+            split = "train"  # validation split comes from train
+
+        main_dir = Path(self.root) / self.dataset_name
+        if split is None:
+            return main_dir
+        else:
+            return main_dir / split
+
+    @property
+    def is_exist_data(self):
+        """Whether the data is available."""
+        is_exist = True
+        for split in self.get_available_splits():
+            check_file = self.get_dir(split) / EXIST_DATA
+            is_exist &= check_file.is_file()
+        return is_exist
+
+    def download_extract(self):
+        logger.info(f"Downloading {self.dataset_name} ...")
+
+        data_dir = self.get_dir()
+        remove_rf(data_dir, not_exist_ok=True)
+        data_dir.mkdir(parents=True)
+
+        self.download(data_dir)
+
+        logger.info(f"Extracting {self.dataset_name} ...")
+
+        zips = list(data_dir.glob("*.zip"))
+        # while loop for recursing in case zips of zips
+        while len(zips) > 0:
+            for filename in zips:
+                logger.info(f"Unzipping {filename}")
+                unzip(filename)
+            zips = list(data_dir.glob("*.zip"))
+
+        logger.info(f"{self.dataset_name} successfully pre-processed.")
+
+    def preprocess(self):
+        for split in self.get_available_splits():
+            logger.info(f"Preprocessing {self.dataset_name} split={split}.")
+            split_path = self.get_dir(split)
+
+            remove_rf(split_path, not_exist_ok=True)
+            split_path.mkdir()
+
+            to_rm = self.preprocess_split(split)
+
+            check_file = split_path / EXIST_DATA
+            check_file.touch()
+
+            for f in to_rm:
+                # remove all files and directories that are not needed
+                remove_rf(f)
+
+    def __len__(self):
+        return self.length
+
+    @classmethod
+    def get_available_splits(cls):
+        return ["test", "train"]
+
+    @property
+    def preprocessing_resizer(self):
+        """Resizing function for preprocessing step."""
+        if self.min_size is None:
+            return Compose([])
+        else:
+            return Resize(self.min_size)
+
+    @abc.abstractmethod
+    def download(self, data_dir):
+        """Actual downloading of the dataset to `data_dir`."""
+        ...
+
+    @abc.abstractmethod
+    def preprocess_split(self, split):
+        """Preprocesses the current split, and return all the files that can be removed fpr that split."""
+        ...
+
+    @abc.abstractmethod
+    def load_data_(self, split):
+        """Loads data if needed."""
+        ...
+
 
 # Galaxy Zoo #
-class GalaxyDataset(LossylessImgDataset):
+class GalaxyDataset(ExternalImgDataset):
+    """Galaxy Zoo 2 Dataset.
+
+    Notes
+    -----
+    - See challenge: https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge
+    - Winning solution on kaggle (and tricks for augmentations):
+      http://benanne.github.io/2014/04/05/galaxy-zoo.html
+    - The images will be center cropped to 256x256 after downloading, this is slightly larger than
+    the 207 used by winning strategy (so that can be used by standard SSL models).
+
+    Parameters
+    ----------
+    resolution : int, optional
+        Square size of the image to work with. The winning strategy uses resizes to 69 and then
+        crops to 45, so effectively works with 45.
+
+    arg, kwargs :
+        Arguments to `LossylessImgDataset`.
+    """
+
+    required_packages = ["cv2", "kaggle"]
+
+    split_to_root = dict(test="images_test_rev1", train="images_training_rev1",)
+
     def __init__(
         self,
-        root: str,
         *args,
-        curr_split: str = "train",
-        download: bool = True,
-        resolution: int = 64,
+        resolution=128,
+        is_normalize=False,  # do not normalize because little variance (black ++)
         **kwargs,
     ):
-        check_import("cv2", "GalaxyDataset")
-
-        self.root = root
-        self.curr_split = curr_split
-        data_dir = path.join(root, "galaxyzoo")
         self.resolution = resolution
-        if download and not self.is_exist_data(data_dir):
-            self.download(data_dir)
-            self.preprocess(data_dir)
 
-        self.load_data(data_dir, curr_split, resolution)
-
-        super().__init__(*args, curr_split=curr_split, **kwargs)
-
-    def is_exist_data(self, data_dir):
-        # check if we already preprocessed and downloaded the data
-        # this is a hacky check, we just check if the last file that this
-        # routine yields exists
-        return path.exists(path.join(data_dir, "test_images_128.npy"))
-
-    def download(self, data_dir):
-        def unpack_all_zips():
-            for f, file in enumerate(glob.glob(path.join(data_dir, "*.zip"))):
-                with zipfile.ZipFile(file, "r") as zip_ref:
-                    zip_ref.extractall(data_dir)
-                    os.remove(file)
-                    logger.info("{} completed. Progress: {}/6".format(file, f))
-
-        filename = "galaxy-zoo-the-galaxy-challenge.zip"
-
-        # check if data was already downloaded
-        if path.exists(path.join(self.root, filename)):
-            # continue unpacking files just in case this got interrupted or user
-            # downloaded files manually. you never know :)
-            unpack_all_zips()
-            return
-        # check if user has access to the kaggle API otherwise link instructions
+        # kaggle is not straightforward to install => add more details about error
         try:
             import kaggle
         except Exception as e:
@@ -1072,162 +1192,76 @@ class GalaxyDataset(LossylessImgDataset):
             )
             raise e
 
-        logger.info("Downloading Galaxy ...")
-
-        # download the dataset
-        bashCommand = (
-            "kaggle competitions download -c "
-            "galaxy-zoo-the-galaxy-challenge -p {}".format(self.root)
+        super().__init__(
+            *args, is_normalize=is_normalize, **kwargs,
         )
-        process = subprocess.Popen(
-            bashCommand.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+
+    def download(self, data_dir):
+        kaggle.api.competition_download_files(
+            "galaxy-zoo-the-galaxy-challenge", path=data_dir, quiet=False
         )
-        out = process.communicate()[0].decode("utf-8")
-        is_error = process.returncode != 0
-        if is_error:
-            logging.critical(
-                f"{bashCommand} failed with outputs: {out}. \n "
-                "Hint: don't forget to accept competition rules at "
-                "https://www.kaggle.com/c/galaxy-zoo-the-galaxy-challenge/rules. "
-            )
 
-        # unpack the data
-        with zipfile.ZipFile(os.path.join(self.root, filename), "r") as zip_ref:
-            zip_ref.extractall(data_dir)
+    def preprocess_split(self, split):
 
-        unpack_all_zips()
+        data_dir = self.get_dir()
+        split_path = self.get_dir(split)
 
-    def preprocess(self, data_dir):
+        # SAVE IDs
+        raw_paths = list(data_dir.glob(f"{self.split_to_root[split]}/*.jpg"))
+        ids = [int(f.stem) for f in raw_paths]
+        np.save(data_dir / f"{split}_ids", ids)
 
-        # SAVE IMAGE IDs
-        def get_image_ids(image_dir):
-            raw_file_paths = glob.glob(path.join(data_dir, image_dir))
-            ids = [int(f.split("/")[-1].split(".")[0]) for f in raw_file_paths]
-            return ids, raw_file_paths
-
-        # test set
-        test_ids, test_paths = get_image_ids("images_test_rev1/*.jpg")
-        np.save(path.join(data_dir, "test_ids"), test_ids)
-
-        # train and valid set
-        ids, paths = get_image_ids("images_training_rev1/*.jpg")
-        # make fixed train / valid split
-        num_valid = len(ids) // 10
-        assert num_valid == 6157, (
-            "Validation set is not the right size. " "Oeef. That is not good."
-        )
-        valid_ids, valid_paths = ids[:num_valid], paths[:num_valid]
-        train_ids, train_paths = ids[num_valid:], paths[num_valid:]
-        np.save(path.join(data_dir, "valid_ids"), valid_ids)
-        np.save(path.join(data_dir, "train_ids"), train_ids)
-
-        # SAVE TRAIN LABELS
-        df = pd.read_csv(path.join(data_dir, "training_solutions_rev1.csv"))
-
-        for split, ids in [("train", train_ids), ("valid", valid_ids)]:
+        # SAVE LABELS
+        if split == "train":
+            # no test labels
+            df = pd.read_csv(data_dir / "training_solutions_rev1.csv")
             targets = [
                 df.loc[df["GalaxyID"] == id].values[:, 1:].astype("float32")
                 for id in ids
             ]
-            np.save(path.join(data_dir, split + "_targets"), np.array(targets))
+            np.save(data_dir / "train_targets", np.array(targets))
 
-        # PRE-PROCESSING IMAGES
-        ORIG_SHAPE = (424, 424)
-        CROP_SIZE = (384, 384)
-        x1 = (ORIG_SHAPE[0] - CROP_SIZE[0]) // 2
-        y1 = (ORIG_SHAPE[1] - CROP_SIZE[1]) // 2
+        # resize to all images if needed
+        for i, path in enumerate(tqdm(raw_paths)):
+            img = image_loader(path)
+            img = self.preprocessing_resizer(img)
+            img.save(split_path / f"{i}th_img.jpeg")
 
-        def get_image(path, out_shape):
-            x = cv2.imread(path)
-            x = x[x1 : x1 + CROP_SIZE[0], y1 : y1 + CROP_SIZE[1]]
-            x = cv2.resize(x, dsize=out_shape, interpolation=cv2.INTER_LINEAR)
-            x = np.transpose(x, (2, 0, 1))
-            return x
+        files_to_rm = [data_dir / self.split_to_root[split]]
+        return files_to_rm
 
-        for out_shape in [(64, 64), (128, 128)]:
-            res = str(out_shape[0])
-
-            for (split, raw_paths) in [
-                ("train", train_paths),
-                ("valid", valid_paths),
-                ("test", test_paths),
-            ]:
-                preprocessed_images = []
-                for i, p in enumerate(raw_paths):
-                    logger.info(
-                        "Processed {}/{} images in {} split with resolution "
-                        "{}x{}.".format(i, len(raw_paths), split, res, res)
-                    )
-                    preprocessed_images.append(get_image(p, out_shape))
-
-                out = np.array(preprocessed_images)
-                out_path = split + "_images_" + res
-                np.save(path.join(data_dir, out_path), out)
-                if split == "train":
-                    out = out.astype("float32") / 255.0
-                    mean = np.mean(out, axis=(0, 2, 3))
-                    np.save(path.join(data_dir, out_path + "_mean"), mean)
-                    std = np.std(out, axis=(0, 2, 3))
-                    np.save(path.join(data_dir, out_path + "_std"), std)
-
-        logger.info("Galaxy data successfully pre-processed.")
-
-    def load_data(self, data_dir, split, resolution):
-        imgs = np.load(
-            path.join(data_dir, "{}_images_{}.npy".format(split, resolution))
-        )
-        self.data = imgs.astype("float32") / 255.0
-
-        if not split == "test":
-            self.targets = np.load(path.join(data_dir, split + "_targets.npy"))
-        else:
+    def load_data_(self, split):
+        data_dir = self.get_dir()
+        if split == "test":
             # We do not have test targets bc kaggle holds them back. We will
             # later need the image IDs to make a submission file that will be
             # evaluated via the kaggle api.
-            self.ids = np.load(path.join(data_dir, split + "_ids.npy"))
+            self.ids = np.load(data_dir / f"{split}_ids.npy")
+        else:
+            self.targets = np.load(data_dir / f"{split}_targets.npy")
 
     @property
     def is_clf_x_t_Mx(self):
-        is_clf = super(GalaxyDataset, self).is_clf_x_t_Mx
-        # input should be true is using log loss for reconstruction (typically MNIST) and False if MSE (typically colored images)
-        is_clf["input"] = False
-        # target should be True if log loss (ie classification) and False if MSE (ie regression)
-        is_clf["target"] = False
+        is_clf = super().is_clf_x_t_Mx
+        is_clf["target"] = False  # treated as regression task
         return is_clf
 
     @property
     def shapes_x_t_Mx(self):
-        shapes = super(GalaxyDataset, self).shapes_x_t_Mx
-        # input is shape image
+        shapes = super().shapes_x_t_Mx
         shapes["input"] = (3, self.resolution, self.resolution)
-        # target is shape of target. This will depend as to if we are using classfication or regression
-        # in regression mode (as we said) then you should stack all labels.
-        # e.g. if the are 37 different regression tasks use `target=(1,37)` which says that there are 37
-        # one dimensional tasks (it's the same as `target=(37,)` but averages over 37 rather than sum)
-        #
-        # for classification something like `target=(2,37)` means 2-class classification for 37
-        # labels  (note that I use cross entropy rather than binary cross entropy. it shouldn't matter
-        # besides a little more parameters right ? )
+        # (1,37) instead of (37,) because those are 37 different tasks => want mean/std over tasks
         shapes["target"] = (1, 37)
         return shapes
 
     def get_img_target(self, index):
-        # change as needed but something like that
-        img = self.data[index]
-        target = self.targets[index]
-
-        # doing this so that it is consistent with all other datasets
-        # to return a PIL Image
-        # equivalent: Image.fromarray((img.transpose(1,2,0)*255).astype(np.uint8))
-        img = transform_lib.functional.to_pil_image(torch.from_numpy(img), None)
-
-        # don't apply transformation yet, it's done for you
-
-        return img, target
+        split_path = self.get_dir(self.curr_split)
+        img = image_loader(split_path / f"{index}th_img.jpeg")
+        return img, self.targets[index]
 
     @property
     def dataset_name(self):
-        return f"galaxy{self.resolution}"
+        return "galaxy"
 
     @property
     def augmentations(self):
@@ -1245,48 +1279,31 @@ class GalaxyDataset(LossylessImgDataset):
         return augmentations
 
 
-class GalaxyDataModule(LossylessDataModule):
+class GalaxyDataModule(LossylessImgDataModule):
     @property
     def Dataset(self):
         return GalaxyDataset
 
-    def get_train_dataset(self, **dataset_kwargs):
-        return self.Dataset(
-            self.data_dir, curr_split="train", download=False, **dataset_kwargs,
-        )
-
-    def get_val_dataset(self, **dataset_kwargs):
-        return self.Dataset(
-            self.data_dir, curr_split="valid", download=False, **dataset_kwargs,
-        )
-
-    def get_test_dataset(self, **dataset_kwargs):
-        return self.Dataset(
-            self.data_dir, curr_split="test", download=False, **dataset_kwargs,
-        )
-
-    def prepare_data(self):
-        for split in ["train", "valid", "test"]:
-            self.Dataset(
-                self.data_dir, curr_split=split, download=True, **self.dataset_kwargs,
-            )
-
-    @property
-    def mode(self):
-        return "image"
-
 
 # MS Coco caption dataset with clip sentences #
+class CocoClipDataset(ExternalImgDataset):
+    """MSCOCO caption dataset where the captions are featurized by CLIP.
 
+    Parameters
+    ----------
+    args, kwargs :
+        Additional arguments to `LossylessImgDataset`.
+    """
 
-class CocoClipDataset(LossylessImgDataset):
+    required_packages = ["pycocotools", "clip"]
+
     urls = [
         "http://images.cocodataset.org/annotations/annotations_trainval2017.zip",
         "http://images.cocodataset.org/zips/val2017.zip",
         "http://images.cocodataset.org/zips/train2017.zip",
     ]
 
-    # test annotation are not given => use val indtead
+    # test annotation are not given => use val instead
     split_to_root = dict(test="val2017", train="train2017",)
     split_to_annotate = dict(
         test="annotations/captions_val2017.json",
@@ -1294,105 +1311,47 @@ class CocoClipDataset(LossylessImgDataset):
     )
 
     def __init__(
-        self,
-        root,
-        *args,
-        base_resize="clip",
-        download=True,  # doesn't download only performs clip processing
-        curr_split="train",
-        **kwargs,
+        self, *args, base_resize="clip", **kwargs,
     ):
-        check_import("pycocotools", "CocoClipDataset")
-        check_import("clip", "CocoClipDataset")
-
-        self.root = Path(root)
-        if download and not self.is_exist_data:
-            self.download()
-            self.preprocess()
-
-        self.length = len(list(self.get_dir(curr_split).glob("*.jpeg")))
-
         super().__init__(
-            *args, base_resize=base_resize, curr_split=curr_split, **kwargs,
+            *args, base_resize=base_resize, **kwargs,
         )
 
-    def get_dir(self, split=None):
-        """Return the main directory or the one for a split."""
-        if split == "validation":
-            split = "train"  # validatoin split comes from train
-
-        main_dir = Path(self.root) / self.dataset_name
-        if split is None:
-            return main_dir
-        else:
-            return main_dir / split
-
-    @property
-    def is_exist_data(self):
-        """Whether the data is available."""
-        is_exist = True
-        for split in self.get_available_splits():
-            check_file = self.get_dir(split) / EXIST_DATA
-            is_exist &= check_file.is_file()
-        return is_exist
-
-    def download(self):
-        logger.info("Downloading Coco ...")
-
-        data_dir = self.get_dir()
-        remove_rf(data_dir, not_exist_ok=True)
-        data_dir.mkdir(parents=True)
-
+    def download(self, data_dir):
         for url in self.urls:
             logger.info(f"Downloading {url}")
             download_url(url, data_dir)
 
-        logger.info("Extracting Coco ...")
-
-        for filename in data_dir.glob("*.zip"):
-            logger.info(f"Unzipping {filename}")
-            unzip(filename)
-
-    def preprocess(self):
+    def preprocess_split(self, split):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         entire_model, _ = clip.load("ViT-B/32", device)
         to_pil = ToPILImage()
 
-        for split in self.get_available_splits():
-            logger.info(f"Preprocessing Coco split={split}.")
-            split_path = self.get_dir(split)
+        split_path = self.get_dir(split)
 
-            remove_rf(split_path, not_exist_ok=True)
-            split_path.mkdir()
+        old_root = self.get_dir() / self.split_to_root[split]
+        old_annotate = self.get_dir() / self.split_to_annotate[split]
 
-            old_root = self.get_dir() / self.split_to_root[split]
-            old_annotate = self.get_dir() / self.split_to_annotate[split]
+        dataset = CocoCaptions(
+            root=old_root,
+            annFile=old_annotate,
+            transform=Compose([self.preprocessing_resizer, ToTensor()]),
+            target_transform=Lambda(lambda texts: clip.tokenize([t for t in texts])),
+        )
 
-            dataset = CocoCaptions(
-                root=old_root,
-                annFile=old_annotate,
-                transform=Compose([Resize(256), ToTensor()]),
-                target_transform=Lambda(
-                    lambda texts: clip.tokenize([t for t in texts])
-                ),
-            )
+        with torch.no_grad():
+            for i, (images, texts) in enumerate(
+                tqdm(DataLoader(dataset, batch_size=1, num_workers=0))
+            ):
+                image = to_pil(images.squeeze(0))
+                text_in = texts.squeeze(0).to(device)
+                text_features = entire_model.encode_text(text_in).cpu().numpy()
 
-            with torch.no_grad():
-                for i, (images, texts) in enumerate(
-                    tqdm(DataLoader(dataset, batch_size=1, num_workers=0))
-                ):
-                    image = to_pil(images.squeeze(0))
-                    text_in = texts.squeeze(0).to(device)
-                    text_features = entire_model.encode_text(text_in).cpu().numpy()
+                image.save(split_path / f"{i}th_img.jpeg")
+                np.save(split_path / f"{i}th_features.npy", text_features)
 
-                    image.save(split_path / f"{i}th_img.jpeg")
-                    np.save(split_path / f"{i}th_features.npy", text_features)
-
-            check_file = split_path / EXIST_DATA
-            check_file.touch()
-
-            remove_rf(old_root)
-            remove_rf(old_annotate)
+        files_to_rm = [old_root, old_annotate]
+        return files_to_rm
 
     @property
     def shapes_x_t_Mx(self):
@@ -1403,7 +1362,7 @@ class CocoClipDataset(LossylessImgDataset):
 
     def get_img_target(self, index):
         split_path = self.get_dir(self.curr_split)
-        img = default_loader(split_path / f"{index}th_img.jpeg")
+        img = image_loader(split_path / f"{index}th_img.jpeg")
         return img, -1  # target -1 means missing for torcvhvision (see stl10)
 
     def get_equiv_x(self, x, index):
@@ -1412,20 +1371,17 @@ class CocoClipDataset(LossylessImgDataset):
         text_features = np.load(split_path / f"{index}th_features.npy")
 
         # index to select (multiple possible sentences)
-        selected_idx = random.randint(0, text_features.shape[0] - 1)
+        selected_idx = torch.randint(text_features.shape[0] - 1, (1,)).item()
 
         return text_features[selected_idx]
+
+    def load_data_(self, curr_split):
+        # no data needed to be loaded
+        pass
 
     @property
     def dataset_name(self):
         return "coco_captions"
-
-    def __len__(self):
-        return self.length
-
-    @classmethod
-    def get_available_splits(cls):
-        return ["test", "train"]
 
 
 class CocoClipDataModule(LossylessImgDataModule):

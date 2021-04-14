@@ -7,9 +7,17 @@ from pathlib import Path
 from tqdm import tqdm
 
 import torch
+from torchvision.datasets.folder import default_loader
 from torchvision.transforms import functional as F_trnsf
 
 logger = logging.getLogger(__name__)
+
+
+def image_loader(path):
+    """Load image and returns PIL."""
+    if isinstance(path, Path):
+        path = str(path.resolve())
+    return default_loader(path)
 
 
 class DownloadProgressBar(tqdm):
