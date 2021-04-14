@@ -20,23 +20,40 @@ import pl_bolts
 import pytorch_lightning as pl
 import torch
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
-from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
-                                 MaxinvDistributionPlot, ReconstructImages)
+from lossyless.callbacks import (
+    CodebookPlot,
+    LatentDimInterpolator,
+    MaxinvDistributionPlot,
+    ReconstructImages,
+)
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
-from pytorch_lightning.plugins import (DDPPlugin, DDPShardedPlugin,
-                                       DDPSpawnPlugin, DDPSpawnShardedPlugin)
+from pytorch_lightning.plugins import (
+    DDPPlugin,
+    DDPShardedPlugin,
+    DDPSpawnPlugin,
+    DDPSpawnShardedPlugin,
+)
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
-from utils.helpers import (DataParallelPlugin, ModelCheckpoint,
-                           apply_featurizer, cfg_save, format_resolver,
-                           get_latest_match, getattr_from_oneof,
-                           learning_rate_finder, log_dict, omegaconf2namespace,
-                           replace_keys, set_debug)
+from utils.helpers import (
+    DataParallelPlugin,
+    ModelCheckpoint,
+    apply_featurizer,
+    cfg_save,
+    format_resolver,
+    get_latest_match,
+    getattr_from_oneof,
+    learning_rate_finder,
+    log_dict,
+    omegaconf2namespace,
+    replace_keys,
+    set_debug,
+)
 
 try:
     import wandb
@@ -315,7 +332,12 @@ def instantiate_datamodule_(cfg, pre_featurizer=None):
     cfgd.aux_shape = datamodule.aux_shape
     cfgd.mode = datamodule.mode
     if pre_featurizer is not None:
-        datamodule = apply_featurizer(datamodule, pre_featurizer, **cfgd.kwargs)
+        datamodule = apply_featurizer(
+            datamodule,
+            pre_featurizer,
+            is_eval_on_test=cfg.evaluation.is_eval_on_test,
+            **cfgd.kwargs,
+        )
         datamodule.prepare_data()
         datamodule.setup()
 
@@ -580,6 +602,7 @@ def evaluate(trainer, datamodule, cfg, stage):
             0
         ]
 
+        # TODO remove as we are not using entropies anymore
         if is_est_entropies(cfg):
             try:
                 append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
@@ -613,11 +636,9 @@ def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
     # get the max invariant from the dataset
     dkwargs = {"additional_target": "max_inv"}
     if is_test:
-        if cfg.evaluation.is_eval_on_test:
-            dataloader = datamodule.test_dataloader(dataset_kwargs=dkwargs)
-        else:
-            # testing on validation (needed if don't have access to test set)
-            dataloader = datamodule.val_dataloader(dataset_kwargs=dkwargs)
+        dataloader = datamodule.eval_dataloader(
+            cfg.evaluation.is_eval_on_test, dataset_kwargs=dkwargs
+        )
     else:
         dataloader = datamodule.train_dataloader(dataset_kwargs=dkwargs)
 

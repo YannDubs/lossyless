@@ -319,7 +319,7 @@ class LearnableCompressor(pl.LightningModule):
         is_communicate = self.stage == "comm"
         loss, logs, _ = self.step(batch, is_rate_only=is_communicate)
 
-        if self.hparams.evaluation.featurizer.is_online:
+        if self.hparams.evaluation.featurizer.is_online and not is_communicate:
             _, online_logs = self.online_evaluator(batch, self)
             logs.update(online_logs)
 

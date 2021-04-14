@@ -75,6 +75,7 @@ predictor.arch_kwargs.dropout_p=interval(0.4,0.5)
 # evaluation.featurizer.is_evaluate=False
 # data_feat.kwargs.batch_size=64
 # data_pred.kwargs.batch_size=64
+# optimizer_pred.kwargs.lr=1e-3
 # "
 
 if [ "$is_plot_only" = false ] ; then

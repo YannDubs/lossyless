@@ -342,7 +342,7 @@ class SklearnDataModule(pl_bolts.datamodules.SklearnDataModule):
             return self.val_dataloader(**kwargs)
 
 
-def apply_featurizer(datamodule, featurizer, **kwargs):
+def apply_featurizer(datamodule, featurizer, is_eval_on_test=True, **kwargs):
     """Apply a featurizer on every example (precomputed) of a datamodule and return a new datamodule."""
     train_dataset = datamodule.train_dataset
     # ensure that you will not be augmenting
@@ -355,7 +355,9 @@ def apply_featurizer(datamodule, featurizer, **kwargs):
         dataloaders=[datamodule.train_dataloader(train_dataset=train_dataset)]
     )
     out_val = featurizer.predict(dataloaders=[datamodule.val_dataloader()])
-    out_test = featurizer.predict(dataloaders=[datamodule.test_dataloader()])
+    out_test = featurizer.predict(
+        dataloaders=[datamodule.eval_dataloader(is_eval_on_test)]
+    )
 
     X_train, Y_train = zip(*out_train)
     X_val, Y_val = zip(*out_val)
