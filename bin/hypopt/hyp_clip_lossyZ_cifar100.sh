@@ -39,7 +39,7 @@ hypopt=optuna
 hydra.sweeper.n_trials=100
 hydra.sweeper.n_jobs=50
 monitor_direction=[minimize,minimize]
-monitor_return=[test/pred/err,test/feat/rate]
+monitor_return=[test/pred/err,test/comm/rate]
 "
 
 # FEATURIZER

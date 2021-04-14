@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-experiment="hyp_clip_lossyZ_food101"
+experiment="hyp_clip_lossyZ_galaxy"
 notes="
-**Goal**: Test and tune hyperaparmeters for staggered clip
+**Goal**: Test and tune hyperaparmeters for staggered clip for galaxy
 "
 
 # parses special mode for running the script
@@ -17,7 +17,7 @@ encoder.z_dim=512
 is_only_feat=False
 architecture@predictor=mlp_probe
 data@data_feat=coco
-data@data_pred=food101
+data@data_pred=galaxy
 checkpoint@checkpoint_feat=bestValLoss
 evaluation.is_est_entropies=False
 trainer.max_epochs=50
@@ -60,8 +60,8 @@ scheduler@scheduler_feat=cosine,plateau_quick
 seed=0,1,2,3,4,5,6,7,8,9
 data_pred.kwargs.batch_size=tag(log,int(interval(32,64)))
 optimizer_pred.kwargs.weight_decay=tag(log,interval(1e-5,1e-4))
-optimizer_pred.kwargs.lr=tag(log,interval(1e-5,5e-4))
-scheduler@scheduler_pred=expdecay100,plateau_quick,unifmultistep1000
+optimizer_pred.kwargs.lr=tag(log,interval(2e-5,3e-4))
+scheduler@scheduler_pred=plateau_quick,unifmultistep1000
 predictor.arch_kwargs.dropout_p=interval(0.4,0.5)
 " 
 
