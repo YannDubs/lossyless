@@ -118,7 +118,7 @@ def main(cfg):
         logger.info("Evaluate compressor ...")
         feat_res = evaluate(comp_trainer, comp_datamodule, comp_cfg, stage)
     else:
-        feat_res = dict()
+        feat_res = load_results(comp_cfg, stage)
 
     finalize_stage_(
         stage,
@@ -131,7 +131,7 @@ def main(cfg):
         is_save_best=True,
     )
     if comp_cfg.is_only_feat:
-        return finalize(to_finalize)
+        return finalize(**finalize_kwargs)
 
     del comp_datamodule  # not used anymore and can be large
 
@@ -156,7 +156,7 @@ def main(cfg):
         logger.info("Evaluate communication ...")
         comm_res = evaluate(comp_trainer, comm_datamodule, comm_cfg, stage)
     else:
-        comm_res = dict()
+        comm_res = load_results(comm_cfg, stage)
 
     finalize_stage_(
         stage, comm_cfg, None, None, comm_datamodule, comm_res, finalize_kwargs
@@ -192,7 +192,7 @@ def main(cfg):
         logger.info("Evaluate predictor ...")
         pred_res = evaluate(pred_trainer, pred_datamodule, pred_cfg, stage)
     else:
-        pred_res = dict()
+        pred_res = load_results(pred_cfg, stage)
 
     finalize_stage_(
         stage,
@@ -450,6 +450,7 @@ def get_logger(cfg, module, is_featurizer):
             cfg.logger.kwargs.offline = True
             pllogger = WandbLogger(**kwargs)
 
+        # TODO remove as you are never using
         if cfg.trainer.track_grad_norm == 2:
             try:
                 # use wandb rather than lightning gradients
@@ -488,6 +489,7 @@ def get_trainer(cfg, module, is_featurizer):
 
     # PARALLEL PROCESSING
     # cpu
+    # TODO remove as you are not using
     accelerator = kwargs.get("accelerator", None)
     if accelerator == "ddp_cpu_spawn":  # only for debug
         kwargs["accelerator"] = "ddp_cpu"
@@ -496,6 +498,7 @@ def get_trainer(cfg, module, is_featurizer):
         )
 
     # gpu
+    # TODO remove as you are not using (or keep oinly one)
     if kwargs["gpus"] > 1:
         kwargs["sync_batchnorm"] = True
         accelerator = kwargs.get("accelerator", "ddp")
@@ -628,6 +631,28 @@ def evaluate(trainer, datamodule, cfg, stage):
     return test_res
 
 
+def load_results(cfg, stage):
+    """
+    Load the results that were previsously saved or return empty dict. Useful in case you get_trainer
+    premempted but still need access to the results.
+    """
+    try:
+        filename = RESULTS_FILE.format(stage=stage)
+        path = Path(cfg.paths.results) / filename
+
+        # dict of "test","train" ... where subdicts are keys and results
+        results = pd.read_csv(path, index_col=0).to_dict()
+
+        results = {
+            f"{mode}/{k}": v
+            for mode, sub_dict in results.items()
+            for k, v in sub_dict.items()
+        }
+        return results
+    except:
+        return dict()
+
+
 def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
     """Append entropy estimates to the results."""
     is_discrete_Y = cfg.data.target_is_clf
@@ -651,6 +676,7 @@ def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
     results[f"{prfx}/feat/H_Z"] = H_Z
 
 
+# TODO remove as you are not using
 def initialize_predictor_(module, datamodule, trainer, cfg):
     """Additional steps needed for intitalization of the predictor + logging."""
     if module.hparams.optimizer_pred.is_lr_find:
