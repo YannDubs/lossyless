@@ -21,6 +21,7 @@ defaults:
   - optimizer@optimizer_online: SGD_lr3e-1_w1e-4
   - scheduler@scheduler_online: expdecay100 # ensure that can always keep up with the chaning representation
   - distortion: ivae
+  - architecture@distortion.kwargs: none # just ensures that can change that from CLI
   - rate: H_hyper
   - finetune: none # change if using pretrained featurizer.
   - featurizer: neural_rec
