@@ -6,7 +6,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
-from torch.distributions import Categorical, Independent, MixtureSameFamily, Normal
+from torch.distributions import (Categorical, Independent, MixtureSameFamily,
+                                 Normal)
 from torch.nn.modules.conv import Conv2d
 
 from .helpers import Delta, batch_flatten, batch_unflatten, prod, weights_init
@@ -204,6 +205,7 @@ class MarginalDiagGaussian(nn.Module):
         return Independent(Normal(self.loc, self.scale), 1)
 
 
+# TODO remove as not used
 class MarginalVamp(nn.Module):
     """
     Trained Gaussian using VampPrior [1], i.e. approximates the REAL marginal using

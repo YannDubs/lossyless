@@ -4,7 +4,7 @@ defaults:
 
 distortion:
   name: lossyZ 
-  factor_beta: 0.1 # ?
+  factor_beta: 1 # ?
   p_norm: 1
   mode: lossyZ # minimizes reconstruction of z
   

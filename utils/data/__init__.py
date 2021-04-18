@@ -25,14 +25,12 @@ def get_datamodule(datamodule):
         return Sun397DataModule
     elif datamodule == "cars196":
         return Cars196DataModule
-    elif datamodule == "pets37":  # might drop
-        return Pets37DataModule  # should use mean per class
+    elif datamodule == "pets37":
+        return Pets37DataModule
     elif datamodule == "caltech101":  # might drop because next version
-        return Caltech101DataModule  # should use mean per class
+        return Caltech101DataModule
     elif datamodule == "pcam":
         return PCamDataModule
-    elif datamodule == "flowers102":  # might drop
-        return Flowers102DataModule  # should use mean per class
     elif datamodule == "galaxy":
         return GalaxyDataModule
     elif datamodule == "banana":

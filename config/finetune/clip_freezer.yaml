@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - base
+  
+finetune: 
+  name: clip_freezer
+  
+callbacks:
+  Freezer:
+    is_use: true
+    kwargs:
+      model_name: p_ZlX.mapper.vit

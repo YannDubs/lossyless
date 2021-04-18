@@ -244,7 +244,6 @@ class CodebookPlot(PlottingCallback):
     Notes
     -----
     - datamodule has to be `DistributionDataModule`.
-    - distortion should be ivae.
 
     Parameters
     ----------

@@ -254,7 +254,7 @@ class LearnableCompressor(pl.LightningModule):
         beta_rate = curr_beta * rate  # actual gradients
         beta_rate = beta_rate - beta_rate.detach() + (final_beta * rate.detach())
 
-        loss = distortion + beta_rate
+        loss = labda * distortion + beta_rate
 
         logs = dict(
             loose_loss=loose_loss / math.log(BASE_LOG),

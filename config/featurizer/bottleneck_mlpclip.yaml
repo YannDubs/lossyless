@@ -1,13 +1,13 @@
 # @package _global_
 defaults:
   - neural_feat@featurizer
-  - override /architecture@encoder: clip
+  - override /architecture@encoder: mlp_clip
   - override /distortion: ince_text
   - override /rate: H_hyper
-  - override /finetune: clip
+  - override /finetune: clip_freezer
 
 featurizer:
-  name: bottleneck_clip
+  name: bottleneck_mlpclip
   loss:
     beta_anneal: linear
 
