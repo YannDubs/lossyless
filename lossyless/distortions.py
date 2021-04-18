@@ -229,6 +229,11 @@ class ContrastiveDistortion(nn.Module):
         In this case `p_ZlX` will be replaced by a placeholder distribution. Useful
         for clip, where the positive examples are text sentences that are already featuized.
 
+    is_batch_neg : bool, optional
+        Whether to treat all the examples in the batch also as negatives. This double the nubmer
+        of negatives and should thus be used when possible. CLIP treats images and text separately
+        and thus does not do that.
+
     is_project : bool, optional
         Whether to use a porjection head. True seems to work better.
 
@@ -252,6 +257,7 @@ class ContrastiveDistortion(nn.Module):
         effective_batch_size=None,
         is_invariant=True,
         is_already_featurized=False,
+        is_batch_neg=True,
         is_project=True,
         project_kwargs={"mode": "mlp", "out_shape": 128},
     ):
@@ -263,6 +269,7 @@ class ContrastiveDistortion(nn.Module):
         self.is_cosine = is_cosine
         self.effective_batch_size = effective_batch_size
         self.is_invariant = is_invariant
+        self.is_batch_neg = is_batch_neg
         self.is_project = is_project
         if self.is_project:
             z_dim = self.p_ZlX.out_dim
@@ -314,7 +321,6 @@ class ContrastiveDistortion(nn.Module):
         other : dict
             Additional values to return.
         """
-
         n_z, batch_size, z_dim = z_hat.shape
 
         # Distribution for positives. batch shape: [batch_size] ; event shape: [z_dim]
@@ -418,7 +424,15 @@ class ContrastiveDistortion(nn.Module):
         batch_size = new_batch_size // 2
         device = logits.device
 
-        if self.is_invariant:
+        if not self.is_invariant:
+            # use NCE which is not invariant to transformations =>
+            # the positive example is the example  itself
+            pos_idx = torch.arange(new_batch_size, device=device)
+
+        elif self.is_batch_neg:
+            # whether the rest of the batch should also be viewed as negative examples
+            # this doubles the number of negatives and should be used for image SSL
+
             # select all but current example.
             mask = ~torch.eye(new_batch_size, device=device).bool()
             n_to_add = n_classes - new_batch_size
@@ -434,10 +448,19 @@ class ContrastiveDistortion(nn.Module):
             # you masked select all but the current z. arange takes care of idx of z which increases
             arange = torch.arange(batch_size, device=device)
             pos_idx = torch.cat([arange + batch_size - 1, arange], dim=0)
-        else:
-            # use NCE which is not invariant to transformations =>
-            # the positive example is the example  itself
-            pos_idx = torch.arange(new_batch_size, device=device)
+
+        elif not self.is_batch_neg:
+            #! does not currently work with multi GPU
+            # TODO test if necessary for CLIP and if not remove
+            # does not use the batch as negative examples. This is what CLIP does: images have
+            # to discriminate which text is associated with it and vis versa, but do not have to
+            # discriminate betweeen the images and the text !
+            logits_img2text = logits[:batch_size, batch_size:]
+            logits_text2img = logits[batch_size:, :batch_size]
+            logits = torch.cat([logits_img2text, logits_text2img], dim=0)
+            arange = torch.arange(batch_size, device=device)
+            pos_idx = torch.cat([arange, arange], dim=0)
+            n_classes = batch_size
 
         if self.effective_batch_size is not None:
             # want the reweighting so that as if the batchsize was entire dataset
@@ -465,7 +488,7 @@ class ContrastiveDistortion(nn.Module):
         else:
             temperature = self.temperature
 
-        logits /= temperature
+        logits = logits / temperature
 
         # I[Z,f(M(X))] = E[ log \frac{(N-1) exp(z^T z_p)}{\sum^{N-1} exp(z^T z')} ]
         # = log(N-1) + E[ log \frac{ exp(z^T z_p)}{\sum^{N-1} exp(z^T z')} ]

@@ -9,6 +9,7 @@ distortion:
     is_cosine: True
     is_project: False
     is_already_featurized: true
+    is_batch_neg: False #TODO test if better
 
 encoder:
   z_dim: 512
