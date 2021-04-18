@@ -19,54 +19,24 @@ import torch
 from lossyless.helpers import BASE_LOG, Normalizer, check_import
 from torch.utils.data import DataLoader, random_split
 from torchvision import transforms as transform_lib
-from torchvision.datasets import (
-    CIFAR10,
-    CIFAR100,
-    MNIST,
-    STL10,
-    CocoCaptions,
-    ImageFolder,
-    ImageNet,
-)
-from torchvision.transforms import (
-    CenterCrop,
-    ColorJitter,
-    Compose,
-    Lambda,
-    RandomAffine,
-    RandomApply,
-    RandomCrop,
-    RandomErasing,
-    RandomGrayscale,
-    RandomHorizontalFlip,
-    RandomResizedCrop,
-    RandomRotation,
-    RandomVerticalFlip,
-    Resize,
-    ToPILImage,
-    ToTensor,
-)
+from torchvision.datasets import (CIFAR10, CIFAR100, MNIST, STL10,
+                                  CocoCaptions, ImageFolder, ImageNet)
+from torchvision.transforms import (CenterCrop, ColorJitter, Compose, Lambda,
+                                    RandomAffine, RandomApply, RandomCrop,
+                                    RandomErasing, RandomGrayscale,
+                                    RandomHorizontalFlip, RandomResizedCrop,
+                                    RandomRotation, RandomVerticalFlip, Resize,
+                                    ToPILImage, ToTensor)
 from utils.estimators import discrete_entropy
 from utils.helpers import remove_rf
 
-from .augmentations import (
-    CIFAR10Policy,
-    EquivariantRotation,
-    ImageNetPolicy,
-    get_finetune_augmentations,
-    get_simclr_augmentations,
-)
+from .augmentations import (CIFAR10Policy, EquivariantRotation, ImageNetPolicy,
+                            get_finetune_augmentations,
+                            get_simclr_augmentations)
 from .base import LossylessDataModule, LossylessDataset
-from .helpers import (
-    Caltech101BalancingWeights,
-    Flowers102BalancingWeights,
-    Pets37BalancingWeights,
-    download_url,
-    image_loader,
-    int_or_ratio,
-    npimg_resize,
-    unzip,
-)
+from .helpers import (Caltech101BalancingWeights, Pets37BalancingWeights,
+                      download_url, image_loader, int_or_ratio, npimg_resize,
+                      unzip)
 
 try:
     import kaggle
@@ -107,7 +77,6 @@ __all__ = [
     "Pets37DataModule",
     "PCamDataModule",
     "Caltech101DataModule",
-    "Flowers102DataModule",
     "MnistDataModule",
     "GalaxyDataModule",
     "ImagenetDataModule",
@@ -932,36 +901,8 @@ class PCamDataModule(LossylessImgDataModule):
     def Dataset(self):
         return PCamDataset
 
-
-# Flowers 102 #
-class Flowers102Dataset(TensorflowBaseDataset):
-    min_size = 256
-
-    @property
-    def shapes_x_t_Mx(self):
-        shapes = super().shapes_x_t_Mx
-        shapes["input"] = shapes.get("input", (3, 224, 224))
-        shapes["target"] = (102,)
-        return shapes
-
-    @property
-    def dataset_name(self):
-        return "oxford_flowers102"
-
-    @classmethod
-    def get_available_splits(cls):
-        return ["train", "test", "validation"]
-
-
-class Flowers102DataModule(LossylessImgDataModule):
-    @property
-    def Dataset(self):
-        return Flowers102Dataset
-
-    @property
-    def balancing_weights(self):
-        return Flowers102BalancingWeights  # should compute mean acc per class
-
+# note: not using flowers 102 dataset due to 
+# https://github.com/tensorflow/datasets/issues/3022
 
 # Pets 37 #
 class Pets37Dataset(TensorflowBaseDataset):
@@ -984,6 +925,7 @@ class Pets37DataModule(LossylessImgDataModule):
     def Dataset(self):
         return Pets37Dataset
 
+    @property
     def balancing_weights(self):
         return Pets37BalancingWeights  # should compute mean acc per class
 
@@ -1009,6 +951,7 @@ class Caltech101DataModule(LossylessImgDataModule):
     def Dataset(self):
         return Caltech101Dataset
 
+    @property
     def balancing_weights(self):
         return Caltech101BalancingWeights  # should compute mean acc per class
 
