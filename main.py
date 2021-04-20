@@ -1,4 +1,4 @@
-"""Entropy point to train the models and evaluate them.
+"""Entry point to train the models and evaluate them.
 
 This should be called by `python main.py <conf>` where <conf> sets all configs from the cli, see 
 the file `config/main.yaml` for details about the configs. or use `python main.py -h`.
@@ -20,23 +20,39 @@ import pl_bolts
 import pytorch_lightning as pl
 import torch
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
-from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
-                                 MaxinvDistributionPlot, ReconstructImages)
+from lossyless.callbacks import (
+    CodebookPlot,
+    LatentDimInterpolator,
+    MaxinvDistributionPlot,
+    ReconstructImages,
+)
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
-from pytorch_lightning.plugins import (DDPPlugin, DDPShardedPlugin,
-                                       DDPSpawnPlugin, DDPSpawnShardedPlugin)
+from pytorch_lightning.plugins import (
+    DDPPlugin,
+    DDPShardedPlugin,
+    DDPSpawnPlugin,
+    DDPSpawnShardedPlugin,
+)
 from utils.data import get_datamodule
-from utils.estimators import estimate_entropies
-from utils.helpers import (DataParallelPlugin, ModelCheckpoint,
-                           apply_featurizer, cfg_save, format_resolver,
-                           get_latest_match, getattr_from_oneof,
-                           learning_rate_finder, log_dict, omegaconf2namespace,
-                           replace_keys, set_debug)
+from utils.helpers import (
+    DataParallelPlugin,
+    ModelCheckpoint,
+    apply_featurizer,
+    cfg_save,
+    format_resolver,
+    get_latest_match,
+    getattr_from_oneof,
+    learning_rate_finder,
+    log_dict,
+    omegaconf2namespace,
+    replace_keys,
+    set_debug,
+)
 
 try:
     import wandb
@@ -356,12 +372,6 @@ def initialize_compressor_(module, datamodule, trainer, cfg):
     )
     log_dict(trainer, {"n_param": n_param}, is_param=True)
 
-    if cfg.evaluation.is_est_entropies:
-        # estimate interesting entropies
-        entropies = datamodule.dataset.entropies
-        entropies = {f"data/{k}": v for k, v in entropies.items()}
-        log_dict(trainer, entropies, is_param=True)
-
 
 def get_callbacks(cfg, is_featurizer):
     """Return list of callbacks."""
@@ -565,20 +575,8 @@ def load_pretrained(cfg, Module, stage, **kwargs):
     return loaded_module
 
 
-def is_est_entropies(cfg):
-    # entropy estimation when Z is stochastic will not be good
-    if cfg.evaluation.is_est_entropies and cfg.encoder.fam != "deterministic":
-        logger.warning("Turning off `is_est_entropies` because stochastic Z.")
-        return False
-    return cfg.evaluation.is_est_entropies
-
-
 def evaluate(trainer, datamodule, cfg, stage):
-    """
-    Evaluate the trainer by loging all the metrics from the test set from the best model.
-    Can also compute sample estimates of some entropies, which should be better estimates than the
-    lower bounds used during training.
-    """
+    """Evaluate the trainer by loging all the metrics from the test set from the best model."""
     try:
         trainer.lightning_module.stage = cfg.stage  # logging correct stage
         eval_dataloader = datamodule.eval_dataloader(cfg.evaluation.is_eval_on_test)
@@ -586,13 +584,6 @@ def evaluate(trainer, datamodule, cfg, stage):
         test_res = trainer.test(test_dataloaders=eval_dataloader, ckpt_path=ckpt_path)[
             0
         ]
-
-        # TODO remove as we are not using entropies anymore
-        if is_est_entropies(cfg):
-            try:
-                append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
-            except:
-                logger.exception("Failed to Compute entropies. Skipping this error:")
 
         log_dict(trainer, test_res, is_param=False)
 
@@ -633,30 +624,6 @@ def load_results(cfg, stage):
         return results
     except:
         return dict()
-
-
-def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
-    """Append entropy estimates to the results."""
-    is_discrete_Y = cfg.data.target_is_clf
-    is_discrete_M = datamodule.dataset.is_clf_x_t_Mx["max_inv"]
-
-    # get the max invariant from the dataset
-    dkwargs = {"additional_target": "max_inv"}
-    if is_test:
-        dataloader = datamodule.eval_dataloader(
-            cfg.evaluation.is_eval_on_test, dataset_kwargs=dkwargs
-        )
-    else:
-        dataloader = datamodule.train_dataloader(dataset_kwargs=dkwargs)
-
-    H_MlZ, H_YlZ, H_Z = estimate_entropies(
-        trainer, dataloader, is_discrete_M=is_discrete_M, is_discrete_Y=is_discrete_Y,
-    )
-    prfx = "test" if is_test else "testtrain"
-    results[f"{prfx}/feat/H_MlZ"] = H_MlZ
-    results[f"{prfx}/feat/H_YlZ"] = H_YlZ
-    results[f"{prfx}/feat/H_Z"] = H_Z
-
 
 
 def finalize_stage_(

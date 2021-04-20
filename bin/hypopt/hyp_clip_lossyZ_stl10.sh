@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-experiment="hyp_clip_lossyZ_stl10"
+experiment="hyp_clip_eval_stl10"
 notes="
-**Goal**: Test and tune hyperaparmeters for staggered clip
+**Goal**: Evaluate the best featurizer on stl10
 "
 
 # parses special mode for running the script
@@ -19,7 +19,6 @@ architecture@predictor=mlp_probe
 data@data_feat=coco
 data@data_pred=stl10
 checkpoint@checkpoint_feat=bestValLoss
-evaluation.is_est_entropies=False
 trainer.max_epochs=50
 +update_trainer_pred.max_epochs=150
 featurizer=bottleneck_clip_lossyZ

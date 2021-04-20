@@ -19,7 +19,6 @@ architecture@predictor=mlp_probe
 data@data_feat=coco
 data@data_pred=pcam
 checkpoint@checkpoint_feat=bestValLoss
-evaluation.is_est_entropies=False
 trainer.max_epochs=50
 +update_trainer_pred.max_epochs=150
 featurizer=bottleneck_clip_lossyZ
@@ -39,7 +38,7 @@ hydra/sweeper=optuna
 hydra/sweeper/sampler=random
 hypopt=optuna
 hydra.sweeper.n_trials=100
-hydra.sweeper.n_jobs=50
+hydra.sweeper.n_jobs=1
 monitor_direction=[minimize,minimize]
 monitor_return=[test/pred/err,test/comm/rate]
 "

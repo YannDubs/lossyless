@@ -21,7 +21,6 @@ architecture@predictor=resnet18
 distortion.kwargs.arch_kwargs.complexity=3
 encoder.z_dim=128
 data@data_feat=augmnist
-evaluation.is_est_entropies=True
 rate=H_hyper
 optimizer@optimizer_pred=sgd 
 scheduler@scheduler_pred=multistep

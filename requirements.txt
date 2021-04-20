@@ -12,9 +12,6 @@ pillow
 einops
 pandas
 
-# only necessary when estimting entropies
-ndd
-
 # only necessay for satellite dataset
 kaggle
 opencv-python

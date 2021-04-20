@@ -78,12 +78,6 @@ class LossylessDataset(abc.ABC):
 
     @property
     @abc.abstractmethod
-    def entropies(self):
-        """Return a dictionary of desired entropies. `H` denotes discrete and `h` differential entropy."""
-        ...
-
-    @property
-    @abc.abstractmethod
     def is_clf_x_t_Mx(self):
         """Return a dictionary saying whether `input`, `target`, `max_inv` should be classified."""
         ...

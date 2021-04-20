@@ -81,7 +81,6 @@ data: {}
 ### RUNNING ###
 evaluation:
   is_eval_on_test: True # whether to evaluate on test. If not uses validation which is necessry if don't have access to test set
-  is_est_entropies: False # whether to evaluate sample estimates of the entropies H[Y|Z], H[M(X)|Z], H[Z] should only use it with deterministic Z
   featurizer:
     ckpt_path: "best"
     is_evaluate: ${featurizer.is_train}

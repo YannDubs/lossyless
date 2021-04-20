@@ -18,7 +18,6 @@ is_only_feat=False
 architecture@predictor=mlp_probe
 data@data_feat=imagenet_clip
 checkpoint@checkpoint_feat=bestTrainLoss
-evaluation.is_est_entropies=False
 trainer.val_check_interval=0.2
 featurizer.is_on_the_fly=false
 trainer.max_epochs=5

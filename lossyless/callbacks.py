@@ -450,8 +450,6 @@ class MaxinvDistributionPlot(PlottingCallback):
         pl_module.train()
 
     def prepare(data, source):
-        if source.decimals is not None:
-            data = np.around(data, decimals=source.decimals)
         return data
 
     def plot_maxinv(self, mx, mx_hat):

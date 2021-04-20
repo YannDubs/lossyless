@@ -13,7 +13,6 @@ kwargs="
 experiment=$experiment 
 timeout=$time
 data@data_feat=imagenet
-evaluation.is_est_entropies=False
 trainer.max_epochs=3
 optimizer@optimizer_pred=pretrained
 scheduler@scheduler_pred=expdecay

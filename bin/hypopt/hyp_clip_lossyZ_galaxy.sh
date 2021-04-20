@@ -19,7 +19,6 @@ architecture@predictor=mlp_probe
 data@data_feat=coco
 data@data_pred=galaxy
 checkpoint@checkpoint_feat=bestValLoss
-evaluation.is_est_entropies=False
 trainer.max_epochs=50
 +update_trainer_pred.max_epochs=150
 featurizer=bottleneck_clip_lossyZ
@@ -30,6 +29,8 @@ featurizer.loss.beta_anneal=linear
 rate.kwargs.invertible_processing=diag
 data_feat.kwargs.batch_size=32
 scheduler@scheduler_coder=expdecay1000
+data_pred.kwargs.batch_size=32
+predictor.arch_kwargs.dropout_p=0.4
 $add_kwargs
 "
 
@@ -58,11 +59,9 @@ optimizer_coder.kwargs.weight_decay=tag(log,interval(1e-6,7e-6))
 optimizer_coder.kwargs.lr=tag(log,interval(1e-5,5e-4))
 scheduler@scheduler_feat=cosine,plateau_quick
 seed=0,1,2,3,4,5,6,7,8,9
-data_pred.kwargs.batch_size=tag(log,int(interval(32,64)))
-optimizer_pred.kwargs.weight_decay=tag(log,interval(1e-5,1e-4))
-optimizer_pred.kwargs.lr=tag(log,interval(2e-5,3e-4))
+optimizer_pred.kwargs.weight_decay=tag(log,interval(5e-5,1e-4))
+optimizer_pred.kwargs.lr=tag(log,interval(5e-4,1e-3))
 scheduler@scheduler_pred=plateau_quick,unifmultistep1000
-predictor.arch_kwargs.dropout_p=interval(0.4,0.5)
 " 
 
 

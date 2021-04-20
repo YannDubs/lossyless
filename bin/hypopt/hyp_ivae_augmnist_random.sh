@@ -18,7 +18,6 @@ is_only_feat=True
 featurizer=neural_feat
 architecture@encoder=resnet18
 data@data_feat=augmnist
-evaluation.is_est_entropies=False
 rate=H_factorized
 trainer.max_epochs=50
 distortion=ivae

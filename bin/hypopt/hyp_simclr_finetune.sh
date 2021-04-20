@@ -18,7 +18,6 @@ is_only_feat=False
 architecture@predictor=mlp_probe
 data@data_feat=imagenet_simclr
 checkpoint@checkpoint_feat=bestTrainLoss
-evaluation.is_est_entropies=False
 trainer.val_check_interval=0.25
 trainer.max_epochs=5
 +update_trainer_pred.max_epochs=50

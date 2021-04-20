@@ -27,7 +27,6 @@ from torchvision.transforms import (CenterCrop, ColorJitter, Compose, Lambda,
                                     RandomHorizontalFlip, RandomResizedCrop,
                                     RandomRotation, RandomVerticalFlip, Resize,
                                     ToPILImage, ToTensor)
-from utils.estimators import discrete_entropy
 from utils.helpers import remove_rf
 
 from .augmentations import (CIFAR10Policy, EquivariantRotation, ImageNetPolicy,
@@ -294,19 +293,6 @@ class LossylessImgDataset(LossylessDataset):
         notaug_img = self.base_tranform(notaug_img)
         return notaug_img
 
-    @property
-    def entropies(self):
-        if hasattr(self, "_entropies"):
-            return self._entropies  # if precomputed
-
-        entropies = {}
-
-        entropies["H[Y]"] = discrete_entropy(self.targets, base=BASE_LOG)
-        # Marginal entropy can only be computed on training set by treating dataset as the real uniform rv
-        entropies["train H[M(X)]"] = math.log(len(self), BASE_LOG)
-
-        self._entropies = entropies
-        return entropies
 
     def get_base_transform(self):
         """Return the base transform, ie train or test."""

@@ -19,7 +19,6 @@ architecture@predictor=mlp_probe
 data@data_feat=coco
 data@data_pred=cifar100
 checkpoint@checkpoint_feat=bestValLoss
-evaluation.is_est_entropies=False
 featurizer.is_on_the_fly=false
 trainer.max_epochs=30
 +update_trainer_pred.max_epochs=150
