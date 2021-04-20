@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-experiment="hyp_ince_galaxy"
+experiment="hyp_text_stl10"
 notes="
-**Goal**: Hyperparameter tuning for ince on the new galaxy dataset
+**Goal**: Understand how ince with text works
 "
 
 # parses special mode for running the script
@@ -13,22 +13,22 @@ kwargs="
 experiment=$experiment 
 timeout=$time
 logger.kwargs.project=hypopt
-is_only_feat=False
+is_only_feat=True
 featurizer=neural_feat
 architecture@encoder=resnet18
-architecture@predictor=mlp_probe
-data@data_feat=galaxy64
+data@data_feat=coco
 rate=H_hyper
 trainer.max_epochs=50
-+update_trainer_pred.max_epochs=100
-distortion=ince
-featurizer.loss.beta_anneal=linear
-rate.kwargs.invertible_processing=diag
-predictor.arch_kwargs.hid_dim=2048
+featurizer=neural_feat
+distortion=ince_text
 featurizer.is_on_the_fly=false
+rate.kwargs.warmup_k_epoch=1
+distortion.kwargs.temperature=0.01
+data_feat.kwargs.batch_size=128
 $add_kwargs
 "
 #TODO increase epochs before pushing
+#TODO chose best augmentation from `hyp_galaxy_augmentations`
 
 # sweeping arguments
 kwargs_hypopt="
@@ -36,9 +36,9 @@ hydra/sweeper=optuna
 hydra/sweeper/sampler=random
 hypopt=optuna
 hydra.sweeper.n_trials=100
-hydra.sweeper.n_jobs=50
+hydra.sweeper.n_jobs=20
 monitor_direction=[minimize,minimize]
-monitor_return=[test/pred/err,test/comm/rate]
+monitor_return=[test/feat/distortion,test/feat/rate]
 "
 
 # here the random sampler means that we are not actually doing smart hyperparametr tuning use `nsgaii` if you want
@@ -49,20 +49,16 @@ monitor_return=[test/pred/err,test/comm/rate]
 # if the values that are swept over are not understandable from the names `interval` `log`.. check : https://hydra.cc/docs/next/plugins/optuna_sweeper
 kwargs_multi="
 $kwargs_hypopt
-data_feat.kwargs.batch_size=tag(log,int(interval(128,256)))
-encoder.z_dim=tag(log,int(interval(128,1024)))
 featurizer.loss.beta=tag(log,interval(3e-6,1e-3))
-distortion.factor_beta=tag(log,interval(1e-5,1e-1))
-optimizer@optimizer_feat=Adam,AdamW
-rate.kwargs.warmup_k_epoch=int(interval(0,5))
-optimizer_feat.kwargs.weight_decay=tag(log,interval(1e-8,1e-4))
-optimizer_feat.kwargs.lr=tag(log,interval(5e-5,1e-3))
-optimizer_coder.kwargs.weight_decay=tag(log,interval(3e-6,1e-4))
-optimizer_coder.kwargs.lr=tag(log,interval(3e-4,1e-3))
-scheduler@scheduler_feat=cosine,expdecay100,expdecay1000,unifmultistep1000
-scheduler@scheduler_coder=cosine_restart,expdecay100,unifmultistep1000,unifmultistep100
+distortion.factor_beta=1e-3
 seed=0,1,2,3,4,5,6,7,8,9
-distortion.kwargs.temperature=tag(log,interval(0.01,0.2))
+optimizer@optimizer_feat=Adam
+optimizer_feat.kwargs.weight_decay=5e-5
+optimizer_feat.kwargs.lr=1e-4
+optimizer_coder.kwargs.weight_decay=5e-4
+optimizer_coder.kwargs.lr=5e-4
+scheduler@scheduler_feat=expdecay100
+scheduler@scheduler_coder=expdecay100
 " 
 # distortion.factor_beta : instead of deacreasing weight given to rate will increase weight given to distortion
 # BATCH SIZE: for INCE it can be beneficial to use larger batches. THe issues is that this might be worst for other parts of the networks. SOme papers say using `is_lars=True` can mititgate the issue when using large batches
@@ -72,12 +68,6 @@ distortion.kwargs.temperature=tag(log,interval(0.01,0.2))
 # PREDICTOR
 kwargs_multi="
 $kwargs_multi
-data_pred.kwargs.batch_size=tag(log,int(interval(32,64)))
-predictor.arch_kwargs.dropout_p=interval(0.1,0.4)
-optimizer@optimizer_pred=SGD_likeadam,Adam,AdamW
-optimizer_pred.kwargs.weight_decay=tag(log,interval(1e-8,1e-4))
-optimizer_pred.kwargs.lr=tag(log,interval(5e-4,3e-3))
-scheduler@scheduler_pred=cosine_restart,expdecay100,plateau_quick,unifmultistep1000
 " 
 
 
