@@ -22,7 +22,6 @@ evaluation.is_est_entropies=False
 rate=H_hyper
 optimizer@optimizer_pred=sgd 
 scheduler@scheduler_pred=multistep
-optimizer_pred.is_lr_find=False
 $add_kwargs
 "
 

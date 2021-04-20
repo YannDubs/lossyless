@@ -278,60 +278,6 @@ def log_dict(trainer, to_log, is_param):
         pass
 
 
-def learning_rate_finder(
-    module, datamodule, trainer, min_max_lr=[1e-7, 10], is_argmin=False
-):
-    """
-    Automatically select the new learning rate and plot the learing rate finder in the `min_max_lr`
-    bounds. If `is_argmin` choses the lr that ields the argmin on the plot (usually larger lr), if 
-    not selects the one with the most negative derivative (usually smaller lr). 
-    """
-    # ensure not inplace
-    trainer = copy.deepcopy(trainer)
-
-    # ans cannot be pickled => don't deepcopy it (it's not going to change because not trained)
-    old_module = module
-    featurizer, module.featurizer = module.featurizer, None
-    module = copy.deepcopy(old_module)
-    module.featurizer = featurizer  # bypass deepcopy
-    old_module.featurizer = featurizer  # put back
-
-    min_lr, max_lr = min_max_lr
-    module.hparams.optimizer_pred.kwargs.lr = min_lr  #! shouldn't be needed
-    lr_finder = trainer.tuner.lr_find(
-        module, datamodule=datamodule, min_lr=min_lr, max_lr=max_lr
-    )
-
-    if is_argmin:
-        lr_finder.suggestion = types.MethodType(suggest_min_lr, lr_finder)
-
-    fig = lr_finder.plot(suggest=True)
-    if module.hparams.logger.is_can_plot_img:
-        save_img(module, trainer, fig, "Learning Rate Finder", "")
-
-    new_lr = lr_finder.suggestion()
-    log_dict(trainer, dict(suggested_lr=new_lr), True)
-
-    return new_lr
-
-
-def suggest_min_lr(self, skip_begin: int = 10, skip_end: int = 1):
-    """ This will propose a suggestion for choice of initial learning rate
-    as the point with smallest lr.
-    """
-    try:
-        loss = np.array(self.results["loss"][skip_begin:-skip_end])
-        loss = loss[np.isfinite(loss)]
-        min_grad = loss.argmin()
-        self._optimal_idx = min_grad + skip_begin
-        return self.results["lr"][self._optimal_idx]
-    except Exception:
-        logger.exception(
-            "Failed to compute suggesting for `lr`. There might not be enough points."
-        )
-        self._optimal_idx = None
-
-
 class SklearnDataModule(pl_bolts.datamodules.SklearnDataModule):
     # so that same as LossylessDataModule
     def eval_dataloader(self, is_eval_on_test, **kwargs):

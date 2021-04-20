@@ -20,40 +20,23 @@ import pl_bolts
 import pytorch_lightning as pl
 import torch
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
-from lossyless.callbacks import (
-    CodebookPlot,
-    LatentDimInterpolator,
-    MaxinvDistributionPlot,
-    ReconstructImages,
-)
+from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
+                                 MaxinvDistributionPlot, ReconstructImages)
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
-from pytorch_lightning.plugins import (
-    DDPPlugin,
-    DDPShardedPlugin,
-    DDPSpawnPlugin,
-    DDPSpawnShardedPlugin,
-)
+from pytorch_lightning.plugins import (DDPPlugin, DDPShardedPlugin,
+                                       DDPSpawnPlugin, DDPSpawnShardedPlugin)
 from utils.data import get_datamodule
 from utils.estimators import estimate_entropies
-from utils.helpers import (
-    DataParallelPlugin,
-    ModelCheckpoint,
-    apply_featurizer,
-    cfg_save,
-    format_resolver,
-    get_latest_match,
-    getattr_from_oneof,
-    learning_rate_finder,
-    log_dict,
-    omegaconf2namespace,
-    replace_keys,
-    set_debug,
-)
+from utils.helpers import (DataParallelPlugin, ModelCheckpoint,
+                           apply_featurizer, cfg_save, format_resolver,
+                           get_latest_match, getattr_from_oneof,
+                           learning_rate_finder, log_dict, omegaconf2namespace,
+                           replace_keys, set_debug)
 
 try:
     import wandb
@@ -174,7 +157,6 @@ def main(cfg):
     if pred_cfg.predictor.is_train and not is_trained(comp_cfg, stage):
         predictor = Predictor(hparams=pred_cfg, featurizer=onfly_featurizer)
         pred_trainer = get_trainer(pred_cfg, predictor, is_featurizer=False)
-        initialize_predictor_(predictor, pred_datamodule, pred_trainer, pred_cfg)
 
         logger.info("Train predictor ...")
         pred_trainer.fit(predictor, datamodule=pred_datamodule)
@@ -595,7 +577,7 @@ def evaluate(trainer, datamodule, cfg, stage):
     """
     Evaluate the trainer by loging all the metrics from the test set from the best model.
     Can also compute sample estimates of some entropies, which should be better estimates than the
-    lower bounds used during training. 
+    lower bounds used during training.
     """
     try:
         trainer.lightning_module.stage = cfg.stage  # logging correct stage
@@ -675,22 +657,6 @@ def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
     results[f"{prfx}/feat/H_YlZ"] = H_YlZ
     results[f"{prfx}/feat/H_Z"] = H_Z
 
-
-# TODO remove as you are not using
-def initialize_predictor_(module, datamodule, trainer, cfg):
-    """Additional steps needed for intitalization of the predictor + logging."""
-    if module.hparams.optimizer_pred.is_lr_find:
-        old_lr = module.hparams.optimizer_pred.kwargs.lr
-        new_lr = learning_rate_finder(module, datamodule, trainer)
-
-        if (old_lr is None) and (new_lr is None):
-            raise ValueError(f"Couldn't find new lr and no old lr given.")
-
-        if old_lr is None and (new_lr is not None):
-            module.hparams.optimizer_pred.kwargs.lr = new_lr
-            logger.info(f"Using lr={new_lr} for the predictor.")
-        else:
-            module.hparams.optimizer_pred.kwargs.lr = old_lr
 
 
 def finalize_stage_(

@@ -29,6 +29,3 @@ evaluation:
   predictor:
     ckpt_path: null
     is_evaluate: ${predictor.is_train}
-
-optimizer_pred:
-  is_lr_find: false

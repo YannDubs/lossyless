@@ -195,7 +195,6 @@ predictor:
 
 ### OPTIMIZER ###
 optimizer_pred: 
-  is_lr_find: False # whether to automatically look for best lr (only set the sugggested value if lr is None, if not just plots)
   name: ${optimizer_pred.mode}_lr${format:${optimizer_pred.kwargs.lr},.1e}_w${format:${optimizer_pred.kwargs.weight_decay},.1e}
   mode: ???
   kwargs:
