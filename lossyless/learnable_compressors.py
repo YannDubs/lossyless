@@ -78,9 +78,7 @@ class LearnableCompressor(pl.LightningModule):
     def get_distortion_estimator(self):
         """Return the correct distortion estimator. Contains the decoder."""
         cfg_dist = self.hparams.distortion
-        return get_distortion_estimator(
-            cfg_dist.mode, p_ZlX=self.p_ZlX, **cfg_dist.kwargs
-        )
+        return get_distortion_estimator(cfg_dist.mode, **cfg_dist.kwargs)
 
     def get_online_evaluator(self):
         """
@@ -123,7 +121,7 @@ class LearnableCompressor(pl.LightningModule):
             Data to represent.
 
         is_compress : bool, optional
-            Whether to perform actual compression. If not will simply apply the discretization as 
+            Whether to perform actual compression. If not will simply apply the discretization as
             if we had compressed.
 
         is_features : bool or None, optional
@@ -196,7 +194,7 @@ class LearnableCompressor(pl.LightningModule):
 
         _, aux_target = targets
         distortions, d_logs, d_other = self.distortion_estimator(
-            z_hat, aux_target, p_Zlx
+            z_hat, aux_target, p_Zlx, self
         )
 
         loss, logs, other = self.loss(rates, distortions)

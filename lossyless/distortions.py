@@ -23,12 +23,12 @@ logger = logging.getLogger(__name__)
 __all__ = ["get_distortion_estimator"]
 
 
-def get_distortion_estimator(mode, p_ZlX, **kwargs):
+def get_distortion_estimator(mode, **kwargs):
     if mode == "direct":
         return DirectDistortion(**kwargs)
 
     elif mode == "contrastive":
-        return ContrastiveDistortion(p_ZlX=p_ZlX, **kwargs)
+        return ContrastiveDistortion(**kwargs)
 
     elif mode == "lossyZ":
         return LossyZDistortion(**kwargs)
@@ -105,7 +105,7 @@ class DirectDistortion(nn.Module):
     def reset_parameters(self):
         weights_init(self)
 
-    def forward(self, z_hat, aux_target, _):
+    def forward(self, z_hat, aux_target, _, __):
         """Compute the distortion.
 
         Parameters
@@ -185,26 +185,18 @@ class ContrastiveDistortion(nn.Module):
 
     Notes
     -----
-    - Only works for `Deterministic` (or tensors) or `DiagGaussian` distribution. In latter case uses a
-    distributional infoNCE (i.e. with KL divergence).
-    - Distributional InfoNCE is memory heavy because copy tensors. TODO: Use torch.as_strided
-    - Never uses samples z_hat.
+    - For the case of distribution, simply does NCE after sampling. This is not ideal and it would
+    probably be better to derive a distributional InfoNCE.
     - parts of code taken from https://github.com/lucidrains/contrastive-learner
 
     Parameters
     ----------
-    p_ZlX : CondDist
-        Instantiated conditional distribution. Used to represent all the other positives.
-
     temperature : float, optional
         Temperature scaling in InfoNCE. Recommended less than 1.
 
     is_train_temperature : bool, optional
         Whether to treat the temperature as a parameter. Uses the same sceme as CLIP.
         If true then `temperature` becomes the lower bound on temperature.
-
-    is_symmetric : bool, optional
-        Whether to use symmetric logits in the case of probabilistic InfoNCE.
 
     effective_batch_size : float, optional
         Effective batch size to use for estimating InfoNCE. Larger means that more variance but less bias,
@@ -249,37 +241,33 @@ class ContrastiveDistortion(nn.Module):
 
     def __init__(
         self,
-        p_ZlX,
         temperature=0.01,
         is_train_temperature=True,
-        is_symmetric=True,
         is_cosine=True,
         effective_batch_size=None,
         is_invariant=True,
         is_already_featurized=False,
-        is_batch_neg=True,
+        is_batch_neg=True,  # TODO rm if CLIP does not need False
         is_project=True,
-        project_kwargs={"mode": "mlp", "out_shape": 128},
+        project_kwargs={"mode": "mlp", "out_shape": 128, "in_shape": 128},
     ):
         super().__init__()
-        self.p_ZlX = p_ZlX if not is_already_featurized else Deterministic
         self.temperature = temperature
         self.is_train_temperature = is_train_temperature
-        self.is_symmetric = is_symmetric
         self.is_cosine = is_cosine
         self.effective_batch_size = effective_batch_size
         self.is_invariant = is_invariant
+        self.is_already_featurized = is_already_featurized
         self.is_batch_neg = is_batch_neg
         self.is_project = is_project
         if self.is_project:
-            z_dim = self.p_ZlX.out_dim
             if project_kwargs["out_shape"] <= 1:
                 project_kwargs["out_shape"] = max(
-                    10, int(z_dim * project_kwargs["out_shape"])
+                    10, int(project_kwargs["in_shape"] * project_kwargs["out_shape"])
                 )
 
             Projector = get_Architecture(**project_kwargs)
-            self.projector = Projector(z_dim)
+            self.projector = Projector()
         else:
             self.projector = torch.nn.Identity()
 
@@ -296,7 +284,7 @@ class ContrastiveDistortion(nn.Module):
             # Same initialization as clip
             self.logit_scale = nn.Parameter(torch.log(torch.tensor(1 / 0.07)))
 
-    def forward(self, z_hat, x_pos, p_Zlx):
+    def forward(self, z_hat, x_pos, _, parent):
         """Compute the distortion.
 
         Parameters
@@ -307,8 +295,9 @@ class ContrastiveDistortion(nn.Module):
         x_pos : Tensor shape=[batch_size, *x_shape]
             Other positive inputs., i.e., input on the same orbit.
 
-        p_Zlx : torch.Distribution batch_shape=[batch_size] event_shape=[z_dim]
-            Encoded distribution of Z.
+        parent : LearnableCompressor, optional
+            Parent module. This is useful for some distortion if they need access to other parts of the
+            model.
 
         Returns
         -------
@@ -323,86 +312,44 @@ class ContrastiveDistortion(nn.Module):
         """
         n_z, batch_size, z_dim = z_hat.shape
 
-        # Distribution for positives. batch shape: [batch_size] ; event shape: [z_dim]
-        p_Zlp = self.p_ZlX(x_pos)
-
         # shape: [2 * batch_size, 2 * batch_size * world_size]
-        logits = self.compute_logits(p_Zlx, p_Zlp)
+        logits = self.compute_logits(z_hat, x_pos, parent)
 
         # shape: [2 * batch_size]
         hat_H_mlz, logs = self.compute_loss(logits)
 
         # shape: [n_z, batch_size]
         hat_H_mlz = (hat_H_mlz[:batch_size] + hat_H_mlz[batch_size:]) / 2
-        hat_H_mlz = einops.repeat(hat_H_mlz, "bz -> n_z bz", n_z=n_z)
+        hat_H_mlz = einops.repeat(hat_H_mlz, "b -> n_z b", n_z=n_z)
 
         other = dict()
 
         return hat_H_mlz, logs, other
 
-    def compute_logits(self, p_Zlx, p_Zlp):
+    def compute_logits(self, z_hat, x_pos, parent):
 
-        if isinstance(p_Zlx, DiagGaussian):
-            assert not self.is_project
+        # shape: [batch_size, z_dim]
+        z_hat = z_hat.squeeze(0)
 
-            # use probabilistic InfoNCE
-            # not pytorch's kl divergence because want fast computation (kl between every and every element in batch)
-            mu_x, sigma_x = p_Zlx.base_dist.loc, p_Zlx.base_dist.scale
-            mu_p, sigma_p = p_Zlp.base_dist.loc, p_Zlp.base_dist.scale
-
-            # shape: [2*batch_size, z_dim]
-            mus = torch.cat([mu_x, mu_p], dim=0)
-            sigmas = torch.cat([sigma_x, sigma_p], dim=0)
-
-            N = mus.size(0)
-
-            # TODO: Should use torch.as_strided
-            # shape: [4*batch_size**2, z_dim]
-            # repeat: [1,2,3] -> [1,2,3,1,2,3,1,2,3]
-            r_mus = mus.repeat(N, 1)
-            r_sigmas = sigmas.repeat(N, 1)
-            # repeat interleave: [1,2,3] -> [1,1,1,2,2,2,3,3,3]
-            i_mus = mus.repeat_interleave(N, dim=0)
-            i_sigmas = sigmas.repeat_interleave(N, dim=0)
-
-            # batch shape: [4*batch_size**2] event shape: [z_dim]
-            r_gaus = DiagGaussian(r_mus, r_sigmas)
-            i_gaus = DiagGaussian(i_mus, i_sigmas)
-
-            # all possible pairs of KLs. shape: [2*batch_size, 2*batch_size]
-            kls = kl_divergence(r_gaus, i_gaus).view(N, N)
-            logits = -kls  # logits needs to be larger when more similar
-
-            if self.is_symmetric:
-                # equivalent to (kl(p||q) + kl(q||p))/2 for each pair
-                logits = (logits + logits.T) / 2
-
-        elif isinstance(p_Zlx, Deterministic):
-
-            # if you are using a deterministic representation then use standard InfoNCE
-            # because if not KL is none differentiable
-            # z,z_pos. shape: [batch_size,z_dim]
-            z = p_Zlx.mean
-            z_pos = p_Zlp.mean
-
-            z = self.projector(z)
-            z_pos = self.projector(z_pos)
-
-            # shape: [2*batch_size,z_dim]
-            zs = torch.cat([z, z_pos], dim=0)
-
-            if self.is_cosine:
-                # Note: simclr head projector already normalizes, but can issue normalize twice
-                zs = F.normalize(zs, dim=1, p=2)
-
-            # shape: [2*batch_size, 2*batch_size]
-            logits = zs @ zs.T
-
-            # NB: in the case of CLIP this is actually slightly different because we also compare
-            # the logits images with images and text with text. We do so to double number of negatives.
-
+        # shape: [batch_size, z_dim]
+        if self.is_already_featurized:
+            z_pos_hat = x_pos
         else:
-            raise ValueError(f"Unkown type(p_Zlx)={type(p_Zlx)}.")
+            z_pos_hat = parent(x_pos, is_features=True)
+
+        # shape: [batch_size, out_shape]
+        z = self.projector(z_hat)
+        z_pos = self.projector(z_pos_hat)
+
+        # shape: [2*batch_size, out_shape]
+        zs = torch.cat([z, z_pos], dim=0)
+
+        if self.is_cosine:
+            # Note: simclr head projector already normalizes, but no issue if normalize twice
+            zs = F.normalize(zs, dim=1, p=2)
+
+        # shape: [2*batch_size, 2*batch_size]
+        logits = zs @ zs.T
 
         # collect all negatives on different devices.
         if torch.distributed.is_available() and torch.distributed.is_initialized():
@@ -522,13 +469,13 @@ class LossyZDistortion(nn.Module):
         super().__init__()
         self.distance = nn.PairwiseDistance(p=p_norm)
 
-    def forward(self, z_hat, _, p_Zlx):
+    def forward(self, z_hat, _, p_Zlx, __):
         """Compute the distortion.
 
         Parameters
         ----------
         z_hat : Tensor shape=[n_z, batch_size, z_dim]
-            Reconstructed representations. WIll take
+            Reconstructed representations.
 
         p_Zlx : torch.Distribution batch_shape=[batch_size] event_shape=[z_dim]
             Encoded distribution of Z. Will take the mean to get the target z.
