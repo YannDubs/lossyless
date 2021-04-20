@@ -3,8 +3,8 @@ defaults:
   - base@parallel
   
 distortion:
-  name: [ivae,ivib,ince]
+  name: [ivae,ince]
 
 parallel:
   key: "distortion"
-  to_sweep: [ivae,ivib,ince]
+  to_sweep: [ivae,ince]                  

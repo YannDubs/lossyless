@@ -21,7 +21,6 @@ PRETTY_RENAMER = StrFormatter(
         "_": " ",
         "Resnet": "ResNet",
         "Ivae": "Inv. VAE",
-        "Ivib": "Inv. VIB",
         "Ince": "Inv. NCE",
         "Bananarot": "Rotation Inv. Banana",
         "Bananaxtrnslt": "X-axis Inv. Banana",
@@ -29,5 +28,5 @@ PRETTY_RENAMER = StrFormatter(
         "Lr": "Learning Rate",
         "Online Loss": r"$\mathrm{H}_{\theta}[Y|Z]$",
     },
-    to_upper=["Cifar10", "Mnist", "Mlp", "Vae", "Nce", "Vib", "Adam",],
+    to_upper=["Cifar10", "Mnist", "Mlp", "Vae", "Nce",  "Adam",],
 )

@@ -20,7 +20,7 @@ $add_kwargs
 # every arguments that you are sweeping over
 kwargs_multi="
 encoder=mlp
-distortion=ivib,ivae,ince
+distortion=ivae,ince
 rate=H_hyper,MI_vamp
 data=mnist,bananaRot
 " 

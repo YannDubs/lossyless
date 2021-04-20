@@ -259,8 +259,8 @@ class CodebookPlot(PlottingCallback):
         Size fo figure.
 
     is_plot_codebook : bool, optional
-        Whether to plot the codebook or only the quantization space. THis can only be true for VAE
-        and iVAE, not or iVIB and iNCE because they don't reconstruct an element in X space.
+        Whether to plot the codebook or only the quantization space. This can only be true for VAE
+        and iVAE, not iNCE because it doesn't reconstruct an element in X space.
 
     kwargs :
         Additional arguments to PlottingCallback.

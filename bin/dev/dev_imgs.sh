@@ -21,15 +21,10 @@ $add_kwargs
 
 # every arguments that you are sweeping over
 kwargs_multi="
-distortion=ivib,ivae,ince,taskvib
+distortion=ivae,ince,taskvib
 rate=H_hyper,MI_vamp
 " 
 
-# every arguments that you are sweeping over
-kwargs_multi="
-distortion=ivib
-rate=H_hyper,MI_vamp
-" 
 
 if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in  ""
