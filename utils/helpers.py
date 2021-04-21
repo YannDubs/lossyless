@@ -194,16 +194,6 @@ class StrFormatter:
         self.subtring_replace = update_prepending(self.subtring_replace, new_dict)
 
 
-def cont_tuple_to_tuple_cont(container):
-    """Converts a container (list, tuple, dict) of tuple to a tuple of container."""
-    if isinstance(container, dict):
-        return tuple(dict(zip(container, val)) for val in zip(*container.values()))
-    elif isinstance(container, list) or isinstance(container, tuple):
-        return tuple(zip(*container))
-    else:
-        raise ValueError("Unkown conatiner type: {}.".format(type(container)))
-
-
 def getattr_from_oneof(list_of_obj, name):
     """
     Equivalent to `getattr` but on a list of objects and will return the attribute from the first 
@@ -229,16 +219,6 @@ def getattr_from_oneof(list_of_obj, name):
 def replace_keys(d, old, new):
     """replace keys in a dict."""
     return {k.replace(old, new): v for k, v in d.items()}
-
-
-def at_least_ndim(arr, ndim, is_prefix_padded=False):
-    """Ensures that a numpy or torch array is at least `ndim`-dimensional."""
-    padding = (1,) * (ndim - len(arr.shape))
-    if is_prefix_padded:
-        padded_shape = padding + arr.shape
-    else:
-        padded_shape = arr.shape + padding
-    return arr.reshape(padded_shape)
 
 
 # credits : https://gist.github.com/simon-weber/7853144
@@ -339,26 +319,6 @@ class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
         self.best_k_models = {}
         self.best_k_models[self.best_model_path] = self.best_model_score
         self.kth_best_model_path = self.best_model_path
-
-
-# credits : https://github.com/pytorch/pytorch/issues/16885
-class DataParallelPassthrough(torch.nn.DataParallel):
-    """Like dataparallel but enable accessing attributes as if there was no ``DataParallel``."""
-
-    def __getattr__(self, name):
-        try:
-            return super().__getattr__(name)
-        except AttributeError:
-            return getattr(self.module, name)
-
-
-class DataParallelPlugin(train_plugins.DataParallelPlugin):
-    def setup(self, model):
-        # model needs to be moved to the device before it is wrapped
-        model.to(self.root_device)
-        self._model = DataParallelPassthrough(
-            LightningParallelModule(model), self.parallel_devices
-        )
 
 
 def remove_rf(path, not_exist_ok=False):

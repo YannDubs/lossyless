@@ -20,12 +20,10 @@ class LossylessDataset(abc.ABC):
 
     Parameters
     -----------
-    additional_target : {"input", "representative", "equiv_x", "max_inv", "max_var", "target", None}, optional
+    additional_target : {"input", "representative", "equiv_x", "target", None}, optional
         Additional target to append to the target. `"input"` is the input example (i.e. augmented),
         `"representative"` is a representative of the equivalence class (always the same).
-        `"equiv_x"` is some random equivalent x. `"max_inv"` is the
-        maximal invariant. `"max_var"` should be similar to maximal invariant but it should not be
-        invariant. "target" uses agin the target (i.e. duplicate).
+        `"equiv_x"` is some random equivalent x. "target" uses agin the target (i.e. duplicate).
 
     equivalence : str or set of str, optional
         Equivalence relationship with respect to which to be invariant. Depends on the dataset.
@@ -69,23 +67,16 @@ class LossylessDataset(abc.ABC):
         """Return some other random element from same equivalence class."""
         ...
 
-    def get_max_var(self, x, Mx):
-        """Return some element which is maximal but non invariant, and is similar form to `max_inv`."""
-        # by default not possible
-        raise NotImplementedError(
-            f"`max_var` not implemented for {type(self).__name__}"
-        )
-
     @property
     @abc.abstractmethod
-    def is_clf_x_t_Mx(self):
-        """Return a dictionary saying whether `input`, `target`, `max_inv` should be classified."""
+    def is_clfs(self):
+        """Return a dictionary saying whether `input`, `target`, should be classified."""
         ...
 
     @property
     @abc.abstractmethod
-    def shapes_x_t_Mx(self):
-        """Return dictionary giving the shape `input`, `target`, `max_inv`, `max_var`."""
+    def shapes(self):
+        """Return dictionary giving the shape `input`, `target`."""
         ...
 
     def __getitem__(self, index):
@@ -109,12 +100,6 @@ class LossylessDataset(abc.ABC):
         elif additional_target == "equiv_x":
             # other element from same equivalence class
             to_add = [self.get_equiv_x(x, Mx)]
-        elif additional_target == "max_inv":
-            # maximal invariant, e.g. unaugmented index.
-            to_add = [Mx]
-        elif additional_target == "max_var":
-            # "maximal variant", e.g. augmented index.
-            to_add = [self.get_max_var(x, Mx)]
         elif additional_target == "target":
             # duplicate but makes code simpler
             to_add = [target]
@@ -125,17 +110,16 @@ class LossylessDataset(abc.ABC):
 
     def get_is_clf(self):
         """Return `is_clf` for the target and aux_target."""
-        is_clf = self.is_clf_x_t_Mx
+        is_clf = self.is_clfs
         is_clf["representative"] = is_clf["input"]
         is_clf["equiv_x"] = is_clf["input"]
-        is_clf["max_var"] = is_clf["max_inv"]
         is_clf[None] = None
 
         return is_clf["target"], is_clf[self.additional_target]
 
     def get_shapes(self):
         """Return `shapes` for the target and aux_target."""
-        shapes = self.shapes_x_t_Mx
+        shapes = self.shapes
         shapes["representative"] = shapes["input"]
         shapes["equiv_x"] = shapes["input"]
         shapes[None] = None
@@ -246,7 +230,7 @@ class LossylessDataModule(LightningDataModule):
         dataset = self.dataset
         self.target_is_clf, self.aux_is_clf = dataset.get_is_clf()
         self.target_shape, self.aux_shape = dataset.get_shapes()
-        self.shape = dataset.shapes_x_t_Mx["input"]
+        self.shape = dataset.shapes["input"]
         self.additional_target = dataset.additional_target
 
     @property

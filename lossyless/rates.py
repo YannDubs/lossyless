@@ -34,16 +34,16 @@ logger = logging.getLogger(__name__)
 __all__ = ["get_rate_estimator"]
 
 ### HELPERS ###
-def get_rate_estimator(mode, z_dim=None, p_ZlX=None, n_z_samples=None, **kwargs):
+def get_rate_estimator(mode, z_dim=None, p_ZlX=None, **kwargs):
     """Return the correct entropy coder."""
     if mode == "lossless":
         return Lossless(z_dim)
 
     elif mode == "H_factorized":
-        return HRateFactorizedPrior(z_dim, n_z_samples=n_z_samples, **kwargs)
+        return HRateFactorizedPrior(z_dim, **kwargs)
 
     elif mode == "H_hyper":
-        return HRateHyperprior(z_dim, n_z_samples=n_z_samples, **kwargs)
+        return HRateHyperprior(z_dim, **kwargs)
 
     elif mode == "MI":
         q_Z = get_marginalDist(
@@ -58,15 +58,10 @@ def get_rate_estimator(mode, z_dim=None, p_ZlX=None, n_z_samples=None, **kwargs)
 class EntropyBottleneck(CompressaiEntropyBottleneck):
     def forward(self, z):
         # entropy bottleneck takes 4 dim as inputs (as if images, where dim is channel)
-        n_z = z.size(0)
-        z = einops.rearrange(z, "n_z b (c e1 e2) -> (n_z b) c e1 e2", e1=1, e2=1)
+        z = einops.rearrange(z, "b (c e1 e2) -> b c e1 e2", e1=1, e2=1)
         z_hat, q_z = super().forward(z)
-        z_hat = einops.rearrange(
-            z_hat, "(n_z b) c e1 e2 -> n_z b (c e1 e2)", n_z=n_z, e1=1, e2=1
-        )
-        q_z = einops.rearrange(
-            q_z, "(n_z b) c e1 e2 -> n_z b (c e1 e2)", n_z=n_z, e1=1, e2=1
-        )
+        z_hat = einops.rearrange(z_hat, "b c e1 e2 -> b (c e1 e2)", e1=1, e2=1)
+        q_z = einops.rearrange(q_z, "b c e1 e2 -> b (c e1 e2)", e1=1, e2=1)
         return z_hat, q_z
 
     def compress(self, z):
@@ -115,7 +110,7 @@ class RateEstimator(torch.nn.Module):
 
         Parameters
         ----------
-        z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
+        z : torch.Tensor shape=[batch_shape, z_dim]
             Representation to compress.
 
         p_Zlx : torch.Distribution batch_shape=[batch_size] event_shape=[z_dim]
@@ -127,10 +122,10 @@ class RateEstimator(torch.nn.Module):
 
         Returns
         -------
-        z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
+        z : torch.Tensor shape=[batch_shape, z_dim]
             Representation after compression.
 
-        rates : torch.Tensor shape=[n_z_dim, batch_shape]
+        rates : torch.Tensor shape=[batch_shape]
             Theoretical number of bits (rate) needed for compression.
 
         logs : dict
@@ -158,7 +153,7 @@ class RateEstimator(torch.nn.Module):
 
         Parameters
         ----------
-        z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
+        z : torch.Tensor shape=[batch_shape, z_dim]
             Representation to compress.
 
         p_Zlx : torch.Distribution batch_shape=[batch_size] event_shape=[z_dim]
@@ -170,10 +165,10 @@ class RateEstimator(torch.nn.Module):
 
         Returns
         -------
-        z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
+        z : torch.Tensor shape=[batch_shape, z_dim]
             Representation after compression.
 
-        rates : torch.Tensor shape=[n_z_dim, batch_shape]
+        rates : torch.Tensor shape=[batch_shape]
             Theoretical number of bits (rate) needed for compression.
 
         logs : dict
@@ -190,7 +185,7 @@ class RateEstimator(torch.nn.Module):
         Parameters
         ----------
         z : torch.Tensor shape=[batch_shape, z_dim]
-            Representation to compress. Note that there's no n_z_dim!
+            Representation to compress. 
 
         parent : LearnableCompressor, optional
             Parent module. This is useful for some rates if they need access to other parts of the
@@ -216,7 +211,7 @@ class RateEstimator(torch.nn.Module):
         Returns
         -------
         z_hat : torch.Tensor shape=[batch_shape, z_dim]
-            Approx. decompressed representation. Note that there's no n_z_dim!
+            Approx. decompressed representation. 
         """
         raise NotImplementedError()
 
@@ -225,8 +220,8 @@ class RateEstimator(torch.nn.Module):
 
         Parameters
         ----------
-        z : torch.Tensor shape=[n_z_dim, batch_shape, z_dim]
-            Representation to compress. Note that there's n_z_dim!
+        z : torch.Tensor shape=[batch_shape, z_dim]
+            Representation to compress.
 
         is_return_logs : bool, optional
             Whether to return a dictionnary to log in addition to n_bits.
@@ -244,8 +239,7 @@ class RateEstimator(torch.nn.Module):
             logs : dict
                 Additional values that can be useful to log.
         """
-        n_z, batch, z_dim = z.shape
-        z = einops.rearrange(z, "n_z b d -> (n_z b) d", n_z=n_z)
+        batch, z_dim = z.shape
 
         with Timer() as compress_timer:
             all_strings = self.compress(z, parent=parent)
@@ -254,7 +248,7 @@ class RateEstimator(torch.nn.Module):
             with Timer() as decompress_timer:
                 _ = self.decompress(all_strings)
 
-        # sum over all latents (for hierachical). mean over batch and n_z.
+        # sum over all latents (for hierachical). mean over batch.
         n_bytes = sum(mean([len(s) for s in strings]) for strings in all_strings)
         n_bits = n_bytes * 8
 
@@ -328,17 +322,17 @@ class Lossless(RateEstimator):
     """Model that performs lossless comrpession of representations."""
 
     def forward_help(self, z, _, parent=None):
-        n_z, batch_size, z_dim = z.shape
+        batch_size, z_dim = z.shape
         z_hat = z
 
         with closing(io.BytesIO()) as f:
             np.savez_compressed(f, to_numpy(z_hat))
-            bit_rate = f.getbuffer().nbytes * 8 / (n_z * batch_size)
+            bit_rate = f.getbuffer().nbytes * 8 / (batch_size)
 
         nats_rate = bit_rate * math.log(2)
         # ensure that doesn't complain that no grad and put correct shape
         # note that we only compute average and not acatually per example memory usage
-        # shape: [n_z_samples, batch_size]
+        # shape: [batch_size]
         rates = (
             nats_rate + z.mean(dim=-1) * 0
         )  # if bit_rate is large and 16 floating point might give inf
@@ -381,8 +375,8 @@ class MIRate(RateEstimator):
         # batch shape: [] ; event shape: [z_dim]
         q_Z = self.q_Z()
 
-        # E_x[KL[p(Z|x) || q(Z)]]. shape: [n_z_samples, batch_size]
-        kl = kl_divergence(p_Zlx, q_Z, z_samples=z, is_reduce=False)
+        # E_x[KL[p(Z|x) || q(Z)]]. shape: [batch_size]
+        kl = kl_divergence(p_Zlx, q_Z, z_samples=z)
 
         z_hat = z
 
@@ -412,9 +406,6 @@ class HRateEstimator(RateEstimator):
     z_dim : int
         Size of the representation.
 
-    n_z_samples : int, optional
-        Number of z samples. Currently if > 1 cannot perform actual compress.
-
     kwargs_ent_bottleneck : dict, optional
         Additional arguments to `EntropyBottleneck`.
 
@@ -432,19 +423,15 @@ class HRateEstimator(RateEstimator):
         Additional arguments to `RateEstimator`
     """
 
+    is_can_compress = True
+
     def __init__(
-        self,
-        z_dim,
-        n_z_samples=1,
-        kwargs_ent_bottleneck={},
-        invertible_processing="diag",
-        **kwargs,
+        self, z_dim, kwargs_ent_bottleneck={}, invertible_processing="diag", **kwargs,
     ):
         self.invertible_processing = invertible_processing
         super().__init__(z_dim, **kwargs)
 
         self.kwargs_ent_bottleneck = kwargs_ent_bottleneck
-        self.is_can_compress = n_z_samples == 1
 
         if self.invertible_processing == "diag":
             self.scaling = torch.nn.Parameter(torch.ones(z_dim))
@@ -481,21 +468,11 @@ class HRateEstimator(RateEstimator):
             z = (z + self.biasing) * self.scaling.exp()
 
         elif self.invertible_processing == "psd":
-            is_nz_dim = z.ndim > 2
-
-            if is_nz_dim:
-                # allow computation with n_z => resize
-                n_z = z.size(0)
-                z = einops.rearrange(z, "n_z b d -> (n_z b) d", n_z=n_z)
-
             mat = torch.mm(self.scaling, self.scaling.T) + 1e-1 * self.eye
             z = z + self.biasing
             z = torch.matmul(z, mat)
 
             kwargs["mat"] = mat
-
-            if is_nz_dim:
-                z = einops.rearrange(z, "(n_z b) d -> n_z b d", n_z=n_z)
 
         return z, kwargs
 
@@ -504,21 +481,11 @@ class HRateEstimator(RateEstimator):
             z_hat = (z_hat / self.scaling.exp()) - self.biasing
 
         elif self.invertible_processing == "psd":
-            is_nz_dim = z_hat.ndim > 2
-
-            if is_nz_dim:
-                # allow computation with n_z => resize
-                n_z = z_hat.size(0)
-                z_hat = einops.rearrange(z_hat, "n_z b d -> (n_z b) d", n_z=n_z)
-
             if mat is None:
                 mat = torch.mm(self.scaling, self.scaling.T) + 1e-1 * self.eye
             chol = torch.cholesky(mat)
             z_hat = torch.cholesky_solve(z_hat.T, chol).T
             z_hat = z_hat - self.biasing
-
-            if is_nz_dim:
-                z_hat = einops.rearrange(z_hat, "(n_z b) d -> n_z b d", n_z=n_z)
 
         return z_hat
 
@@ -622,7 +589,7 @@ class HRateFactorizedPrior(HRateEstimator):
 
         z_hat, q_z = self.entropy_bottleneck(z_in)
 
-        # - log q(z). shape :  [n_z_dim, batch_shape]
+        # - log q(z). shape :  [batch_shape]
         neg_log_q_z = -torch.log(q_z).sum(-1)
 
         logs = dict(H_q_Z=neg_log_q_z.mean() / math.log(BASE_LOG), H_ZlX=0)
@@ -723,21 +690,21 @@ class HRateHyperprior(HRateEstimator):
     def forward_help(self, z, _, __):
         z_in, kwargs = self.process_z_in(z)
 
-        # shape: [n_z_dim, batch_shape, side_z_dim]
+        # shape: [ batch_shape, side_z_dim]
         side_z = self.side_encoder(z_in)
         side_z_hat, q_s = self.entropy_bottleneck(side_z)
 
-        # scales_hat and means_hat (if not None). shape: [n_z_dim, batch_shape, z_dim]
+        # scales_hat and means_hat (if not None). shape: [batch_shape, z_dim]
         gaussian_params = self.z_encoder(side_z_hat)
         scales_hat, means_hat = self.chunk_params(gaussian_params)
 
-        # shape: [n_z_dim, batch_shape, z_dim]
+        # shape: [ batch_shape, z_dim]
         z_hat, q_zls = self.gaussian_conditional(z_in, scales_hat, means=means_hat)
 
-        # - log q(s). shape :  [n_z_dim, batch_shape]
+        # - log q(s). shape :  [batch_shape]
         neg_log_q_s = -torch.log(q_s).sum(-1)
 
-        # - log q(z|s). shape :  [n_z_dim, batch_shape]
+        # - log q(z|s). shape :  [batch_shape]
         neg_log_q_zls = -torch.log(q_zls).sum(-1)
 
         # - log q(z,s)
@@ -784,7 +751,7 @@ class HRateHyperprior(HRateEstimator):
 
         # side_z and side_z_hat. shape: [batch_shape, side_z_dim]
         side_z = self.side_encoder(z_in)
-        # len n_z_dim list of bytes
+        # list of bytes
         side_z_strings = self.entropy_bottleneck.compress(side_z)
 
         # shape: [batch_shape, z_dim, 1, 1]

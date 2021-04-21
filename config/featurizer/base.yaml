@@ -6,4 +6,3 @@ is_train: True # whether to train the compressor, if not will load a pretrained 
 
 loss:
   beta: 1 # this will be `quality` for classical
-  n_z_samples: 1 # this is actually only used if neural but need to always be given as used in long_name

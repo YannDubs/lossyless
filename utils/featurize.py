@@ -8,12 +8,11 @@ from tqdm import tqdm
 import clip
 import torch
 import torch.multiprocessing
+from lossyless.helpers import to_numpy
 from pl_bolts.models.self_supervised import SimCLR
 from pl_bolts.models.self_supervised.simclr import SimCLREvalDataTransform
-from pl_bolts.transforms.dataset_normalizations import (
-    cifar10_normalization,
-    imagenet_normalization,
-)
+from pl_bolts.transforms.dataset_normalizations import (cifar10_normalization,
+                                                        imagenet_normalization)
 from torch.utils.data import DataLoader
 from torchvision.datasets import CIFAR10, CIFAR100, STL10, ImageFolder
 
@@ -92,10 +91,10 @@ def save_all_features(
                 images = images.to(device)
                 if is_half:
                     images = images.half()
-                features = encoder(images).cpu().numpy()
+                features = to_numpy(encoder(images))
                 curr_n_feat = features.shape[0]
                 Z[n_featurized : n_featurized + curr_n_feat, :] = features
-                Y[n_featurized : n_featurized + curr_n_feat] = labels.cpu().numpy()
+                Y[n_featurized : n_featurized + curr_n_feat] = to_numpy(labels)
                 n_featurized += curr_n_feat
 
 

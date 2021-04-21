@@ -7,6 +7,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 import torch
+from lossyless.helpers import to_numpy
 from torchvision.datasets.folder import default_loader
 from torchvision.transforms import functional as F_trnsf
 
@@ -76,7 +77,7 @@ def npimg_resize(np_imgs, size):
 
     torch_imgs = torch.from_numpy(np_imgs.transpose((0, 3, 1, 2))).contiguous()
     torch_imgs = F_trnsf.resize(torch_imgs, size=size)
-    np_imgs = torch_imgs.numpy().transpose((0, 2, 3, 1))
+    np_imgs = to_numpy(torch_imgs).transpose((0, 2, 3, 1))
     return np_imgs
 
 

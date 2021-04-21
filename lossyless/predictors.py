@@ -66,7 +66,7 @@ class Predictor(pl.LightningModule):
 
         self.stage = self.hparams.stage
 
-    # @auto_move_data  # move data on correct device for inference
+    @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_logits=True, is_return_logs=False):
         """Perform prediction for `x`.
 

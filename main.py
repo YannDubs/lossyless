@@ -32,22 +32,15 @@ from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
-from pytorch_lightning.plugins import (
-    DDPPlugin,
-    DDPShardedPlugin,
-    DDPSpawnPlugin,
-    DDPSpawnShardedPlugin,
-)
+from pytorch_lightning.plugins import DDPPlugin, DDPSpawnPlugin
 from utils.data import get_datamodule
 from utils.helpers import (
-    DataParallelPlugin,
     ModelCheckpoint,
     apply_featurizer,
     cfg_save,
     format_resolver,
     get_latest_match,
     getattr_from_oneof,
-    learning_rate_finder,
     log_dict,
     omegaconf2namespace,
     replace_keys,
@@ -354,6 +347,7 @@ def instantiate_datamodule_(cfg, pre_featurizer=None):
 def initialize_compressor_(module, datamodule, trainer, cfg):
     """Additional steps needed for intitalization of the compressor + logging."""
 
+    # TODO remove if not using vampprior
     # marginal vampprior
     rate_est = module.rate_estimator
     if hasattr(rate_est, "q_Z") and isinstance(rate_est.q_Z, MarginalVamp):
@@ -380,12 +374,10 @@ def get_callbacks(cfg, is_featurizer):
     if is_featurizer:
         additional_target = cfg.data.kwargs.dataset_kwargs.additional_target
         is_reconstruct = additional_target in ["representative", "input"]
-        can_estimate_Mx = ["representative", "input", "max_var", "max_inv"]
         if cfg.logger.is_can_plot_img:
             if cfg.data.mode == "image" and is_reconstruct:
                 callbacks += [
                     LatentDimInterpolator(cfg.encoder.z_dim),
-                    # ReconstructImages(),
                 ]
 
                 if cfg.trainer.gpus == 1:
@@ -393,10 +385,8 @@ def get_callbacks(cfg, is_featurizer):
                     callbacks += [ReconstructImages()]
 
             elif cfg.data.mode == "distribution":
-                callbacks += [
-                    CodebookPlot(is_plot_codebook=is_reconstruct),
-                ]
-                if additional_target in can_estimate_Mx:
+                callbacks += [CodebookPlot(is_plot_codebook=is_reconstruct,)]
+                if is_reconstruct:
                     callbacks += [
                         MaxinvDistributionPlot(),
                     ]
@@ -442,21 +432,6 @@ def get_logger(cfg, module, is_featurizer):
             cfg.logger.kwargs.offline = True
             pllogger = WandbLogger(**kwargs)
 
-        # TODO remove as you are never using
-        if cfg.trainer.track_grad_norm == 2:
-            try:
-                # use wandb rather than lightning gradients
-                cfg.trainer.track_grad_norm = -1
-                to_watch = module.p_ZlX.mapper if is_featurizer else module.predictor
-                pllogger.watch(
-                    to_watch,
-                    log="gradients",
-                    log_freq=cfg.trainer.log_every_n_steps * 10,
-                )
-            except:
-                logger.exception("Cannot track gradients. Because:")
-                pass
-
     elif cfg.logger.name == "tensorboard":
         pllogger = TensorBoardLogger(**kwargs)
 
@@ -480,17 +455,7 @@ def get_trainer(cfg, module, is_featurizer):
     kwargs = dict(**cfg.trainer)
 
     # PARALLEL PROCESSING
-    # cpu
-    # TODO remove as you are not using
-    accelerator = kwargs.get("accelerator", None)
-    if accelerator == "ddp_cpu_spawn":  # only for debug
-        kwargs["accelerator"] = "ddp_cpu"
-        kwargs["plugins"] = DDPSpawnPlugin(
-            parallel_devices=[], find_unused_parameters=True
-        )
-
-    # gpu
-    # TODO remove as you are not using (or keep oinly one)
+    # TODOnly one)
     if kwargs["gpus"] > 1:
         kwargs["sync_batchnorm"] = True
         accelerator = kwargs.get("accelerator", "ddp")
@@ -508,21 +473,6 @@ def get_trainer(cfg, module, is_featurizer):
             kwargs["plugins"] = DDPSpawnPlugin(
                 parallel_devices=parallel_devices, find_unused_parameters=True,
             )
-
-        elif accelerator == "ddp_sharded":
-            kwargs["accelerator"] = "ddp"
-            kwargs["plugins"] = DDPShardedPlugin(
-                parallel_devices=parallel_devices, find_unused_parameters=True,
-            )
-
-        elif accelerator == "ddp_sharded_spawn":
-            kwargs["accelerator"] = "ddp"
-            kwargs["plugins"] = DDPSpawnShardedPlugin(
-                parallel_devices=parallel_devices, find_unused_parameters=True,
-            )
-
-        elif accelerator == "dp":
-            kwargs["plugins"] = DataParallelPlugin(parallel_devices=parallel_devices)
 
     # TRAINER
     trainer = pl.Trainer(

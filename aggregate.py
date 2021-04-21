@@ -17,15 +17,10 @@ import hydra
 from lossyless.helpers import BASE_LOG, check_import
 from main import CONFIG_FILE, get_stage_name
 from omegaconf import OmegaConf
-from utils.helpers import cfg_load, cfg_save, getattr_from_oneof, omegaconf2namespace
-from utils.postplotting import (
-    PRETTY_RENAMER,
-    PostPlotter,
-    data_getter,
-    folder_split,
-    single_plot,
-    table_summarizer,
-)
+from utils.helpers import (cfg_load, cfg_save, getattr_from_oneof,
+                           omegaconf2namespace)
+from utils.postplotting import (PRETTY_RENAMER, PostPlotter, data_getter,
+                                folder_split, single_plot, table_summarizer)
 from utils.postplotting.helpers import aggregate, save_fig
 from utils.visualizations.helpers import kwargs_log_scale
 
@@ -37,7 +32,7 @@ except:
 try:
     import optuna
 
-    #! waiting for https://github.com/optuna/optuna/pull/2450
+    # TODO remove when https://github.com/optuna/optuna/pull/2450
     # from optuna.visualization.matplotlib import plot_pareto_front
     from utils.visualizations.pareto_front import plot_pareto_front
 except:
@@ -138,7 +133,7 @@ class ResultAggregator(PostPlotter):
 
     def collect_data(
         self,
-        pattern=f"results/**/results_compressor.csv",
+        pattern=f"results/**/results_featurizer.csv",
         table_name="featurizer",
         params_to_rm=["jid"],
         params_to_add={},
@@ -697,7 +692,7 @@ class ResultAggregator(PostPlotter):
         if logbase_x != 1 or logbase_y != 1:
             sns_plot.map_dataframe(set_log_scale, basex=logbase_x, basey=logbase_y)
 
-        #! waiting for https://github.com/mwaskom/seaborn/issues/2456
+        # TODO remove when waiting for https://github.com/mwaskom/seaborn/issues/2456
         if xlabel != "":
             for ax in sns_plot.fig.axes:
                 ax.set_xlabel(xlabel)
@@ -738,7 +733,7 @@ class ResultAggregator(PostPlotter):
                     plot_f_str == "plot_optimization_history"
                     and len(cfg.monitor_return) > 1
                 ):
-                    #! waiting for https://github.com/optuna/optuna/issues/2531
+                    # TODO remove once https://github.com/optuna/optuna/pull/2532
                     continue
 
                 # plotting

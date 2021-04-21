@@ -1,4 +1,5 @@
 #! copy pasted from https://github.com/optuna/optuna/pull/2450 until gets merged
+# TODO remove when merged
 
 from typing import List, Optional
 

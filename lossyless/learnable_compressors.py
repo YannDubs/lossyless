@@ -9,7 +9,8 @@ from pytorch_lightning.core.decorators import auto_move_data
 from .architectures import get_Architecture
 from .distortions import get_distortion_estimator
 from .distributions import CondDist, Deterministic
-from .helpers import BASE_LOG, Annealer, OrderedSet, Timer, append_optimizer_scheduler_
+from .helpers import (BASE_LOG, Annealer, OrderedSet, Timer,
+                      append_optimizer_scheduler_)
 from .predictors import OnlineEvaluator
 from .rates import get_rate_estimator
 
@@ -25,7 +26,7 @@ class LearnableCompressor(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters(hparams)
 
-        self.p_ZlX = self.get_encoder()  # p_{Z | X}
+        self.p_ZlX = self.get_encoder()
         self.rate_estimator = self.get_rate_estimator()
         self.distortion_estimator = self.get_distortion_estimator()
 
@@ -111,7 +112,7 @@ class LearnableCompressor(pl.LightningModule):
     def predict(self, *args, **kwargs):  # TODO remove in newer version of lightning
         return self.predict_step(*args, **kwargs)
 
-    # @auto_move_data  # move data on correct device for inference
+    @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_compress=False, is_features=None):
         """Represents the data `x`.
 
@@ -143,15 +144,13 @@ class LearnableCompressor(pl.LightningModule):
             is_features = self.is_features
 
         p_Zlx = self.p_ZlX(x)
-        z = p_Zlx.rsample([1])
+        z = p_Zlx.rsample()
 
         # shape: [batch_size, z_dim]
         if is_compress:
-            z = z.squeeze(0)
             z_hat = self.rate_estimator.compress(z, self)
         else:
             z_hat, *_ = self.rate_estimator(z, p_Zlx, self)
-            z_hat = z_hat.squeeze(0)
 
         if is_features:
             out = z_hat
@@ -167,16 +166,15 @@ class LearnableCompressor(pl.LightningModule):
 
     def step(self, batch, is_rate_only=False):
         x, targets = batch
-        n_z = self.hparams.featurizer.loss.n_z_samples
 
         with Timer() as encoder_timer:
             # batch shape: [batch_size] ; event shape: [z_dim]
             p_Zlx = self.p_ZlX(x)
 
-        # shape: [n_z, batch_size, z_dim]
-        z = p_Zlx.rsample([n_z])
+        # shape: [batch_size, z_dim]
+        z = p_Zlx.rsample()
 
-        # z_hat. shape: [n_z, batch_size, z_dim]
+        # z_hat. shape: [batch_size, z_dim]
         z_hat, rates, r_logs, r_other = self.rate_estimator(z, p_Zlx, self)
 
         if "n_bits" in r_logs:
@@ -223,8 +221,6 @@ class LearnableCompressor(pl.LightningModule):
         return beta, labda
 
     def loss(self, rates, distortions):
-        n_z = rates.size(0)
-
         # multiplication by small or large beta might cause issues in float16
         rates = rates.float()
         distortions = distortions.float()
@@ -234,14 +230,6 @@ class LearnableCompressor(pl.LightningModule):
 
         # loose_loss for plotting. shape: []
         loose_loss = (labda * distortions + final_beta * rates).mean().detach()
-
-        # tightens bound using IWAE: log 1/k sum exp(loss). shape: [batch_size]
-        if n_z > 1:
-            rates = torch.logsumexp(rates, 0) - math.log(n_z)
-            distortions = torch.logsumexp(distortions, 0) - math.log(n_z)
-        else:
-            distortions = distortions.squeeze(0)
-            rates = rates.squeeze(0)
 
         # E_x[...]. shape: shape: []
         rate = rates.mean(0)

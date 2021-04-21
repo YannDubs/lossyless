@@ -8,15 +8,8 @@ from torch.nn import functional as F
 
 from .architectures import MLP, get_Architecture
 from .distributions import Deterministic, DiagGaussian
-from .helpers import (
-    BASE_LOG,
-    UnNormalizer,
-    gather_from_gpus,
-    is_colored_img,
-    kl_divergence,
-    prediction_loss,
-    weights_init,
-)
+from .helpers import (BASE_LOG, UnNormalizer, gather_from_gpus, is_colored_img,
+                      kl_divergence, prediction_loss, weights_init)
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +103,7 @@ class DirectDistortion(nn.Module):
 
         Parameters
         ----------
-        z_hat : Tensor shape=[n_z, batch_size, z_dim]
+        z_hat : Tensor shape=[batch_size, z_dim]
             Reconstructed representations.
 
         aux_target : Tensor shape=[batch_size, *aux_shape]
@@ -118,7 +111,7 @@ class DirectDistortion(nn.Module):
 
         Returns
         -------
-        distortions : torch.Tensor shape=[n_z_dim, batch_shape]
+        distortions : torch.Tensor shape=[batch_shape]
             Estimates distortion.
 
         logs : dict
@@ -127,17 +120,10 @@ class DirectDistortion(nn.Module):
         other : dict
             Additional values to return.
         """
+        # shape: [batch_size, *y_shape]
+        Y_hat = self.q_YlZ(z_hat)  # Y_hat is suff statistic of q_{Y|z}
 
-        n_z = z_hat.size(0)
-
-        flat_z_hat = einops.rearrange(z_hat, "n_z b d -> (n_z b) d")
-
-        # shape: [n_z_samples*batch_size, *y_shape]
-        Y_hat = self.q_YlZ(flat_z_hat)  # Y_hat is suff statistic of q_{Y|z}
-
-        aux_target = einops.repeat(aux_target, "b ... -> (n_z b) ...", n_z=n_z)
-
-        # -log p(yi|zi). shape: [n_z_samples, batch_size, *y_shape]
+        # -log p(yi|zi). shape: [batch_size, *y_shape]
         #! all of the following should really be written in a single line using log_prob where P_{Y|Z}
         # is an actual conditional distribution (categorical if cross entropy, and gaussian for mse),
         # but this might be less understandable for usual deep learning + less numberically stable
@@ -163,11 +149,9 @@ class DirectDistortion(nn.Module):
         else:  # normal pred
             neg_log_q_ylz = prediction_loss(Y_hat, aux_target, **self.kwargs)
 
-        # -log p(y|z). shape: [n_z_samples, batch_size]
+        # -log p(y|z). shape: [batch_size]
         #! mathematically should take a sum (log prod proba -> sum log proba), but usually people take mean
-        neg_log_q_ylz = einops.reduce(
-            neg_log_q_ylz, "(z b) ... -> z b", reduction="sum", z=n_z
-        )
+        neg_log_q_ylz = einops.reduce(neg_log_q_ylz, "b ... -> b", reduction="sum",)
 
         # T for auxilary task to distinguish from task Y
         logs = dict(H_q_TlZ=neg_log_q_ylz.mean() / math.log(BASE_LOG))
@@ -210,12 +194,6 @@ class ContrastiveDistortion(nn.Module):
         This seems necessary for training, probably because if not norm of Z matters++ and then
         large loss in entropy bottleneck. Recommended True.
 
-    is_invariant : bool, optional
-        Want to be invariant => same orbit / positive element. If not then the positive is the element itself
-        and the image on the same orbit is a negative (so batch is doubled size). Using augmented image
-        as negatives is necesary to ensure the representations are not invariant. THis is used
-        for nce (but not ince).
-
     is_already_featurized : bool, optional
         Whether the posivite examples are already featurized => no need to use p_ZlX again.
         In this case `p_ZlX` will be replaced by a placeholder distribution. Useful
@@ -245,7 +223,6 @@ class ContrastiveDistortion(nn.Module):
         is_train_temperature=True,
         is_cosine=True,
         effective_batch_size=None,
-        is_invariant=True,
         is_already_featurized=False,
         is_batch_neg=True,  # TODO rm if CLIP does not need False
         is_project=True,
@@ -256,7 +233,6 @@ class ContrastiveDistortion(nn.Module):
         self.is_train_temperature = is_train_temperature
         self.is_cosine = is_cosine
         self.effective_batch_size = effective_batch_size
-        self.is_invariant = is_invariant
         self.is_already_featurized = is_already_featurized
         self.is_batch_neg = is_batch_neg
         self.is_project = is_project
@@ -289,7 +265,7 @@ class ContrastiveDistortion(nn.Module):
 
         Parameters
         ----------
-        z_hat : Tensor shape=[n_z, batch_size, z_dim]
+        z_hat : Tensor shape=[batch_size, z_dim]
             Reconstructed representations.
 
         x_pos : Tensor shape=[batch_size, *x_shape]
@@ -301,7 +277,7 @@ class ContrastiveDistortion(nn.Module):
 
         Returns
         -------
-        distortions : torch.Tensor shape=[n_z_dim, batch_shape]
+        distortions : torch.Tensor shape=[batch_shape]
             Estimates distortion.
 
         logs : dict
@@ -310,7 +286,7 @@ class ContrastiveDistortion(nn.Module):
         other : dict
             Additional values to return.
         """
-        n_z, batch_size, z_dim = z_hat.shape
+        batch_size, z_dim = z_hat.shape
 
         # shape: [2 * batch_size, 2 * batch_size * world_size]
         logits = self.compute_logits(z_hat, x_pos, parent)
@@ -318,18 +294,14 @@ class ContrastiveDistortion(nn.Module):
         # shape: [2 * batch_size]
         hat_H_mlz, logs = self.compute_loss(logits)
 
-        # shape: [n_z, batch_size]
+        # shape: [batch_size]
         hat_H_mlz = (hat_H_mlz[:batch_size] + hat_H_mlz[batch_size:]) / 2
-        hat_H_mlz = einops.repeat(hat_H_mlz, "b -> n_z b", n_z=n_z)
 
         other = dict()
 
         return hat_H_mlz, logs, other
 
     def compute_logits(self, z_hat, x_pos, parent):
-
-        # shape: [batch_size, z_dim]
-        z_hat = z_hat.squeeze(0)
 
         # shape: [batch_size, z_dim]
         if self.is_already_featurized:
@@ -371,12 +343,7 @@ class ContrastiveDistortion(nn.Module):
         batch_size = new_batch_size // 2
         device = logits.device
 
-        if not self.is_invariant:
-            # use NCE which is not invariant to transformations =>
-            # the positive example is the example  itself
-            pos_idx = torch.arange(new_batch_size, device=device)
-
-        elif self.is_batch_neg:
+        if self.is_batch_neg:
             # whether the rest of the batch should also be viewed as negative examples
             # this doubles the number of negatives and should be used for image SSL
 
@@ -396,7 +363,7 @@ class ContrastiveDistortion(nn.Module):
             arange = torch.arange(batch_size, device=device)
             pos_idx = torch.cat([arange + batch_size - 1, arange], dim=0)
 
-        elif not self.is_batch_neg:
+        else:
             #! does not currently work with multi GPU
             # TODO test if necessary for CLIP and if not remove
             # does not use the batch as negative examples. This is what CLIP does: images have
@@ -474,7 +441,7 @@ class LossyZDistortion(nn.Module):
 
         Parameters
         ----------
-        z_hat : Tensor shape=[n_z, batch_size, z_dim]
+        z_hat : Tensor shape=[batch_size, z_dim]
             Reconstructed representations.
 
         p_Zlx : torch.Distribution batch_shape=[batch_size] event_shape=[z_dim]
@@ -482,7 +449,7 @@ class LossyZDistortion(nn.Module):
 
         Returns
         -------
-        distortions : torch.Tensor shape=[n_z_dim, batch_shape]
+        distortions : torch.Tensor shape=[batch_shape]
             Estimates distortion.
 
         logs : dict
@@ -491,20 +458,8 @@ class LossyZDistortion(nn.Module):
         other : dict
             Additional values to return.
         """
-        n_z = z_hat.size(0)
-
-        # shape=[n_z*batch_size, z_dim]
-        flat_z_hat = einops.rearrange(z_hat, "n_z b d -> (n_z b) d")
-
-        # shape=[n_z*batch_size, z_dim]
-        z_mean = p_Zlx.base_dist.mean
-        z_mean = einops.repeat(z_mean, "b d -> (n_z b) d", n_z=n_z)
-
-        # shape=[n_z*batch_size]
-        dist = self.distance(flat_z_hat, z_mean)
-
-        # shape: [n_z, batch_size]
-        dist = einops.rearrange(dist, "(n_z b)  -> n_z b", n_z=n_z)
+        # shape=[batch_size]
+        dist = self.distance(z_hat, p_Zlx.base_dist.mean)
 
         logs = dict()
         other = dict()

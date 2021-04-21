@@ -294,12 +294,11 @@ class CodebookPlot(PlottingCallback):
         # batch shape: [batch_size] ; event shape: [z_dim]
         p_Zlx = pl_module.p_ZlX(x)
 
-        # shape: [1, batch_size, z_dim]
-        z = p_Zlx.mean.unsqueeze(0)
+        # shape: [batch_size, z_dim]
+        z = p_Zlx.mean
 
         # shape: [batch_size, z_dim]
         z_hat, rates, _, __ = pl_module.rate_estimator(z, p_Zlx, pl_module)
-        z_hat, rates = z_hat.squeeze(0), rates.squeeze(0)
 
         # Find the unique set of latents for these inputs. Converts integer indexes
         # on the infinite lattice to scalar indexes into a codebook (which is only
@@ -458,7 +457,7 @@ class MaxinvDistributionPlot(PlottingCallback):
         fig, ax = plt.subplots(1, 1, figsize=self.figsize)
 
         data = pd.DataFrame(
-            {"p(M(X))": mx.flatten().numpy(), "q(M(X))": mx_hat.flatten().numpy()}
+            {"p(M(X))": to_numpy(mx.flatten()), "q(M(X))": to_numpy(mx_hat.flatten())}
         )
 
         h = sns.histplot(
@@ -601,7 +600,7 @@ class ResnetFinetuning(BaseFinetuning):
         self.freeze(modules=model, train_bn=self.train_bn)
 
     def is_unfreeze(self, curr_epoch, target_epoch):
-        #! waiting for https://github.com/PyTorchLightning/pytorch-lightning/issues/6891
+        # TODO rm when https://github.com/PyTorchLightning/pytorch-lightning/issues/6891
         return (curr_epoch == target_epoch) or (self.loaded_epoch >= target_epoch)
 
     def finetune_function(self, pl_module, curr_epoch, optimizer, opt_idx):

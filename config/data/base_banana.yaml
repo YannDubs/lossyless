@@ -5,8 +5,8 @@ dataset: banana
 
 kwargs:
   val_size: 100000
-  batch_size: 8192
-  val_batch_size: 16384
+  batch_size: 1024
+  val_batch_size: 2048
   dataset_kwargs:
     length: 1024000
     is_normalize: False

@@ -1,8 +1,9 @@
 import random
 
 import matplotlib.pyplot as plt
+
 import torch
-from lossyless.helpers import set_seed
+from lossyless.helpers import set_seed, to_numpy
 from torchvision.utils import make_grid
 
 DFLT_FIGSIZE = (17, 9)
@@ -24,7 +25,7 @@ def plot_dataset_samples_imgs(
     )
     grid = make_grid(img_tensor, nrow=2, pad_value=pad_value)
 
-    ax.imshow(grid.permute(1, 2, 0).numpy())
+    ax.imshow(to_numpy(grid.permute(1, 2, 0)))
     ax.axis("off")
 
     if title is not None:

@@ -78,10 +78,6 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
         else:
             raise ValueError(f"Unkown equivalence={self.equivalence}.")
 
-    def get_max_var(self, x, Mx):
-        # Mx is a regression task so one possible max variant is simply predicting x
-        return x
-
     def sample_equivalence_action(self):
         def action_translation(rep, min_ax, max_ax, axis):
             # random translation on * scale
@@ -122,13 +118,13 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
         return action(rep)
 
     @property
-    def is_clf_x_t_Mx(self):
-        return dict(input=False, target=False, max_inv=False)
+    def is_clfs(self):
+        return dict(input=False, target=False)
 
     @property
-    def shapes_x_t_Mx(self):
+    def shapes(self):
         target_dim = 1 if self.equivalence is not None else 2
-        return dict(input=(2,), target=(target_dim,), max_inv=(1,), max_var=(2,))
+        return dict(input=(2,), target=(target_dim,))
 
     def get_n_data_Mxs(self, length):
         """Return an array for the examples and correcponding max inv ofa given length."""

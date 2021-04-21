@@ -24,7 +24,7 @@ from lossyless.helpers import (
 )
 from main import main as main_training
 from omegaconf import OmegaConf
-from utils.helpers import all_logging_disabled
+from utils.helpers import all_logging_disabled, format_resolver
 from utils.postplotting import PRETTY_RENAMER, PostPlotter
 from utils.postplotting.helpers import save_fig
 
@@ -108,7 +108,7 @@ class PretrainedAnalyser(PostPlotter):
             # make sure can run on cpu
             cfg.trainer.gpus = 0
             cfg.trainer.precision = 32
-            cfg.callbacks.additional = []
+            cfg.callbacks.is_force_no_additional_callback = True
 
         if is_only_feat:
             cfg.is_only_feat = True
@@ -352,4 +352,5 @@ class PretrainedAnalyser(PostPlotter):
 
 
 if __name__ == "__main__":
+    OmegaConf.register_new_resolver("format", format_resolver)
     main_cli()

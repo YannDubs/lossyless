@@ -44,7 +44,7 @@ job_id: ??? # unique identifier
 seed: 123
 timeout: 1440 # 24 hours
 time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is not when job runs
-long_name_feat: exp_${experiment}/datafeat_${data_feat.name}/feat_${featurizer.name}/dist_${distortion.name}/enc_${encoder.name}/rate_${rate.name}/optfeat_${optimizer_feat.name}/schedfeat_${scheduler_feat.name}/zdim_${encoder.z_dim}/zs_${featurizer.loss.n_z_samples}/beta_${format:${featurizer.loss.beta},.1e}/seed_${seed}/addfeat_${other.add_feat}
+long_name_feat: exp_${experiment}/datafeat_${data_feat.name}/feat_${featurizer.name}/dist_${distortion.name}/enc_${encoder.name}/rate_${rate.name}/optfeat_${optimizer_feat.name}/schedfeat_${scheduler_feat.name}/zdim_${encoder.z_dim}/zs_1/beta_${format:${featurizer.loss.beta},.1e}/seed_${seed}/addfeat_${other.add_feat}
 long_name_comm: ${long_name_feat}/datapred_${data_pred.name}
 long_name_pred: ${long_name_comm}/optpred_${optimizer_pred.name}/schedpred_${scheduler_pred.name}/addpred_${other.add_pred}
 is_only_feat: false # run rpredicotr?
@@ -105,7 +105,7 @@ trainer:
   #default_root_dir: ${paths.results}
   max_epochs: 200
   terminate_on_nan: false # makes it slower if true
-  progress_bar_refresh_rate: 1000 # increase to show progress bar #TODO rm once prediction works
+  progress_bar_refresh_rate: 0 # increase to show progress bar 
   resume_from_checkpoint: null # string to checkpoint if want to resume
   gradient_clip_val: 3 # 0 means no clip 
   reload_dataloaders_every_epoch: False

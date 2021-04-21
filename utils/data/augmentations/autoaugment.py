@@ -3,7 +3,7 @@ Auto augmentation policies.
 Implementation credits: https://github.com/DeepVoltaire/AutoAugment/blob/master/autoaugment.py
 Paper: https://arxiv.org/pdf/1805.09501v3.pdf
 """
-#! TODO rm if not keeping
+# TODO rm if not keeping
 import random
 
 import numpy as np
