@@ -20,12 +20,8 @@ import pl_bolts
 import pytorch_lightning as pl
 import torch
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
-from lossyless.callbacks import (
-    CodebookPlot,
-    LatentDimInterpolator,
-    MaxinvDistributionPlot,
-    ReconstructImages,
-)
+from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
+                                 MaxinvDistributionPlot, ReconstructImages)
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
@@ -34,18 +30,10 @@ from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from pytorch_lightning.plugins import DDPPlugin, DDPSpawnPlugin
 from utils.data import get_datamodule
-from utils.helpers import (
-    ModelCheckpoint,
-    apply_featurizer,
-    cfg_save,
-    format_resolver,
-    get_latest_match,
-    getattr_from_oneof,
-    log_dict,
-    omegaconf2namespace,
-    replace_keys,
-    set_debug,
-)
+from utils.helpers import (ModelCheckpoint, apply_featurizer, cfg_save,
+                           format_resolver, get_latest_match,
+                           getattr_from_oneof, log_dict, omegaconf2namespace,
+                           replace_keys, set_debug)
 
 try:
     import wandb
@@ -73,6 +61,7 @@ except:
 
 @hydra.main(config_name="main", config_path="config")
 def main(cfg):
+
     ############## STARTUP ##############
     logger.info("Stage : Startup")
     begin(cfg)
@@ -209,9 +198,6 @@ def begin(cfg):
 
     cfg.paths.work = str(Path.cwd())
     cfg.other.git_hash = GIT_HASH
-
-    if cfg.rate.range_coder is not None:
-        compressai.set_entropy_coder(cfg.rate.range_coder)
 
     logger.info(f"Workdir : {cfg.paths.work}.")
 
