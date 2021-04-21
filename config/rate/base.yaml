@@ -1,6 +1,5 @@
 name: ???
 mode: ???
-range_coder: null
 factor_beta : 1 # factor that multiplies beta 
 kwargs: 
   z_dim: ${encoder.z_dim}

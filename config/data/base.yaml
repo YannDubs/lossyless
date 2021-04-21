@@ -1,17 +1,8 @@
+defaults:
+  - base_runtime
+  
 name: ???
 dataset: ???
-
-##### the following will be updated at run time #####
-mode: ???
-length: ???
-shape: ???
-target_shape: ???
-balancing_weights: ???
-aux_shape: ???
-aux_is_clf: ??? 
-target_is_clf: ???
-max_steps: ??? # max number of steps for training
-#########################################################
 
 kwargs:
   data_dir: ${paths.data}

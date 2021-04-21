@@ -224,12 +224,7 @@ class LossylessImgDataset(LossylessDataset):
 
         return dict(
             PIL={
-                "rotation": RandomRotation(30),
-                "y_translation": RandomAffine(0, translate=(0, 0.1)),
-                "x_translation": RandomAffine(0, translate=(0.1, 0)),
-                "shear": RandomAffine(0, shear=10),
-                "scale": RandomAffine(0, scale=(0.8, 1.2)),
-                "rotation++": RandomRotation(45),
+                "rotation": RandomRotation(45),
                 "360_rotation": RandomRotation(360),
                 "D4_group": Compose(
                     [
@@ -238,10 +233,10 @@ class LossylessImgDataset(LossylessDataset):
                         RandomApply([RandomRotation((90, 90))], p=0.5),
                     ]
                 ),
-                "y_translation++": RandomAffine(0, translate=(0, 0.25)),
-                "x_translation++": RandomAffine(0, translate=(0.25, 0)),
-                "shear++": RandomAffine(0, shear=25),
-                "scale++": RandomAffine(0, scale=(0.6, 1.4)),
+                "y_translation": RandomAffine(0, translate=(0, 0.25)),
+                "x_translation": RandomAffine(0, translate=(0.25, 0)),
+                "shear": RandomAffine(0, shear=25),
+                "scale": RandomAffine(0, scale=(0.6, 1.4)),
                 "color": RandomApply(
                     [
                         ColorJitter(

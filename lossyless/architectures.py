@@ -49,8 +49,8 @@ def get_Architecture(mode, complexity=None, **kwargs):
     """
     if mode == "mlp":
         if complexity is not None:
-            # width 8,32,128,512,2048
-            kwargs["hid_dim"] = 8 * (4 ** (complexity))
+            # width 64,256,1024,4096
+            kwargs["hid_dim"] = 32 * (4 ** (complexity))
         return partial(FlattenMLP, **kwargs)
 
     elif mode == "linear":

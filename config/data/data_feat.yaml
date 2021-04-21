@@ -1,9 +1,5 @@
 defaults:
-  - base
+  - base_runtime
 
 name: data_feat # will copy all from data feat
 dataset: ???
-
-kwargs:
-  dataset_kwargs:
-    equivalence: ???

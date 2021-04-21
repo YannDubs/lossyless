@@ -13,6 +13,8 @@ load_pretrained:
   reconstruct_image_plot_placeholder: {}
   latent_traversals_plot: {}
   reconstruct_image_plot: {}
+  codebook_plot:
+      n_pts: 1000
 
   kwargs:
     prfx: ""
