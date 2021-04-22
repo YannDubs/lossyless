@@ -121,7 +121,7 @@ class ResultAggregator(PostPlotter):
         self.param_names = dict()
         self.cfgs = dict()
 
-    def merge_tables(self, to_merge=["featurizer", "predictor"]):
+    def merge_tables(self, to_merge=["featurizer", "predictor","communication"]):
         """Add one large table called `"merge"` that concatenates other tables."""
         merged = self.tables[to_merge[0]]
         for table in to_merge[1:]:

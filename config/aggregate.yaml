@@ -10,6 +10,7 @@ patterns:
   # name, pattern to find it
   featurizer: "results/exp_${experiment}/**/results_featurizer.csv"
   predictor: "results/exp_${experiment}/**/results_predictor.csv"
+  communication: "results/exp_${experiment}/**/results_communication.csv"
 
 collect_data:
   params_to_add: {}

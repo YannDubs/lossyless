@@ -20,8 +20,12 @@ import pl_bolts
 import pytorch_lightning as pl
 import torch
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
-from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
-                                 MaxinvDistributionPlot, ReconstructImages)
+from lossyless.callbacks import (
+    CodebookPlot,
+    LatentDimInterpolator,
+    MaxinvDistributionPlot,
+    ReconstructImages,
+)
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
@@ -30,10 +34,18 @@ from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from pytorch_lightning.plugins import DDPPlugin, DDPSpawnPlugin
 from utils.data import get_datamodule
-from utils.helpers import (ModelCheckpoint, apply_featurizer, cfg_save,
-                           format_resolver, get_latest_match,
-                           getattr_from_oneof, log_dict, omegaconf2namespace,
-                           replace_keys, set_debug)
+from utils.helpers import (
+    ModelCheckpoint,
+    apply_featurizer,
+    cfg_save,
+    format_resolver,
+    get_latest_match,
+    getattr_from_oneof,
+    log_dict,
+    omegaconf2namespace,
+    replace_keys,
+    set_debug,
+)
 
 try:
     import wandb
@@ -520,6 +532,8 @@ def evaluate(trainer, datamodule, cfg, stage):
         test_res = trainer.test(test_dataloaders=eval_dataloader, ckpt_path=ckpt_path)[
             0
         ]
+        # ensure that select only correct stage (important when communicating)
+        test_res = {k: v for k, v in test_res.items() if f"/{cfg.stage}/" in k}
 
         log_dict(trainer, test_res, is_param=False)
 
