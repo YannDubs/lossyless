@@ -31,10 +31,6 @@ except:
 
 try:
     import optuna
-
-    # TODO remove when https://github.com/optuna/optuna/pull/2450
-    # from optuna.visualization.matplotlib import plot_pareto_front
-    from utils.visualizations.pareto_front import plot_pareto_front
 except:
     pass
 
@@ -280,6 +276,68 @@ class ResultAggregator(PostPlotter):
             filename=filename,
             xlabel="Distortion",
             ylabel="Rate (bits)",
+            **kwargs,
+        )
+
+    @data_getter
+    def plot_pareto_front(
+        self,
+        data=None,
+        hue="dist",
+        rate_col="test/comm/rate",
+        distortion_col="test/pred/err",
+        logbase_x=None,
+        filename="pareto_front_{table}",
+        **kwargs,
+    ):
+        """Main function for plotting the pareto front, of RD curve. I.e. similar to `plot_all_RD_curves`
+        but instead of taking averages you look at minimums.
+
+        Parameters
+        ----------
+        data : pd.DataFrame or str
+            Dataframe to use for plotting. If str will use one of self.tables. If `None` runs all tables.
+
+        hue : str, optional
+            Column by which to group the pareto fronts. I.e. for different values of that column,
+            will plot different pareto optimal RD curves.
+
+        rate_col : list of str
+            Columns of rate rates and for which we should generate RD curves.
+
+        distortion_col : list of str
+            List of columns that can be considered as distortions and for which we should generate
+            RD curves.
+
+        logbase_x : int, optional
+            Base of the x  axis. If 1 no logscale. if `None` will automatically chose.
+
+        kwargs :
+            Additional arguments to `plot_scatter_lines`.
+        """
+        mask = np.zeros(data.shape[0], dtype=bool)
+        for curr_hue in data.index.unique(level=hue):
+            hue_mask = data.index.get_level_values(hue) == curr_hue
+            pareto_mask = is_pareto_optimal(
+                data.loc[hue_mask, [rate_col, distortion_col]].values
+            )
+            mask[hue_mask] = pareto_mask
+
+        data = data[mask]
+        return self.plot_scatter_lines(
+            data=data,
+            y=rate_col,
+            x=distortion_col,
+            kind="line",
+            logbase_x=logbase_x,
+            row=None,
+            col=None,
+            sharey=False,
+            sharex=False,
+            filename=filename,
+            xlabel="Distortion",
+            ylabel="Rate (bits)",
+            hue=hue,
             **kwargs,
         )
 
@@ -718,6 +776,7 @@ class ResultAggregator(PostPlotter):
             "plot_param_importances",
             "plot_parallel_coordinate",
             "plot_optimization_history",
+            "plot_pareto_front",
         ],
     ):
         """Plot a summary of Optuna study"""
@@ -746,15 +805,8 @@ class ResultAggregator(PostPlotter):
 
                 # saving
                 nice_monitor = monitor.replace("/", "_")
-                filename = self.save_dir / f"{plot_f_str}_{nice_monitor}"
+                filename = self.save_dir / f"optuna_{plot_f_str}_{nice_monitor}"
                 save_fig(out, filename, self.dpi)
-
-        if len(cfg.monitor_return) > 1:
-            out = plot_pareto_front(
-                study, target_names=cfg.monitor_return, include_dominated_trials=False
-            )
-            filename = self.save_dir / "plot_pareto_front"
-            save_fig(out, filename, self.dpi)
 
 
 # HELPERS
@@ -882,6 +934,18 @@ def get_varying_levels(df, is_index=True):
     else:
         levels, names = df.columns.levels, df.columns.names
     return [n for l, n in zip(levels, names) if len(l) > 1]
+
+
+# credits: https://stackoverflow.com/questions/32791911/fast-calculation-of-pareto-front-in-python
+def is_pareto_optimal(costs):
+    """Find the pareto optimal points (for minimization), and returns a mask for selecting those."""
+    mask_pareto = np.ones(costs.shape[0], dtype=bool)
+    for i, cost in enumerate(costs):
+        if mask_pareto[i]:
+            # Keep points with a lower cost and keep self
+            mask_pareto[mask_pareto] = np.any(costs[mask_pareto] < cost, axis=1)
+            mask_pareto[i] = True
+    return mask_pareto
 
 
 if __name__ == "__main__":
