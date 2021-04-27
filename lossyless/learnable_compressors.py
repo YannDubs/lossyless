@@ -9,8 +9,7 @@ from pytorch_lightning.core.decorators import auto_move_data
 from .architectures import get_Architecture
 from .distortions import get_distortion_estimator
 from .distributions import CondDist, Deterministic
-from .helpers import (BASE_LOG, Annealer, OrderedSet, Timer,
-                      append_optimizer_scheduler_)
+from .helpers import BASE_LOG, Annealer, OrderedSet, Timer, append_optimizer_scheduler_
 from .predictors import OnlineEvaluator
 from .rates import get_rate_estimator
 
@@ -70,7 +69,9 @@ class LearnableCompressor(pl.LightningModule):
         """Return the correct rate estimator. Contains the prior and the coder."""
         cfg_rate = self.hparams.rate
         rate_estimator = get_rate_estimator(
-            cfg_rate.mode, p_ZlX=self.p_ZlX, **cfg_rate.kwargs,
+            cfg_rate.mode,
+            p_ZlX=self.p_ZlX,
+            **cfg_rate.kwargs,
         )
         # ensure that pickable before DataDistributed
         rate_estimator.make_pickable_()
@@ -301,7 +302,7 @@ class LearnableCompressor(pl.LightningModule):
         return loss
 
     def test_step(self, batch, batch_idx):
-        # when commuicating only compute rate
+        # when communicating only compute rate
         is_communicate = self.stage == "comm"
         loss, logs, _ = self.step(batch, is_rate_only=is_communicate)
 

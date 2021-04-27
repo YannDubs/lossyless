@@ -9,26 +9,26 @@ import math
 import subprocess
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-import pandas as pd
-
 import compressai
 import hydra
-import lossyless
+import matplotlib.pyplot as plt
 import omegaconf
+import pandas as pd
 import pl_bolts
 import pytorch_lightning as pl
 import torch
+from omegaconf import OmegaConf
+from pytorch_lightning.callbacks.finetuning import BaseFinetuning
+from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
+from pytorch_lightning.plugins import DDPPlugin, DDPSpawnPlugin
+
+import lossyless
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
 from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
                                  MaxinvDistributionPlot, ReconstructImages)
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
-from omegaconf import OmegaConf
-from pytorch_lightning.callbacks.finetuning import BaseFinetuning
-from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
-from pytorch_lightning.plugins import DDPPlugin, DDPSpawnPlugin
 from utils.data import get_datamodule
 from utils.helpers import (ModelCheckpoint, apply_featurizer, cfg_save,
                            format_resolver, get_latest_match,
@@ -77,7 +77,11 @@ def main(cfg):
     if not comp_cfg.featurizer.is_learnable:
         logger.info(f"Using classical compressor {comp_cfg.featurizer.mode} ...")
         compressor = ClassicalCompressor(hparams=comp_cfg)
-        comp_trainer = get_trainer(comp_cfg, compressor, is_featurizer=True,)
+        comp_trainer = get_trainer(
+            comp_cfg,
+            compressor,
+            is_featurizer=True,
+        )
         placeholder_fit(comp_trainer, compressor, comp_datamodule)
 
     elif comp_cfg.featurizer.is_train and not is_trained(comp_cfg, stage):
@@ -371,7 +375,11 @@ def get_callbacks(cfg, is_featurizer):
                     callbacks += [ReconstructImages()]
 
             elif cfg.data.mode == "distribution":
-                callbacks += [CodebookPlot(is_plot_codebook=is_reconstruct,)]
+                callbacks += [
+                    CodebookPlot(
+                        is_plot_codebook=is_reconstruct,
+                    )
+                ]
                 if is_reconstruct:
                     callbacks += [
                         MaxinvDistributionPlot(),
@@ -457,7 +465,8 @@ def get_trainer(cfg, module, is_featurizer):
         elif accelerator == "ddp_spawn":
             kwargs["accelerator"] = "ddp"
             kwargs["plugins"] = DDPSpawnPlugin(
-                parallel_devices=parallel_devices, find_unused_parameters=True,
+                parallel_devices=parallel_devices,
+                find_unused_parameters=True,
             )
 
     # TRAINER
@@ -520,6 +529,8 @@ def evaluate(trainer, datamodule, cfg, stage):
         test_res = trainer.test(test_dataloaders=eval_dataloader, ckpt_path=ckpt_path)[
             0
         ]
+        # ensure that select only correct stage (important when communicating)
+        test_res = {k: v for k, v in test_res.items() if f"/{cfg.stage}/" in k}
 
         log_dict(trainer, test_res, is_param=False)
 
