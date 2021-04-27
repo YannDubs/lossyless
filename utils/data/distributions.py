@@ -58,7 +58,17 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
 
     def get_x_target_Mx(self, index):
         Mx = self.targets[index]
-        return self.data[index], Mx, Mx
+        x = self.data[index]
+
+        if self.additional_target == "representative": # IVAE
+            # this makes no difference in terms of loss but will make the plot look slightly nicer
+            # if you don't do that then the plot will be the same where there's mass (i.e. in the 
+            # banana) but nothing will push you to look good outside of the banana distribution as
+            # you will rarely sample points there. THis ensures that you sample points outside of banana
+            # to have more understandable plots for didactic reasons
+            x = self.get_equiv_x(x, Mx)
+
+        return x, Mx, Mx
 
     def get_representative(self, Mx):
         if self.equivalence == "y_translation":

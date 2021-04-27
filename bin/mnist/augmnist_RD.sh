@@ -2,7 +2,7 @@
 
 experiment="augmnist_RD"
 notes="
-**Goal**: RD curves for mnist that is augmented at test and training time (i.e. when we assuem we know the augmentations),
+**Goal**: RD curves for mnist that is augmented at test and training time (i.e. when we assume we know the augmentations),
 "
 
 # parses special mode for running the script
@@ -26,7 +26,7 @@ $add_kwargs
 # every arguments that you are sweeping over
 kwargs_multi="
 distortion=ivae,vae
-featurizer.loss.beta=0.001,0.01,0.03,0.1,0.3,1,3,10,100
+featurizer.loss.beta=0.0001,0.001,0.01,0.03,0.1,0.3,1,3,10,100
 seed=1,2,3
 " 
 
@@ -43,6 +43,8 @@ fi
 
 
 wait
+
+
 
 #for featurizer
 col_val_subset=""
@@ -80,34 +82,34 @@ python load_pretrained.py \
       load_pretrained.mode=[latent_traversals_plot,reconstruct_image_plot] \
       -m 
 
-# col_val_subset=""
-# python load_pretrained.py \
-#       load_pretrained.experiment=$experiment  \
-#       $col_val_subset \
-#       $kwargs  \
-#       server=none \
-#       trainer.gpus=0 \
-#       distortion=ivae \
-#       featurizer.loss.beta=0.1 \
-#       seed=1 \
-#       +load_pretrained.reconstruct_image_plot_placeholder.is_single_row=True \
-#       +load_pretrained.reconstruct_image_plot_placeholder.add_standard='\ \(130 Bits\)' \
-#       +load_pretrained.reconstruct_image_plot_placeholder.add_invariant='\ \(48 Bits\)' \
-#       load_pretrained.mode=[reconstruct_image_plot_placeholder] \
-#       -m
+col_val_subset=""
+python load_pretrained.py \
+      load_pretrained.experiment=$experiment  \
+      $col_val_subset \
+      $kwargs  \
+      server=none \
+      trainer.gpus=0 \
+      distortion=ivae \
+      featurizer.loss.beta=0.1 \
+      seed=1 \
+      +load_pretrained.reconstruct_image_plot_placeholder.is_single_row=True \
+      +load_pretrained.reconstruct_image_plot_placeholder.add_standard='\ \(130 Bits\)' \
+      +load_pretrained.reconstruct_image_plot_placeholder.add_invariant='\ \(48 Bits\)' \
+      load_pretrained.mode=[reconstruct_image_plot_placeholder] \
+      -m
 
-# col_val_subset=""
-# python load_pretrained.py \
-#       load_pretrained.experiment=$experiment  \
-#       $col_val_subset \
-#       $kwargs  \
-#       server=none \
-#       trainer.gpus=0 \
-#       distortion=ivae \
-#       featurizer.loss.beta=0.1 \
-#       seed=1 \
-#       +load_pretrained.reconstruct_image_plot_placeholder.is_single_row=False \
-#       +load_pretrained.reconstruct_image_plot_placeholder.add_standard='\ \(130 Bits\)' \
-#       +load_pretrained.reconstruct_image_plot_placeholder.add_invariant='\ \(48 Bits\)' \
-#       load_pretrained.mode=[reconstruct_image_plot_placeholder] \
-#       -m
+col_val_subset=""
+python load_pretrained.py \
+      load_pretrained.experiment=$experiment  \
+      $col_val_subset \
+      $kwargs  \
+      server=none \
+      trainer.gpus=0 \
+      distortion=ivae \
+      featurizer.loss.beta=0.1 \
+      seed=1 \
+      +load_pretrained.reconstruct_image_plot_placeholder.is_single_row=False \
+      +load_pretrained.reconstruct_image_plot_placeholder.add_standard='\ \(130 Bits\)' \
+      +load_pretrained.reconstruct_image_plot_placeholder.add_invariant='\ \(48 Bits\)' \
+      load_pretrained.mode=[reconstruct_image_plot_placeholder] \
+      -m

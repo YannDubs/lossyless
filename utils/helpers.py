@@ -1,23 +1,18 @@
 import collections
-import copy
 import glob
 import logging
 import os
 import shutil
-import types
+import warnings
 from argparse import Namespace
 from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
-
 import pl_bolts
 import pytorch_lightning as pl
-import pytorch_lightning.plugins.training_type as train_plugins
 import torch
-from lossyless.callbacks import save_img
 from omegaconf import OmegaConf
-from pytorch_lightning.overrides.data_parallel import LightningParallelModule
 from torch.utils.data import Subset
 
 logger = logging.getLogger(__name__)
@@ -196,7 +191,7 @@ class StrFormatter:
 
 def getattr_from_oneof(list_of_obj, name):
     """
-    Equivalent to `getattr` but on a list of objects and will return the attribute from the first 
+    Equivalent to `getattr` but on a list of objects and will return the attribute from the first
     object that has it.
     """
     if len(list_of_obj) == 0:
@@ -242,7 +237,8 @@ def all_logging_disabled(highest_level=logging.CRITICAL):
     logging.disable(highest_level)
 
     try:
-        yield
+        with warnings.catch_warnings():
+            yield
     finally:
         logging.disable(previous_level)
 

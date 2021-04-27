@@ -29,24 +29,25 @@ rate.factor_beta=1
 
 # Data
 data_kwargs="
-data_feat.kwargs.batch_size=1024
-data_feat.kwargs.val_size=100000
-data_feat.kwargs.val_batch_size=2048
 trainer.reload_dataloaders_every_epoch=True
 "
 
 # Featurizer
 general_kwargs="
-is_only_feat=True
-featurizer=neural_rec
+is_only_feat=False
+featurizer=neural_feat
 optimizer@optimizer_feat=Adam
 optimizer_feat.kwargs.lr=1e-3
-scheduler@scheduler_feat=unifmultistep1000
+scheduler@scheduler_feat=expdecay1000
 optimizer@optimizer_coder=Adam
-scheduler@scheduler_coder=none
-optimizer_coder.kwargs.lr=1e-3
+scheduler@scheduler_coder=expdecay100
+optimizer_coder.kwargs.lr=3e-4
 trainer.max_epochs=100
 trainer.precision=32
+architecture@predictor=mlp_probe
+optimizer@optimizer_pred=Adam
+scheduler@scheduler_pred=unifmultistep100
+optimizer_pred.kwargs.lr=1e-3
 "
 
 kwargs="
@@ -64,7 +65,7 @@ $add_kwargs
 kwargs_multi="
 data@data_feat=banana_rot
 distortion=ince
-featurizer.loss.beta=0.7
+featurizer.loss.beta=0.6
 "
 
 

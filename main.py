@@ -45,6 +45,7 @@ from utils.helpers import (
     omegaconf2namespace,
     replace_keys,
     set_debug,
+    remove_rf
 )
 
 try:
@@ -595,14 +596,12 @@ def finalize_stage_(
             cfg.checkpoint.kwargs.dirpath != cfg.paths.pretrained.save
         ), "This will remove diesired checkpoints"
 
-        for checkpoint in Path(cfg.checkpoint.kwargs.dirpath).glob("*.ckpt"):
-            checkpoint.unlink()  # remove all checkpoints as best is already saved elsewhere
+        # remove all checkpoints as best is already saved elsewhere
+        remove_rf(cfg.checkpoint.kwargs.dirpath) 
 
         # don't keep the pretrained model
         if not is_save_best:
-            dest_path = Path(cfg.paths.pretrained.save)
-            for checkpoint in dest_path.glob("*.ckpt"):
-                checkpoint.unlink()  # remove all checkpoints
+            remove_rf(cfg.paths.pretrained.save)
 
     if not cfg.is_no_save:
         # save end file to make sure that you don't retrain if preemption

@@ -40,21 +40,26 @@ rate.factor_beta=1
 
 # Data
 data_kwargs="
+data@data_feat=banana_rot
 trainer.reload_dataloaders_every_epoch=True
 "
 
 # Featurizer
 general_kwargs="
-is_only_feat=True
-featurizer=neural_rec
+is_only_feat=False
+featurizer=neural_feat
 optimizer@optimizer_feat=Adam
 optimizer_feat.kwargs.lr=1e-3
-scheduler@scheduler_feat=unifmultistep1000
+scheduler@scheduler_feat=expdecay1000
 optimizer@optimizer_coder=Adam
-scheduler@scheduler_coder=unifmultistep100
-optimizer_coder.kwargs.lr=1e-3
+scheduler@scheduler_coder=expdecay100
+optimizer_coder.kwargs.lr=3e-4
 trainer.max_epochs=100
 trainer.precision=32
+architecture@predictor=mlp_probe
+optimizer@optimizer_pred=Adam
+scheduler@scheduler_pred=unifmultistep100
+optimizer_pred.kwargs.lr=1e-3
 "
 
 kwargs="
@@ -70,13 +75,13 @@ $add_kwargs
 "
 
 kwargs_multi="
-data@data_feat=banana_rot 
-" 
-
-
+data@data_feat=banana_rot,banana_Xtrnslt,banana_Ytrnslt
+distortion=ivae,vae
+featurizer.loss.beta=0.07
+"
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in  "distortion=ivae featurizer.loss.beta=0.1" "featurizer.loss.beta=0.007,0.009,0.01,0.012 distortion=vae" 
+  for kwargs_dep in  "" 
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
@@ -88,14 +93,20 @@ fi
 
 wait 
 
-
 # for featurizer
-col_val_subset=""
-python aggregate.py \
-       experiment=$experiment  \
-       patterns.predictor=null \
-       $col_val_subset \
-       agg_mode=[summarize_metrics]
+# col_val_subset=""
+# python aggregate.py \
+#        experiment=$experiment  \
+#        $col_val_subset \
+#        agg_mode=[summarize_metrics]
+
+
+kwargs_multi="
+data@data_feat=banana_rot
+distortion=ivae
+featurizer.loss.beta=0.07
+featurizer=neural_rec
+"
 
 col_val_subset=""
 python load_pretrained.py \
@@ -105,5 +116,4 @@ python load_pretrained.py \
        server=local \
        trainer.gpus=0 \
        $kwargs_multi \
-       load_pretrained.mode=[maxinv_distribution_plot,codebook_plot] \
-       -m
+       load_pretrained.mode=[codebook_plot,maxinv_distribution_plot] 

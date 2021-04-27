@@ -39,15 +39,15 @@ is_only_feat=False
 featurizer=neural_feat
 optimizer@optimizer_feat=Adam
 optimizer_feat.kwargs.lr=1e-3
-scheduler@scheduler_feat=unifmultistep1000
+scheduler@scheduler_feat=expdecay1000
 optimizer@optimizer_coder=Adam
-scheduler@scheduler_coder=unifmultistep100
-optimizer_coder.kwargs.lr=1e-3
+scheduler@scheduler_coder=expdecay100
+optimizer_coder.kwargs.lr=3e-4
 trainer.max_epochs=100
 trainer.precision=32
 architecture@predictor=mlp_probe
 optimizer@optimizer_pred=Adam
-scheduler@scheduler_pred=unifmultistep1000
+scheduler@scheduler_pred=unifmultistep100
 optimizer_pred.kwargs.lr=1e-3
 "
 
@@ -65,8 +65,8 @@ $add_kwargs
 
 kwargs_multi="
 distortion=ivae,vae
-featurizer.loss.beta=0.00001,0.0001,0.001,0.01,0.1,1,10,100,1000
-seed=1,2,3,4,5
+featurizer.loss.beta=0.0001,0.001,0.01,0.03,0.1,0.3,1,3,10
+seed=1,2,3
 " 
 
 
@@ -82,6 +82,7 @@ if [ "$is_plot_only" = false ] ; then
 fi
 
 wait
+
 
 # for featurizer
 col_val_subset=""
