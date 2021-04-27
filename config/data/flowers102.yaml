@@ -1,6 +1,0 @@
-
-defaults:
-  - base
-
-name: flowers102
-dataset: flowers102

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-experiment="hyp_ince_galaxy"
+experiment="hyp_ince_galaxy_new"
 notes="
 **Goal**: Hyperparameter tuning for ince on the new galaxy dataset
 "
@@ -16,16 +16,10 @@ logger.kwargs.project=hypopt
 is_only_feat=False
 featurizer=neural_feat
 architecture@encoder=resnet18
-architecture@predictor=mlp_probe
 data@data_feat=galaxy64
 rate=H_hyper
 trainer.max_epochs=50
 +update_trainer_pred.max_epochs=100
-distortion=ince
-featurizer.loss.beta_anneal=linear
-rate.kwargs.invertible_processing=diag
-predictor.arch_kwargs.hid_dim=2048
-featurizer.is_on_the_fly=false
 $add_kwargs
 "
 #TODO increase epochs before pushing
@@ -36,9 +30,9 @@ hydra/sweeper=optuna
 hydra/sweeper/sampler=random
 hypopt=optuna
 hydra.sweeper.n_trials=100
-hydra.sweeper.n_jobs=50
+hydra.sweeper.n_jobs=10
 monitor_direction=[minimize,minimize]
-monitor_return=[test/pred/err,test/comm/rate]
+monitor_return=[test/pred/loss,test/comm/rate]
 "
 
 # here the random sampler means that we are not actually doing smart hyperparametr tuning use `nsgaii` if you want
@@ -49,20 +43,21 @@ monitor_return=[test/pred/err,test/comm/rate]
 # if the values that are swept over are not understandable from the names `interval` `log`.. check : https://hydra.cc/docs/next/plugins/optuna_sweeper
 kwargs_multi="
 $kwargs_hypopt
-data_feat.kwargs.batch_size=tag(log,int(interval(128,256)))
-encoder.z_dim=tag(log,int(interval(128,1024)))
-featurizer.loss.beta=tag(log,interval(3e-6,1e-3))
-distortion.factor_beta=tag(log,interval(1e-5,1e-1))
-optimizer@optimizer_feat=Adam,AdamW
-rate.kwargs.warmup_k_epoch=int(interval(0,5))
-optimizer_feat.kwargs.weight_decay=tag(log,interval(1e-8,1e-4))
-optimizer_feat.kwargs.lr=tag(log,interval(5e-5,1e-3))
-optimizer_coder.kwargs.weight_decay=tag(log,interval(3e-6,1e-4))
-optimizer_coder.kwargs.lr=tag(log,interval(3e-4,1e-3))
-scheduler@scheduler_feat=cosine,expdecay100,expdecay1000,unifmultistep1000
-scheduler@scheduler_coder=cosine_restart,expdecay100,unifmultistep1000,unifmultistep100
+data_feat.kwargs.batch_size=128
+encoder.z_dim=128
+featurizer.loss.beta=tag(log,interval(1e-3,3e-2))
+distortion.factor_beta=tag(log,interval(1e-3,3e-2))
 seed=0,1,2,3,4,5,6,7,8,9
-distortion.kwargs.temperature=tag(log,interval(0.01,0.2))
+optimizer@optimizer_feat=Adam,AdamW
+optimizer_feat.kwargs.weight_decay=1e-5
+optimizer_feat.kwargs.lr=3e-4
+optimizer@optimizer_coder=Adam
+optimizer_coder.kwargs.weight_decay=1e-6
+optimizer_coder.kwargs.lr=1e-4
+scheduler@scheduler_feat=expdecay1000,expdecay100,unifmultistep100,unifmultistep1000
+scheduler@scheduler_coder=expdecay100
+rate.kwargs.invertible_processing=diag
+distortion.kwargs.is_train_temperature=false
 " 
 # distortion.factor_beta : instead of deacreasing weight given to rate will increase weight given to distortion
 # BATCH SIZE: for INCE it can be beneficial to use larger batches. THe issues is that this might be worst for other parts of the networks. SOme papers say using `is_lars=True` can mititgate the issue when using large batches
@@ -72,32 +67,23 @@ distortion.kwargs.temperature=tag(log,interval(0.01,0.2))
 # PREDICTOR
 kwargs_multi="
 $kwargs_multi
-data_pred.kwargs.batch_size=tag(log,int(interval(32,64)))
-predictor.arch_kwargs.dropout_p=interval(0.1,0.4)
-optimizer@optimizer_pred=SGD_likeadam,Adam,AdamW
-optimizer_pred.kwargs.weight_decay=tag(log,interval(1e-8,1e-4))
-optimizer_pred.kwargs.lr=tag(log,interval(5e-4,3e-3))
-scheduler@scheduler_pred=cosine_restart,expdecay100,plateau_quick,unifmultistep1000
+architecture@predictor=mlp_probe
++data_pred.kwargs.batch_size=64
+optimizer_pred.kwargs.weight_decay=1e-5
+optimizer_pred.kwargs.lr=3e-4
+scheduler@scheduler_pred=plateau_quick
+predictor.arch_kwargs.dropout_p=0.3
+optimizer@optimizer_pred=Adam
+featurizer.is_on_the_fly=false
 " 
 
 
-# kwargs_multi="
-# trainer.max_epochs=1
-# ++update_trainer_pred.max_epochs=1
-# mode=dev
-# +update_trainer_pred.limit_val_batches=1.0
-# +update_trainer_pred.limit_test_batches=0.5
-# evaluation.featurizer.is_evaluate=True
-# data_feat.kwargs.batch_size=64
-# data_pred.kwargs.batch_size=64
-# optimizer_pred.kwargs.lr=1e-3
-# "
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in  ""        
+  for kwargs_dep in   "distortion=ince_basic" #"distortion=ince"        
   do
 
-    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
+    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs_dep $kwargs $kwargs_multi  -m &
 
     sleep 7
 
@@ -107,9 +93,11 @@ fi
 
 wait
 
+
+
 col_val_subset=""
-rate_cols="['test/feat/rate']"
-distortion_cols="['test/feat/distortion','test/feat/online_loss','test/feat/online_err','test/pred/loss','test/pred/err','train/pred/err']"
+rate_cols="['test/comm/rate']"
+distortion_cols="['test/feat/distortion','test/feat/online_loss', 'test/pred/loss']"
 compare="dist"
 data="merged" # want to access both ther featurizer data and the  predictor data
 python aggregate.py \

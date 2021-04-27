@@ -24,16 +24,29 @@ from pytorch_lightning.plugins import DDPPlugin, DDPSpawnPlugin
 
 import lossyless
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
-from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
-                                 MaxinvDistributionPlot, ReconstructImages)
+from lossyless.callbacks import (
+    CodebookPlot,
+    LatentDimInterpolator,
+    MaxinvDistributionPlot,
+    ReconstructImages,
+)
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
 from utils.data import get_datamodule
-from utils.helpers import (ModelCheckpoint, apply_featurizer, cfg_save,
-                           format_resolver, get_latest_match,
-                           getattr_from_oneof, log_dict, omegaconf2namespace,
-                           replace_keys, set_debug)
+from utils.helpers import (
+    ModelCheckpoint,
+    apply_featurizer,
+    cfg_save,
+    format_resolver,
+    get_latest_match,
+    getattr_from_oneof,
+    log_dict,
+    omegaconf2namespace,
+    replace_keys,
+    set_debug,
+    remove_rf
+)
 
 try:
     import wandb
@@ -592,14 +605,12 @@ def finalize_stage_(
             cfg.checkpoint.kwargs.dirpath != cfg.paths.pretrained.save
         ), "This will remove diesired checkpoints"
 
-        for checkpoint in Path(cfg.checkpoint.kwargs.dirpath).glob("*.ckpt"):
-            checkpoint.unlink()  # remove all checkpoints as best is already saved elsewhere
+        # remove all checkpoints as best is already saved elsewhere
+        remove_rf(cfg.checkpoint.kwargs.dirpath) 
 
         # don't keep the pretrained model
         if not is_save_best:
-            dest_path = Path(cfg.paths.pretrained.save)
-            for checkpoint in dest_path.glob("*.ckpt"):
-                checkpoint.unlink()  # remove all checkpoints
+            remove_rf(cfg.paths.pretrained.save)
 
     if not cfg.is_no_save:
         # save end file to make sure that you don't retrain if preemption

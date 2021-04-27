@@ -101,3 +101,6 @@ if [ "$is_plot_only" = false ] ; then
     
   done
 fi
+
+wait
+

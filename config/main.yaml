@@ -15,7 +15,7 @@ defaults:
   - architecture@online_evaluator: mlp_probe
   - checkpoint@checkpoint_feat: bestValLoss # NB : will not be able to use Val loss for INCE in the case where you don't use data augmentations at test time because validation is meaningless for distortion. 
   - optimizer@optimizer_feat: AdamW_lr1e-3_w1e-5 # larger learning rate gives smaller rate but smaller acc. should stick to using adam if not changing the  beta will effectively change the lr
-  - scheduler@scheduler_feat: expdecay100 # expdecay also works well
+  - scheduler@scheduler_feat: expdecay100 
   - optimizer@optimizer_coder: Adam_lr3e-4_w1e-5 # quite robust to this but lr shouldn't be to small
   - scheduler@scheduler_coder: expdecay100
   - optimizer@optimizer_online: SGD_lr3e-1_w1e-4
@@ -105,7 +105,7 @@ trainer:
   #default_root_dir: ${paths.results}
   max_epochs: 200
   terminate_on_nan: false # makes it slower if true
-  progress_bar_refresh_rate: 0 # increase to show progress bar 
+  progress_bar_refresh_rate: 10000 # increase to show progress bar  #DEV
   resume_from_checkpoint: null # string to checkpoint if want to resume
   gradient_clip_val: 3 # 0 means no clip 
   reload_dataloaders_every_epoch: False
