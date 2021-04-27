@@ -1,8 +1,0 @@
-defaults:
-  - mnist_aug
-
-name: mnist_trainaug
-
-kwargs:
-  dataset_kwargs:
-    is_augment_val: False

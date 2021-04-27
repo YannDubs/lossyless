@@ -16,57 +16,26 @@ from PIL import Image
 from tqdm import tqdm
 
 import torch
-from lossyless.helpers import BASE_LOG, Normalizer, check_import
+from lossyless.helpers import BASE_LOG, Normalizer, check_import, to_numpy
 from torch.utils.data import DataLoader, random_split
 from torchvision import transforms as transform_lib
-from torchvision.datasets import (
-    CIFAR10,
-    CIFAR100,
-    MNIST,
-    STL10,
-    CocoCaptions,
-    ImageFolder,
-    ImageNet,
-)
-from torchvision.transforms import (
-    CenterCrop,
-    ColorJitter,
-    Compose,
-    Lambda,
-    RandomAffine,
-    RandomApply,
-    RandomCrop,
-    RandomErasing,
-    RandomGrayscale,
-    RandomHorizontalFlip,
-    RandomResizedCrop,
-    RandomRotation,
-    RandomVerticalFlip,
-    Resize,
-    ToPILImage,
-    ToTensor,
-)
-from utils.estimators import discrete_entropy
+from torchvision.datasets import (CIFAR10, CIFAR100, MNIST, STL10,
+                                  CocoCaptions, ImageFolder, ImageNet)
+from torchvision.transforms import (CenterCrop, ColorJitter, Compose, Lambda,
+                                    RandomAffine, RandomApply, RandomCrop,
+                                    RandomErasing, RandomGrayscale,
+                                    RandomHorizontalFlip, RandomResizedCrop,
+                                    RandomRotation, RandomVerticalFlip, Resize,
+                                    ToPILImage, ToTensor)
 from utils.helpers import remove_rf
 
-from .augmentations import (
-    CIFAR10Policy,
-    EquivariantRotation,
-    ImageNetPolicy,
-    get_finetune_augmentations,
-    get_simclr_augmentations,
-)
+from .augmentations import (CIFAR10Policy, EquivariantRotation, ImageNetPolicy,
+                            get_finetune_augmentations,
+                            get_simclr_augmentations)
 from .base import LossylessDataModule, LossylessDataset
-from .helpers import (
-    Caltech101BalancingWeights,
-    Flowers102BalancingWeights,
-    Pets37BalancingWeights,
-    download_url,
-    image_loader,
-    int_or_ratio,
-    npimg_resize,
-    unzip,
-)
+from .helpers import (Caltech101BalancingWeights, Pets37BalancingWeights,
+                      download_url, image_loader, int_or_ratio, npimg_resize,
+                      unzip)
 
 try:
     import kaggle
@@ -107,7 +76,6 @@ __all__ = [
     "Pets37DataModule",
     "PCamDataModule",
     "Caltech101DataModule",
-    "Flowers102DataModule",
     "MnistDataModule",
     "GalaxyDataModule",
     "ImagenetDataModule",
@@ -252,16 +220,11 @@ class LossylessImgDataset(LossylessDataset):
         Return a dictionary of dictionaries containing all possible augmentations of interest.
         first dictionary say which kind of data they act on.
         """
-        shape = self.shapes_x_t_Mx["input"]
+        shape = self.shapes["input"]
 
         return dict(
             PIL={
-                "rotation": RandomRotation(30),
-                "y_translation": RandomAffine(0, translate=(0, 0.1)),
-                "x_translation": RandomAffine(0, translate=(0.1, 0)),
-                "shear": RandomAffine(0, shear=10),
-                "scale": RandomAffine(0, scale=(0.8, 1.2)),
-                "rotation++": RandomRotation(45),
+                "rotation": RandomRotation(45),
                 "360_rotation": RandomRotation(360),
                 "D4_group": Compose(
                     [
@@ -270,10 +233,10 @@ class LossylessImgDataset(LossylessDataset):
                         RandomApply([RandomRotation((90, 90))], p=0.5),
                     ]
                 ),
-                "y_translation++": RandomAffine(0, translate=(0, 0.25)),
-                "x_translation++": RandomAffine(0, translate=(0.25, 0)),
-                "shear++": RandomAffine(0, shear=25),
-                "scale++": RandomAffine(0, scale=(0.6, 1.4)),
+                "y_translation": RandomAffine(0, translate=(0, 0.25)),
+                "x_translation": RandomAffine(0, translate=(0.25, 0)),
+                "shear": RandomAffine(0, shear=25),
+                "scale": RandomAffine(0, scale=(0.6, 1.4)),
                 "color": RandomApply(
                     [
                         ColorJitter(
@@ -325,23 +288,9 @@ class LossylessImgDataset(LossylessDataset):
         notaug_img = self.base_tranform(notaug_img)
         return notaug_img
 
-    @property
-    def entropies(self):
-        if hasattr(self, "_entropies"):
-            return self._entropies  # if precomputed
-
-        entropies = {}
-
-        entropies["H[Y]"] = discrete_entropy(self.targets, base=BASE_LOG)
-        # Marginal entropy can only be computed on training set by treating dataset as the real uniform rv
-        entropies["train H[M(X)]"] = math.log(len(self), BASE_LOG)
-
-        self._entropies = entropies
-        return entropies
-
     def get_base_transform(self):
         """Return the base transform, ie train or test."""
-        shape = self.shapes_x_t_Mx["input"]
+        shape = self.shapes["input"]
 
         trnsfs = []
 
@@ -412,31 +361,23 @@ class LossylessImgDataset(LossylessDataset):
 
     @property
     def is_color(self):
-        shape = self.shapes_x_t_Mx["input"]
+        shape = self.shapes["input"]
         return shape[0] == 3
 
     @property
-    def is_clf_x_t_Mx(self):
-        return dict(input=not self.is_color, target=True, max_inv=True)
+    def is_clfs(self):
+        return dict(input=not self.is_color, target=True)
 
     @property
-    def shapes_x_t_Mx(self):
+    def shapes(self):
         #! In each child should assign "input" and "target"
-        shapes_x_t_Mx = dict()
-
-        try:
-            # TODO len(self) might not be initialized in constructor
-            # this is dirty trick which works because you never need shapes_x_t_Mx["max_inv"]
-            # before init
-            shapes_x_t_Mx["max_inv"] = (len(self),)
-        except:
-            pass
+        shapes = dict()
 
         if self.base_resize == "clip":
             # when using clip the shape should always be 224x224
-            shapes_x_t_Mx["input"] = (3, 224, 224)
+            shapes["input"] = (3, 224, 224)
 
-        return shapes_x_t_Mx
+        return shapes
 
 
 class LossylessImgDataModule(LossylessDataModule):
@@ -518,8 +459,8 @@ class MnistDataset(LossylessImgDataset, MNIST):
         return os.path.join(self.root, self.FOLDER, "processed")
 
     @property
-    def shapes_x_t_Mx(self):
-        shapes = super(MnistDataset, self).shapes_x_t_Mx
+    def shapes(self):
+        shapes = super(MnistDataset, self).shapes
         shapes["input"] = shapes.get("input", (1, 32, 32))
         shapes["target"] = (10,)
         return shapes
@@ -546,8 +487,8 @@ class Cifar10Dataset(LossylessImgDataset, CIFAR10):
         super().__init__(*args, curr_split=curr_split, train=is_train, **kwargs)
 
     @property
-    def shapes_x_t_Mx(self):
-        shapes = super(Cifar10Dataset, self).shapes_x_t_Mx
+    def shapes(self):
+        shapes = super(Cifar10Dataset, self).shapes
         shapes["input"] = shapes.get("input", (3, 32, 32))
         shapes["target"] = (10,)
         return shapes
@@ -574,8 +515,8 @@ class Cifar100Dataset(LossylessImgDataset, CIFAR100):
         super().__init__(*args, curr_split=curr_split, train=is_train, **kwargs)
 
     @property
-    def shapes_x_t_Mx(self):
-        shapes = super(Cifar100Dataset, self).shapes_x_t_Mx
+    def shapes(self):
+        shapes = super(Cifar100Dataset, self).shapes
         shapes["input"] = shapes.get("input", (3, 32, 32))
         shapes["target"] = (100,)
         return shapes
@@ -601,8 +542,8 @@ class STL10Dataset(LossylessImgDataset, STL10):
         super().__init__(*args, curr_split=curr_split, split=curr_split, **kwargs)
 
     @property
-    def shapes_x_t_Mx(self):
-        shapes = super(STL10Dataset, self).shapes_x_t_Mx
+    def shapes(self):
+        shapes = super(STL10Dataset, self).shapes
         shapes["input"] = shapes.get("input", (3, 96, 96))
         shapes["target"] = (10,)
         return shapes
@@ -670,8 +611,8 @@ class ImageNetDataset(LossylessImgDataset, ImageNet):
         )
 
     @property
-    def shapes_x_t_Mx(self):
-        shapes = super(ImageNetDataset, self).shapes_x_t_Mx
+    def shapes(self):
+        shapes = super(ImageNetDataset, self).shapes
         shapes["input"] = shapes.get("input", (3, 224, 224))
         shapes["target"] = (1000,)
         return shapes
@@ -833,8 +774,8 @@ class Food101Dataset(TensorflowBaseDataset):
     min_size = 256
 
     @property
-    def shapes_x_t_Mx(self):
-        shapes = super().shapes_x_t_Mx
+    def shapes(self):
+        shapes = super().shapes
         shapes["input"] = shapes.get("input", (3, 224, 224))
         shapes["target"] = (101,)
         return shapes
@@ -864,8 +805,8 @@ class Sun397Dataset(TensorflowBaseDataset):
     min_size = 256
 
     @property
-    def shapes_x_t_Mx(self):
-        shapes = super().shapes_x_t_Mx
+    def shapes(self):
+        shapes = super().shapes
         shapes["input"] = shapes.get("input", (3, 224, 224))
         shapes["target"] = (397,)
         return shapes
@@ -890,8 +831,8 @@ class Cars196Dataset(TensorflowBaseDataset):
     min_size = 256
 
     @property
-    def shapes_x_t_Mx(self):
-        shapes = super().shapes_x_t_Mx
+    def shapes(self):
+        shapes = super().shapes
         shapes["input"] = shapes.get("input", (3, 224, 224))
         shapes["target"] = (196,)
         return shapes
@@ -912,8 +853,8 @@ class PCamDataset(TensorflowBaseDataset):
     min_size = None
 
     @property
-    def shapes_x_t_Mx(self):
-        shapes = super().shapes_x_t_Mx
+    def shapes(self):
+        shapes = super().shapes
         shapes["input"] = shapes.get("input", (3, 96, 96))
         shapes["target"] = (2,)
         return shapes
@@ -933,43 +874,16 @@ class PCamDataModule(LossylessImgDataModule):
         return PCamDataset
 
 
-# Flowers 102 #
-class Flowers102Dataset(TensorflowBaseDataset):
-    min_size = 256
-
-    @property
-    def shapes_x_t_Mx(self):
-        shapes = super().shapes_x_t_Mx
-        shapes["input"] = shapes.get("input", (3, 224, 224))
-        shapes["target"] = (102,)
-        return shapes
-
-    @property
-    def dataset_name(self):
-        return "oxford_flowers102"
-
-    @classmethod
-    def get_available_splits(cls):
-        return ["train", "test", "validation"]
-
-
-class Flowers102DataModule(LossylessImgDataModule):
-    @property
-    def Dataset(self):
-        return Flowers102Dataset
-
-    @property
-    def balancing_weights(self):
-        return Flowers102BalancingWeights  # should compute mean acc per class
-
+# note: not using flowers 102 dataset due to
+# https://github.com/tensorflow/datasets/issues/3022
 
 # Pets 37 #
 class Pets37Dataset(TensorflowBaseDataset):
     min_size = 256
 
     @property
-    def shapes_x_t_Mx(self):
-        shapes = super().shapes_x_t_Mx
+    def shapes(self):
+        shapes = super().shapes
         shapes["input"] = shapes.get("input", (3, 224, 224))
         shapes["target"] = (37,)
         return shapes
@@ -984,6 +898,7 @@ class Pets37DataModule(LossylessImgDataModule):
     def Dataset(self):
         return Pets37Dataset
 
+    @property
     def balancing_weights(self):
         return Pets37BalancingWeights  # should compute mean acc per class
 
@@ -993,8 +908,8 @@ class Caltech101Dataset(TensorflowBaseDataset):
     min_size = 256
 
     @property
-    def shapes_x_t_Mx(self):
-        shapes = super().shapes_x_t_Mx
+    def shapes(self):
+        shapes = super().shapes
         shapes["input"] = shapes.get("input", (3, 224, 224))
         shapes["target"] = (102,)  # ?!? there are 102 classes in caltech 101
         return shapes
@@ -1009,6 +924,7 @@ class Caltech101DataModule(LossylessImgDataModule):
     def Dataset(self):
         return Caltech101Dataset
 
+    @property
     def balancing_weights(self):
         return Caltech101BalancingWeights  # should compute mean acc per class
 
@@ -1241,14 +1157,14 @@ class GalaxyDataset(ExternalImgDataset):
             self.targets = np.load(data_dir / f"{split}_targets.npy")
 
     @property
-    def is_clf_x_t_Mx(self):
-        is_clf = super().is_clf_x_t_Mx
+    def is_clfs(self):
+        is_clf = super().is_clfs
         is_clf["target"] = False  # treated as regression task
         return is_clf
 
     @property
-    def shapes_x_t_Mx(self):
-        shapes = super().shapes_x_t_Mx
+    def shapes(self):
+        shapes = super().shapes
         shapes["input"] = (3, self.resolution, self.resolution)
         # (1,37) instead of (37,) because those are 37 different tasks => want mean/std over tasks
         shapes["target"] = (1, 37)
@@ -1345,7 +1261,7 @@ class CocoClipDataset(ExternalImgDataset):
             ):
                 image = to_pil(images.squeeze(0))
                 text_in = texts.squeeze(0).to(device)
-                text_features = entire_model.encode_text(text_in).cpu().numpy()
+                text_features = to_numpy(entire_model.encode_text(text_in))
 
                 image.save(split_path / f"{i}th_img.jpeg")
                 np.save(split_path / f"{i}th_features.npy", text_features)
@@ -1354,8 +1270,8 @@ class CocoClipDataset(ExternalImgDataset):
         return files_to_rm
 
     @property
-    def shapes_x_t_Mx(self):
-        shapes = super().shapes_x_t_Mx
+    def shapes(self):
+        shapes = super().shapes
         shapes["input"] = shapes.get("input", (3, 224, 224))
         shapes["target"] = None  # no classification
         return shapes

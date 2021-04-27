@@ -24,7 +24,7 @@ $add_kwargs
 
 # every arguments that you are sweeping over
 kwargs_multi="
-distortion=ivib,ivae,ince
+distortion=ivae,ince
 "
 
 if [ "$is_plot_only" = false ] ; then

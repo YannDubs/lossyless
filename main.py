@@ -1,4 +1,4 @@
-"""Entropy point to train the models and evaluate them.
+"""Entry point to train the models and evaluate them.
 
 This should be called by `python main.py <conf>` where <conf> sets all configs from the cli, see 
 the file `config/main.yaml` for details about the configs. or use `python main.py -h`.
@@ -32,27 +32,20 @@ from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
-from pytorch_lightning.plugins import (
-    DDPPlugin,
-    DDPShardedPlugin,
-    DDPSpawnPlugin,
-    DDPSpawnShardedPlugin,
-)
+from pytorch_lightning.plugins import DDPPlugin, DDPSpawnPlugin
 from utils.data import get_datamodule
-from utils.estimators import estimate_entropies
 from utils.helpers import (
-    DataParallelPlugin,
     ModelCheckpoint,
     apply_featurizer,
     cfg_save,
     format_resolver,
     get_latest_match,
     getattr_from_oneof,
-    learning_rate_finder,
     log_dict,
     omegaconf2namespace,
     replace_keys,
     set_debug,
+    remove_rf
 )
 
 try:
@@ -81,6 +74,7 @@ except:
 
 @hydra.main(config_name="main", config_path="config")
 def main(cfg):
+
     ############## STARTUP ##############
     logger.info("Stage : Startup")
     begin(cfg)
@@ -118,7 +112,7 @@ def main(cfg):
         logger.info("Evaluate compressor ...")
         feat_res = evaluate(comp_trainer, comp_datamodule, comp_cfg, stage)
     else:
-        feat_res = dict()
+        feat_res = load_results(comp_cfg, stage)
 
     finalize_stage_(
         stage,
@@ -131,7 +125,7 @@ def main(cfg):
         is_save_best=True,
     )
     if comp_cfg.is_only_feat:
-        return finalize(to_finalize)
+        return finalize(**finalize_kwargs)
 
     del comp_datamodule  # not used anymore and can be large
 
@@ -156,7 +150,7 @@ def main(cfg):
         logger.info("Evaluate communication ...")
         comm_res = evaluate(comp_trainer, comm_datamodule, comm_cfg, stage)
     else:
-        comm_res = dict()
+        comm_res = load_results(comm_cfg, stage)
 
     finalize_stage_(
         stage, comm_cfg, None, None, comm_datamodule, comm_res, finalize_kwargs
@@ -174,7 +168,6 @@ def main(cfg):
     if pred_cfg.predictor.is_train and not is_trained(comp_cfg, stage):
         predictor = Predictor(hparams=pred_cfg, featurizer=onfly_featurizer)
         pred_trainer = get_trainer(pred_cfg, predictor, is_featurizer=False)
-        initialize_predictor_(predictor, pred_datamodule, pred_trainer, pred_cfg)
 
         logger.info("Train predictor ...")
         pred_trainer.fit(predictor, datamodule=pred_datamodule)
@@ -192,7 +185,7 @@ def main(cfg):
         logger.info("Evaluate predictor ...")
         pred_res = evaluate(pred_trainer, pred_datamodule, pred_cfg, stage)
     else:
-        pred_res = dict()
+        pred_res = load_results(pred_cfg, stage)
 
     finalize_stage_(
         stage,
@@ -218,9 +211,6 @@ def begin(cfg):
 
     cfg.paths.work = str(Path.cwd())
     cfg.other.git_hash = GIT_HASH
-
-    if cfg.rate.range_coder is not None:
-        compressai.set_entropy_coder(cfg.rate.range_coder)
 
     logger.info(f"Workdir : {cfg.paths.work}.")
 
@@ -356,6 +346,7 @@ def instantiate_datamodule_(cfg, pre_featurizer=None):
 def initialize_compressor_(module, datamodule, trainer, cfg):
     """Additional steps needed for intitalization of the compressor + logging."""
 
+    # TODO remove if not using vampprior
     # marginal vampprior
     rate_est = module.rate_estimator
     if hasattr(rate_est, "q_Z") and isinstance(rate_est.q_Z, MarginalVamp):
@@ -374,12 +365,6 @@ def initialize_compressor_(module, datamodule, trainer, cfg):
     )
     log_dict(trainer, {"n_param": n_param}, is_param=True)
 
-    if cfg.evaluation.is_est_entropies:
-        # estimate interesting entropies
-        entropies = datamodule.dataset.entropies
-        entropies = {f"data/{k}": v for k, v in entropies.items()}
-        log_dict(trainer, entropies, is_param=True)
-
 
 def get_callbacks(cfg, is_featurizer):
     """Return list of callbacks."""
@@ -388,12 +373,10 @@ def get_callbacks(cfg, is_featurizer):
     if is_featurizer:
         additional_target = cfg.data.kwargs.dataset_kwargs.additional_target
         is_reconstruct = additional_target in ["representative", "input"]
-        can_estimate_Mx = ["representative", "input", "max_var", "max_inv"]
         if cfg.logger.is_can_plot_img:
             if cfg.data.mode == "image" and is_reconstruct:
                 callbacks += [
                     LatentDimInterpolator(cfg.encoder.z_dim),
-                    # ReconstructImages(),
                 ]
 
                 if cfg.trainer.gpus == 1:
@@ -401,10 +384,8 @@ def get_callbacks(cfg, is_featurizer):
                     callbacks += [ReconstructImages()]
 
             elif cfg.data.mode == "distribution":
-                callbacks += [
-                    CodebookPlot(is_plot_codebook=is_reconstruct),
-                ]
-                if additional_target in can_estimate_Mx:
+                callbacks += [CodebookPlot(is_plot_codebook=is_reconstruct,)]
+                if is_reconstruct:
                     callbacks += [
                         MaxinvDistributionPlot(),
                     ]
@@ -450,20 +431,6 @@ def get_logger(cfg, module, is_featurizer):
             cfg.logger.kwargs.offline = True
             pllogger = WandbLogger(**kwargs)
 
-        if cfg.trainer.track_grad_norm == 2:
-            try:
-                # use wandb rather than lightning gradients
-                cfg.trainer.track_grad_norm = -1
-                to_watch = module.p_ZlX.mapper if is_featurizer else module.predictor
-                pllogger.watch(
-                    to_watch,
-                    log="gradients",
-                    log_freq=cfg.trainer.log_every_n_steps * 10,
-                )
-            except:
-                logger.exception("Cannot track gradients. Because:")
-                pass
-
     elif cfg.logger.name == "tensorboard":
         pllogger = TensorBoardLogger(**kwargs)
 
@@ -487,15 +454,7 @@ def get_trainer(cfg, module, is_featurizer):
     kwargs = dict(**cfg.trainer)
 
     # PARALLEL PROCESSING
-    # cpu
-    accelerator = kwargs.get("accelerator", None)
-    if accelerator == "ddp_cpu_spawn":  # only for debug
-        kwargs["accelerator"] = "ddp_cpu"
-        kwargs["plugins"] = DDPSpawnPlugin(
-            parallel_devices=[], find_unused_parameters=True
-        )
-
-    # gpu
+    # TODOnly one)
     if kwargs["gpus"] > 1:
         kwargs["sync_batchnorm"] = True
         accelerator = kwargs.get("accelerator", "ddp")
@@ -513,21 +472,6 @@ def get_trainer(cfg, module, is_featurizer):
             kwargs["plugins"] = DDPSpawnPlugin(
                 parallel_devices=parallel_devices, find_unused_parameters=True,
             )
-
-        elif accelerator == "ddp_sharded":
-            kwargs["accelerator"] = "ddp"
-            kwargs["plugins"] = DDPShardedPlugin(
-                parallel_devices=parallel_devices, find_unused_parameters=True,
-            )
-
-        elif accelerator == "ddp_sharded_spawn":
-            kwargs["accelerator"] = "ddp"
-            kwargs["plugins"] = DDPSpawnShardedPlugin(
-                parallel_devices=parallel_devices, find_unused_parameters=True,
-            )
-
-        elif accelerator == "dp":
-            kwargs["plugins"] = DataParallelPlugin(parallel_devices=parallel_devices)
 
     # TRAINER
     trainer = pl.Trainer(
@@ -580,20 +524,8 @@ def load_pretrained(cfg, Module, stage, **kwargs):
     return loaded_module
 
 
-def is_est_entropies(cfg):
-    # entropy estimation when Z is stochastic will not be good
-    if cfg.evaluation.is_est_entropies and cfg.encoder.fam != "deterministic":
-        logger.warning("Turning off `is_est_entropies` because stochastic Z.")
-        return False
-    return cfg.evaluation.is_est_entropies
-
-
 def evaluate(trainer, datamodule, cfg, stage):
-    """
-    Evaluate the trainer by loging all the metrics from the test set from the best model.
-    Can also compute sample estimates of some entropies, which should be better estimates than the
-    lower bounds used during training. 
-    """
+    """Evaluate the trainer by loging all the metrics from the test set from the best model."""
     try:
         trainer.lightning_module.stage = cfg.stage  # logging correct stage
         eval_dataloader = datamodule.eval_dataloader(cfg.evaluation.is_eval_on_test)
@@ -601,13 +533,8 @@ def evaluate(trainer, datamodule, cfg, stage):
         test_res = trainer.test(test_dataloaders=eval_dataloader, ckpt_path=ckpt_path)[
             0
         ]
-
-        # TODO remove as we are not using entropies anymore
-        if is_est_entropies(cfg):
-            try:
-                append_entropy_est_(test_res, trainer, datamodule, cfg, is_test=True)
-            except:
-                logger.exception("Failed to Compute entropies. Skipping this error:")
+        # ensure that select only correct stage (important when communicating)
+        test_res = {k: v for k, v in test_res.items() if f"/{cfg.stage}/" in k}
 
         log_dict(trainer, test_res, is_param=False)
 
@@ -628,43 +555,26 @@ def evaluate(trainer, datamodule, cfg, stage):
     return test_res
 
 
-def append_entropy_est_(results, trainer, datamodule, cfg, is_test):
-    """Append entropy estimates to the results."""
-    is_discrete_Y = cfg.data.target_is_clf
-    is_discrete_M = datamodule.dataset.is_clf_x_t_Mx["max_inv"]
+def load_results(cfg, stage):
+    """
+    Load the results that were previsously saved or return empty dict. Useful in case you get_trainer
+    premempted but still need access to the results.
+    """
+    try:
+        filename = RESULTS_FILE.format(stage=stage)
+        path = Path(cfg.paths.results) / filename
 
-    # get the max invariant from the dataset
-    dkwargs = {"additional_target": "max_inv"}
-    if is_test:
-        dataloader = datamodule.eval_dataloader(
-            cfg.evaluation.is_eval_on_test, dataset_kwargs=dkwargs
-        )
-    else:
-        dataloader = datamodule.train_dataloader(dataset_kwargs=dkwargs)
+        # dict of "test","train" ... where subdicts are keys and results
+        results = pd.read_csv(path, index_col=0).to_dict()
 
-    H_MlZ, H_YlZ, H_Z = estimate_entropies(
-        trainer, dataloader, is_discrete_M=is_discrete_M, is_discrete_Y=is_discrete_Y,
-    )
-    prfx = "test" if is_test else "testtrain"
-    results[f"{prfx}/feat/H_MlZ"] = H_MlZ
-    results[f"{prfx}/feat/H_YlZ"] = H_YlZ
-    results[f"{prfx}/feat/H_Z"] = H_Z
-
-
-def initialize_predictor_(module, datamodule, trainer, cfg):
-    """Additional steps needed for intitalization of the predictor + logging."""
-    if module.hparams.optimizer_pred.is_lr_find:
-        old_lr = module.hparams.optimizer_pred.kwargs.lr
-        new_lr = learning_rate_finder(module, datamodule, trainer)
-
-        if (old_lr is None) and (new_lr is None):
-            raise ValueError(f"Couldn't find new lr and no old lr given.")
-
-        if old_lr is None and (new_lr is not None):
-            module.hparams.optimizer_pred.kwargs.lr = new_lr
-            logger.info(f"Using lr={new_lr} for the predictor.")
-        else:
-            module.hparams.optimizer_pred.kwargs.lr = old_lr
+        results = {
+            f"{mode}/{k}": v
+            for mode, sub_dict in results.items()
+            for k, v in sub_dict.items()
+        }
+        return results
+    except:
+        return dict()
 
 
 def finalize_stage_(
@@ -686,14 +596,12 @@ def finalize_stage_(
             cfg.checkpoint.kwargs.dirpath != cfg.paths.pretrained.save
         ), "This will remove diesired checkpoints"
 
-        for checkpoint in Path(cfg.checkpoint.kwargs.dirpath).glob("*.ckpt"):
-            checkpoint.unlink()  # remove all checkpoints as best is already saved elsewhere
+        # remove all checkpoints as best is already saved elsewhere
+        remove_rf(cfg.checkpoint.kwargs.dirpath) 
 
         # don't keep the pretrained model
         if not is_save_best:
-            dest_path = Path(cfg.paths.pretrained.save)
-            for checkpoint in dest_path.glob("*.ckpt"):
-                checkpoint.unlink()  # remove all checkpoints
+            remove_rf(cfg.paths.pretrained.save)
 
     if not cfg.is_no_save:
         # save end file to make sure that you don't retrain if preemption

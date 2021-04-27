@@ -18,11 +18,9 @@ distortion.kwargs.arch_kwargs.complexity=3
 encoder.z_dim=128
 data@data_feat=augmnist
 +data@data_pred=mnist
-evaluation.is_est_entropies=False
 rate=H_hyper
 optimizer@optimizer_pred=sgd 
 scheduler@scheduler_pred=multistep
-optimizer_pred.is_lr_find=False
 $add_kwargs
 "
 

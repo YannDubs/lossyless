@@ -1,23 +1,18 @@
 import collections
-import copy
 import glob
 import logging
 import os
 import shutil
-import types
+import warnings
 from argparse import Namespace
 from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
-
 import pl_bolts
 import pytorch_lightning as pl
-import pytorch_lightning.plugins.training_type as train_plugins
 import torch
-from lossyless.callbacks import save_img
 from omegaconf import OmegaConf
-from pytorch_lightning.overrides.data_parallel import LightningParallelModule
 from torch.utils.data import Subset
 
 logger = logging.getLogger(__name__)
@@ -194,19 +189,9 @@ class StrFormatter:
         self.subtring_replace = update_prepending(self.subtring_replace, new_dict)
 
 
-def cont_tuple_to_tuple_cont(container):
-    """Converts a container (list, tuple, dict) of tuple to a tuple of container."""
-    if isinstance(container, dict):
-        return tuple(dict(zip(container, val)) for val in zip(*container.values()))
-    elif isinstance(container, list) or isinstance(container, tuple):
-        return tuple(zip(*container))
-    else:
-        raise ValueError("Unkown conatiner type: {}.".format(type(container)))
-
-
 def getattr_from_oneof(list_of_obj, name):
     """
-    Equivalent to `getattr` but on a list of objects and will return the attribute from the first 
+    Equivalent to `getattr` but on a list of objects and will return the attribute from the first
     object that has it.
     """
     if len(list_of_obj) == 0:
@@ -231,16 +216,6 @@ def replace_keys(d, old, new):
     return {k.replace(old, new): v for k, v in d.items()}
 
 
-def at_least_ndim(arr, ndim, is_prefix_padded=False):
-    """Ensures that a numpy or torch array is at least `ndim`-dimensional."""
-    padding = (1,) * (ndim - len(arr.shape))
-    if is_prefix_padded:
-        padded_shape = padding + arr.shape
-    else:
-        padded_shape = arr.shape + padding
-    return arr.reshape(padded_shape)
-
-
 # credits : https://gist.github.com/simon-weber/7853144
 @contextmanager
 def all_logging_disabled(highest_level=logging.CRITICAL):
@@ -262,7 +237,8 @@ def all_logging_disabled(highest_level=logging.CRITICAL):
     logging.disable(highest_level)
 
     try:
-        yield
+        with warnings.catch_warnings():
+            yield
     finally:
         logging.disable(previous_level)
 
@@ -276,60 +252,6 @@ def log_dict(trainer, to_log, is_param):
             trainer.logger.log_metrics(to_log)
     except:
         pass
-
-
-def learning_rate_finder(
-    module, datamodule, trainer, min_max_lr=[1e-7, 10], is_argmin=False
-):
-    """
-    Automatically select the new learning rate and plot the learing rate finder in the `min_max_lr`
-    bounds. If `is_argmin` choses the lr that ields the argmin on the plot (usually larger lr), if 
-    not selects the one with the most negative derivative (usually smaller lr). 
-    """
-    # ensure not inplace
-    trainer = copy.deepcopy(trainer)
-
-    # ans cannot be pickled => don't deepcopy it (it's not going to change because not trained)
-    old_module = module
-    featurizer, module.featurizer = module.featurizer, None
-    module = copy.deepcopy(old_module)
-    module.featurizer = featurizer  # bypass deepcopy
-    old_module.featurizer = featurizer  # put back
-
-    min_lr, max_lr = min_max_lr
-    module.hparams.optimizer_pred.kwargs.lr = min_lr  #! shouldn't be needed
-    lr_finder = trainer.tuner.lr_find(
-        module, datamodule=datamodule, min_lr=min_lr, max_lr=max_lr
-    )
-
-    if is_argmin:
-        lr_finder.suggestion = types.MethodType(suggest_min_lr, lr_finder)
-
-    fig = lr_finder.plot(suggest=True)
-    if module.hparams.logger.is_can_plot_img:
-        save_img(module, trainer, fig, "Learning Rate Finder", "")
-
-    new_lr = lr_finder.suggestion()
-    log_dict(trainer, dict(suggested_lr=new_lr), True)
-
-    return new_lr
-
-
-def suggest_min_lr(self, skip_begin: int = 10, skip_end: int = 1):
-    """ This will propose a suggestion for choice of initial learning rate
-    as the point with smallest lr.
-    """
-    try:
-        loss = np.array(self.results["loss"][skip_begin:-skip_end])
-        loss = loss[np.isfinite(loss)]
-        min_grad = loss.argmin()
-        self._optimal_idx = min_grad + skip_begin
-        return self.results["lr"][self._optimal_idx]
-    except Exception:
-        logger.exception(
-            "Failed to compute suggesting for `lr`. There might not be enough points."
-        )
-        self._optimal_idx = None
 
 
 class SklearnDataModule(pl_bolts.datamodules.SklearnDataModule):
@@ -393,26 +315,6 @@ class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
         self.best_k_models = {}
         self.best_k_models[self.best_model_path] = self.best_model_score
         self.kth_best_model_path = self.best_model_path
-
-
-# credits : https://github.com/pytorch/pytorch/issues/16885
-class DataParallelPassthrough(torch.nn.DataParallel):
-    """Like dataparallel but enable accessing attributes as if there was no ``DataParallel``."""
-
-    def __getattr__(self, name):
-        try:
-            return super().__getattr__(name)
-        except AttributeError:
-            return getattr(self.module, name)
-
-
-class DataParallelPlugin(train_plugins.DataParallelPlugin):
-    def setup(self, model):
-        # model needs to be moved to the device before it is wrapped
-        model.to(self.root_device)
-        self._model = DataParallelPassthrough(
-            LightningParallelModule(model), self.parallel_devices
-        )
 
 
 def remove_rf(path, not_exist_ok=False):

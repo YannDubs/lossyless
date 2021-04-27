@@ -80,7 +80,7 @@ class PlottingCallback(Callback):
         self.plot_config_kwargs = plot_config_kwargs
 
     @rank_zero_only  # only plot on one machine
-    def on_epoch_end(self, trainer, pl_module):
+    def on_train_epoch_end(self, trainer, pl_module, outputs):
         if is_plot(trainer, self.plot_interval):
             try:
                 for fig, kwargs in self.yield_figs_kwargs(trainer, pl_module):
@@ -244,7 +244,7 @@ class CodebookPlot(PlottingCallback):
     Notes
     -----
     - datamodule has to be `DistributionDataModule`.
-    - distortion should be ivae.
+    - Z should be deterministic
 
     Parameters
     ----------
@@ -259,8 +259,8 @@ class CodebookPlot(PlottingCallback):
         Size fo figure.
 
     is_plot_codebook : bool, optional
-        Whether to plot the codebook or only the quantization space. THis can only be true for VAE
-        and iVAE, not or iVIB and iNCE because they don't reconstruct an element in X space.
+        Whether to plot the codebook or only the quantization space. This can only be true for VAE
+        and iVAE, not iNCE because it doesn't reconstruct an element in X space.
 
     kwargs :
         Additional arguments to PlottingCallback.
@@ -277,18 +277,13 @@ class CodebookPlot(PlottingCallback):
 
     def yield_figs_kwargs(self, trainer, pl_module):
         source = trainer.datamodule.distribution
-        device = pl_module.device
 
         with torch.no_grad():
             pl_module.eval()
 
-            # ensure cpu because memory ++
-            pl_module_cpu = pl_module.to(torch.device("cpu"))
-
             with plot_config(**self.plot_config_kwargs):
-                fig = self.plot_quantization(pl_module_cpu, source)
+                fig = self.plot_quantization(pl_module, source)
 
-        pl_module = pl_module.to(device)  # ensure back on correct
         pl_module.train()
 
         yield fig, dict(name="quantization")
@@ -300,12 +295,10 @@ class CodebookPlot(PlottingCallback):
         p_Zlx = pl_module.p_ZlX(x)
 
         # shape: [batch_size, z_dim]
-        z = p_Zlx.mean  # deterministic so should be same as sampling
+        z = p_Zlx.mean
 
         # shape: [batch_size, z_dim]
-        # entropy bottleneck assumes n_z in first dim
-        z_hat, q_z = pl_module.rate_estimator.entropy_bottleneck(z.unsqueeze(0))
-        z_hat, q_z = z_hat.squeeze(), q_z.squeeze()
+        z_hat, rates, _, __ = pl_module.rate_estimator(z, p_Zlx, pl_module)
 
         # Find the unique set of latents for these inputs. Converts integer indexes
         # on the infinite lattice to scalar indexes into a codebook (which is only
@@ -313,9 +306,6 @@ class CodebookPlot(PlottingCallback):
         _, i, idcs = np.unique(
             to_numpy(z_hat), return_index=True, return_inverse=True, axis=0
         )
-
-        # - log q(z). shape: [batch_shape]
-        rates = -torch.log(q_z).sum(-1) / math.log(BASE_LOG)
 
         # shape: [n_codebook]
         ratebook = to_numpy(rates[i])  # rate for each codebook
@@ -339,7 +329,7 @@ class CodebookPlot(PlottingCallback):
             range_lim=self.range_lim, n_pts=self.n_pts, device=pl_module.device
         )
 
-        # shape: [n_pts, n_pts, 2]
+        # shape: [n_pts * n_pts, 2]
         flat_xy = einops.rearrange(xy, "x y d -> (x y) d", d=2)
 
         # codebook. shape: [n_codebook, 2]
@@ -436,11 +426,8 @@ class MaxinvDistributionPlot(PlottingCallback):
         with torch.no_grad():
             pl_module.eval()
 
-            # ensure cpu because memory ++
-            pl_module_cpu = pl_module.to(torch.device("cpu"))
-
             # shape: [batch_size, *x_shape]
-            x_hat = pl_module_cpu(x, is_features=False)
+            x_hat = pl_module(x, is_features=False)
 
             # allow computing plots for multiple equivalences (useful for banana without equivalence)
             equivalences = [equiv] if equiv is not None else self.equivalences
@@ -457,14 +444,11 @@ class MaxinvDistributionPlot(PlottingCallback):
                 yield fig, dict(name=f"max. inv. {eq}")
 
         # restore
-        pl_module = pl_module.to(device)
         dataset.seed = seed
         dataset.equivalence = equiv
         pl_module.train()
 
     def prepare(data, source):
-        if source.decimals is not None:
-            data = np.around(data, decimals=source.decimals)
         return data
 
     def plot_maxinv(self, mx, mx_hat):
@@ -473,7 +457,7 @@ class MaxinvDistributionPlot(PlottingCallback):
         fig, ax = plt.subplots(1, 1, figsize=self.figsize)
 
         data = pd.DataFrame(
-            {"p(M(X))": mx.flatten().numpy(), "q(M(X))": mx_hat.flatten().numpy()}
+            {"p(M(X))": to_numpy(mx.flatten()), "q(M(X))": to_numpy(mx_hat.flatten())}
         )
 
         h = sns.histplot(
@@ -616,7 +600,7 @@ class ResnetFinetuning(BaseFinetuning):
         self.freeze(modules=model, train_bn=self.train_bn)
 
     def is_unfreeze(self, curr_epoch, target_epoch):
-        #! waiting for https://github.com/PyTorchLightning/pytorch-lightning/issues/6891
+        # TODO rm when https://github.com/PyTorchLightning/pytorch-lightning/issues/6891
         return (curr_epoch == target_epoch) or (self.loaded_epoch >= target_epoch)
 
     def finetune_function(self, pl_module, curr_epoch, optimizer, opt_idx):

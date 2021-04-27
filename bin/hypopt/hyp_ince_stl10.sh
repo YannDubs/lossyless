@@ -34,9 +34,9 @@ hydra/sweeper=optuna
 hydra/sweeper/sampler=random
 hypopt=optuna
 hydra.sweeper.n_trials=225
-hydra.sweeper.n_jobs=75
+hydra.sweeper.n_jobs=20
 monitor_direction=[minimize,minimize]
-monitor_return=[test/pred/err,test/feat/rate]
+monitor_return=[test/pred/err,test/comm/rate]
 "
 
 # here the random sampler means that we are not actually doing smart hyperparametr tuning use `nsgaii` if you want
@@ -97,6 +97,7 @@ if [ "$is_plot_only" = false ] ; then
 fi
 
 wait
+
 
 col_val_subset=""
 rate_cols="['test/feat/rate']"

@@ -8,24 +8,19 @@ import glob
 import logging
 from pathlib import Path
 
+import hydra
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from omegaconf import OmegaConf
 
-import hydra
 from lossyless.helpers import BASE_LOG, check_import
 from main import CONFIG_FILE, get_stage_name
-from omegaconf import OmegaConf
-from utils.helpers import cfg_load, cfg_save, getattr_from_oneof, omegaconf2namespace
-from utils.postplotting import (
-    PRETTY_RENAMER,
-    PostPlotter,
-    data_getter,
-    folder_split,
-    single_plot,
-    table_summarizer,
-)
+from utils.helpers import (cfg_load, cfg_save, getattr_from_oneof,
+                           omegaconf2namespace)
+from utils.postplotting import (PRETTY_RENAMER, PostPlotter, data_getter,
+                                folder_split, single_plot, table_summarizer)
 from utils.postplotting.helpers import aggregate, save_fig
 from utils.visualizations.helpers import kwargs_log_scale
 
@@ -37,7 +32,7 @@ except:
 try:
     import optuna
 
-    #! waiting for https://github.com/optuna/optuna/pull/2450
+    # TODO remove when https://github.com/optuna/optuna/pull/2450
     # from optuna.visualization.matplotlib import plot_pareto_front
     from utils.visualizations.pareto_front import plot_pareto_front
 except:
@@ -126,7 +121,7 @@ class ResultAggregator(PostPlotter):
         self.param_names = dict()
         self.cfgs = dict()
 
-    def merge_tables(self, to_merge=["featurizer", "predictor"]):
+    def merge_tables(self, to_merge=["featurizer", "predictor", "communication"]):
         """Add one large table called `"merge"` that concatenates other tables."""
         merged = self.tables[to_merge[0]]
         for table in to_merge[1:]:
@@ -138,7 +133,7 @@ class ResultAggregator(PostPlotter):
 
     def collect_data(
         self,
-        pattern=f"results/**/results_compressor.csv",
+        pattern=f"results/**/results_featurizer.csv",
         table_name="featurizer",
         params_to_rm=["jid"],
         params_to_add={},
@@ -165,8 +160,8 @@ class ResultAggregator(PostPlotter):
             Params to remove.
 
         params_to_add : dict, optional
-            Parameters to add. Those will be added from the `config.yaml` files. The key should be 
-            the name of the paramter that you weant to add and the value should be the config key 
+            Parameters to add. Those will be added from the `config.yaml` files. The key should be
+            the name of the paramter that you weant to add and the value should be the config key
             (using dots). E.g. {"lr": "optimizer.lr"}. The config file should be saved at the same
             place as the results file.
         """
@@ -180,7 +175,8 @@ class ResultAggregator(PostPlotter):
             folder = path.parent
 
             # select everything from "exp_"
-            path_clean = "exp_" + str(path.resolve()).split("/exp_")[-1]
+            path_clean = "exp_" + str(path.parent.resolve()).split("/exp_")[-1]
+
             # make dict of params
             params = path_to_params(path_clean)
 
@@ -673,7 +669,10 @@ class ResultAggregator(PostPlotter):
 
         elif mode == "lmplot":
             used_kwargs = dict(
-                legend="full", sharey=sharey, sharex=sharex, legend_out=legend_out,
+                legend="full",
+                sharey=sharey,
+                sharex=sharex,
+                legend_out=legend_out,
             )
             used_kwargs.update(kwargs)
 
@@ -697,7 +696,7 @@ class ResultAggregator(PostPlotter):
         if logbase_x != 1 or logbase_y != 1:
             sns_plot.map_dataframe(set_log_scale, basex=logbase_x, basey=logbase_y)
 
-        #! waiting for https://github.com/mwaskom/seaborn/issues/2456
+        # TODO remove when waiting for https://github.com/mwaskom/seaborn/issues/2456
         if xlabel != "":
             for ax in sns_plot.fig.axes:
                 ax.set_xlabel(xlabel)
@@ -734,19 +733,16 @@ class ResultAggregator(PostPlotter):
 
         for i, monitor in enumerate(cfg.monitor_return):
             for plot_f_str in plot_functions_str:
-                if (
-                    plot_f_str == "plot_optimization_history"
-                    and len(cfg.monitor_return) > 1
-                ):
-                    #! waiting for https://github.com/optuna/optuna/issues/2531
-                    continue
-
-                # plotting
-                plt_modules = [optuna.visualization.matplotlib]
-                plot_f = getattr_from_oneof(plt_modules, plot_f_str)
-                out = plot_f(
-                    study, target=lambda trial: trial.values[i], target_name=monitor
-                )
+                try:
+                    # plotting
+                    plt_modules = [optuna.visualization.matplotlib]
+                    plot_f = getattr_from_oneof(plt_modules, plot_f_str)
+                    out = plot_f(
+                        study, target=lambda trial: trial.values[i], target_name=monitor
+                    )
+                except:
+                    logger.exception(f"Could not plot {monitor}. Error:")
+                    pass
 
                 # saving
                 nice_monitor = monitor.replace("/", "_")

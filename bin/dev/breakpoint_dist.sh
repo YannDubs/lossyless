@@ -13,7 +13,6 @@ kwargs="
 experiment=$experiment 
 +mode=dev
 logger=none
-callbacks.additional=[]
 architecture@encoder=mlp
 architecture@predictor=mlp
 distortion=ivae

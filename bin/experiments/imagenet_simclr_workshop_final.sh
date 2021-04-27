@@ -20,7 +20,6 @@ optimizer_feat.lr_rate_factor=100
 checkpoint@checkpoint_feat=bestTrainLoss
 scheduler@scheduler_feat=expdecay
 data@data_feat=simclr_imagenet
-evaluation.is_est_entropies=False
 trainer.val_check_interval=0.25
 $add_kwargs
 "

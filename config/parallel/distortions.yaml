@@ -3,8 +3,8 @@ defaults:
   - base@parallel
   
 distortion:
-  name: [vae,vib,nce]
+  name: [vae,nce]
 
 parallel:
   key: "distortion"
-  to_sweep: [vae,vib,nce]
+  to_sweep: [vae,nce]

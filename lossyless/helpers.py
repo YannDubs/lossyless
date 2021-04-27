@@ -120,21 +120,6 @@ def to_numpy(X):
     return X.numpy()
 
 
-def concatenate(arr):
-    """Concatenate (axis=0) an iterable of data, assuming all example have same type"""
-    if isinstance(arr[0], np.ndarray):
-        return np.concatenate(arr)
-    elif isinstance(arr[0], torch.Tensor):
-        return torch.cat(arr)
-    elif isinstance(arr[0], (list, tuple, set)):
-        T = type(arr[0])
-        return T(itertools.chain.from_iterable(arr))
-    elif isinstance(arr[0], dict):
-        return dict(itertools.chain.from_iterable(d.items() for d in arr))
-    else:
-        raise ValueError(f"Don't know how to concatenate data of type {type(arr[0])}.")
-
-
 def set_seed(seed):
     """Set the random seed."""
     if seed is not None:
@@ -239,13 +224,10 @@ def closest_pow(n, base=2):
     return base ** round(math.log(n, base))
 
 
-def kl_divergence(p, q, z_samples=None, is_lower_var=False, is_reduce=True):
+def kl_divergence(p, q, z_samples=None, is_lower_var=False):
     """Computes KL[p||q], analytically if possible but with MC."""
     try:
         kl_pq = torch.distributions.kl_divergence(p, q)
-
-        if not is_reduce:
-            kl_pq = einops.repeat(kl_pq, "... -> z ...", z=z_samples.size(0))
 
     except NotImplementedError:
         # removes the event shape
@@ -259,9 +241,6 @@ def kl_divergence(p, q, z_samples=None, is_lower_var=False, is_reduce=True):
         else:
             # KL[p||q] = E_p[log p] - E_p[log q]
             kl_pq = log_p - log_q
-
-        if is_reduce:
-            kl_pq = kl_pq.mean(0)
 
     return kl_pq
 

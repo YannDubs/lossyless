@@ -7,7 +7,6 @@ import torch
 import torch.distributions as dist
 from lossyless.helpers import BASE_LOG, tmp_seed
 from torch.utils.data import Dataset
-from utils.estimators import differential_entropy, discrete_entropy
 
 from .base import LossylessDataModule, LossylessDataset
 from .helpers import int_or_ratio, rotate
@@ -32,12 +31,7 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
 
     equivalence : {"rotation","y_translation","x_translation",None}, optional
         Equivalence relationship with respect to which to be invariant.
-
-    decimals : float or None, optional
-        Number of decimals to keep. If `None` keeps as much as python can. This is useful
-        to have better estimates of the entropies. Formally we would be equivalent to `equivalence`
-        and rounding to decimal place.
-
+        
     seed : int or None, optional
         Seed to force deterministic dataset (if int). This is especially useful when using
         `reload_dataloaders_every_epoch` but you only want to reload only the training set.
@@ -47,20 +41,13 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
     """
 
     def __init__(
-        self,
-        distribution,
-        length=1024000,
-        equivalence="rotation",
-        decimals=None,
-        seed=None,
-        **kwargs,
+        self, distribution, length=1024000, equivalence="rotation", seed=None, **kwargs,
     ):
         super().__init__(equivalence=equivalence, seed=seed, **kwargs)
 
         self.length = length
         self.distribution = distribution
         self.equivalence = equivalence
-        self.decimals = decimals
         self.data, self.targets = self.get_n_data_Mxs(length)
 
         # precompute quantiles which are for sampling quivalence action
@@ -71,7 +58,17 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
 
     def get_x_target_Mx(self, index):
         Mx = self.targets[index]
-        return self.data[index], Mx, Mx
+        x = self.data[index]
+
+        if self.additional_target == "representative": # IVAE
+            # this makes no difference in terms of loss but will make the plot look slightly nicer
+            # if you don't do that then the plot will be the same where there's mass (i.e. in the 
+            # banana) but nothing will push you to look good outside of the banana distribution as
+            # you will rarely sample points there. THis ensures that you sample points outside of banana
+            # to have more understandable plots for didactic reasons
+            x = self.get_equiv_x(x, Mx)
+
+        return x, Mx, Mx
 
     def get_representative(self, Mx):
         if self.equivalence == "y_translation":
@@ -90,10 +87,6 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
 
         else:
             raise ValueError(f"Unkown equivalence={self.equivalence}.")
-
-    def get_max_var(self, x, Mx):
-        # Mx is a regression task so one possible max variant is simply predicting x
-        return x
 
     def sample_equivalence_action(self):
         def action_translation(rep, min_ax, max_ax, axis):
@@ -135,42 +128,13 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
         return action(rep)
 
     @property
-    def entropies(self):
-        if hasattr(self, "_entropies"):
-            return self._entropies  # if precomputed
-
-        entropies = {}
-        n_samples = int(1e6)
-        x_samples, Mx_samples = self.get_n_data_Mxs(n_samples)
-        x_samples, Mx_samples = x_samples.numpy(), Mx_samples.numpy()
-
-        # analytic computations (dh for differential entropy as wandb case insensitive)
-        entropies["true dh[X]"] = self.distribution.entropy().item() / math.log(
-            BASE_LOG
-        )
-
-        # sample estimates
-        # continuous (i.e. estimate as continuous even though we only have discrete due to float-point)
-        entropies["dh[X]"] = differential_entropy(x_samples, base=BASE_LOG)
-        entropies["dh[M(X)]"] = differential_entropy(Mx_samples, base=BASE_LOG)
-        # discrete (i.e. treat it as discrete as we only have discrete values)
-        entropies["H[X]"] = discrete_entropy(x_samples, base=BASE_LOG)
-        entropies["H[M(X)]"] = discrete_entropy(Mx_samples, base=BASE_LOG)
-
-        entropies["dh[Y]"] = entropies["dh[M(X)]"]
-        entropies["H[Y]"] = entropies["H[M(X)]"]
-
-        self._entropies = entropies
-        return entropies
+    def is_clfs(self):
+        return dict(input=False, target=False)
 
     @property
-    def is_clf_x_t_Mx(self):
-        return dict(input=False, target=False, max_inv=False)
-
-    @property
-    def shapes_x_t_Mx(self):
+    def shapes(self):
         target_dim = 1 if self.equivalence is not None else 2
-        return dict(input=(2,), target=(target_dim,), max_inv=(1,), max_var=(2,))
+        return dict(input=(2,), target=(target_dim,))
 
     def get_n_data_Mxs(self, length):
         """Return an array for the examples and correcponding max inv ofa given length."""
@@ -178,9 +142,6 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
             data = self.distribution.sample([length])
             # the targets will be derivative from max invariant => the important is Mx
             Mxs = self.max_invariant(data)
-
-        if self.decimals is not None:
-            data = np.around(data, decimals=self.decimals)
 
         return data, Mxs
 
@@ -196,9 +157,6 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
             mx = samples  # max inv is x itself
         else:
             raise ValueError(f"Unkown equivalence={self.equivalence}.")
-
-        if self.decimals is not None:
-            mx = np.around(mx, decimals=self.decimals)
 
         return mx
 

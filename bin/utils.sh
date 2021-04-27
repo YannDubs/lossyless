@@ -86,20 +86,23 @@ experiment="${prfx}""$experiment"
 results="results/exp_$experiment"
 pretrained="pretrained/exp_$experiment"
 checkpoints="checkpoints/exp_$experiment"
+logs="logs/exp_$experiment"
 
 if [[ "$is_plot_only" = false && "$mode" != "continue" ]] ; then
   if [ -d "$results" ]; then
 
-    echo -n "$results and/or pretrained/... and/or checkpoints/... exist. Should I delete them (y/n) ? "
+    echo -n "$results and/or pretrained/... and/or checkpoints/... exist and/or logs/... exist. Should I delete them (y/n) ? "
     read answer
 
     if [ "$answer" != "${answer#[Yy]}" ] ;then
         echo "Deleted $results"
         echo "Deleted $pretrained"
         echo "Deleted $checkpoints"
+        echo "Deleted $logs"
         rm -rf $results
         rm -rf $pretrained
         rm -rf $checkpoints
+        rm -rf $logs
     fi
   fi  
 fi

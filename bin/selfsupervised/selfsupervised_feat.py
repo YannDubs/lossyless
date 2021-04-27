@@ -62,7 +62,6 @@ class Featurizer(LearnableCompressor):
         z, _ = batch
 
         # z_hat. shape: [q, batch_size, z_dim]
-        z_in = z.unsqueeze(0)
         z_hat, rates, r_logs, _ = self.rate_estimator(z_in, None, self)
 
         p = self.hparams.distortion.p_norm

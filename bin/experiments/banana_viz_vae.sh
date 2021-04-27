@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-experiment="banana_viz_vae"
+experiment="dev_banana_viz_vae"
 notes="
 **Goal**: Run banana models for plotting, when predicting a representative.
 "
@@ -20,6 +20,7 @@ source `dirname $0`/../utils.sh
 # - train batch size is 8192 instead of 1024
 # - not using soft rounding
 # - 200 epochs and decrease lr at 120
+# - annealing beta
 
 # Encoder
 encoder_kwargs="
@@ -30,8 +31,9 @@ encoder.z_dim=2
 # Distortion
 distortion_kwargs="
 distortion.factor_beta=1
-+architecture@distortion.kwargs=fancymlp
+architecture@distortion.kwargs=fancymlp
 "
+# like in their paper we are using softplus activation which fives slightly more smooth decision boundaries 
 
 # Rate
 rate_kwargs="
@@ -41,9 +43,9 @@ rate.factor_beta=1
 
 # Data
 data_kwargs="
-data_feat.kwargs.batch_size=8192
+data_feat.kwargs.batch_size=1024
 data_feat.kwargs.val_size=100000
-data_feat.kwargs.val_batch_size=16384
+data_feat.kwargs.val_batch_size=2048
 trainer.reload_dataloaders_every_epoch=True
 "
 
@@ -52,14 +54,14 @@ trainer.reload_dataloaders_every_epoch=True
 general_kwargs="
 is_only_feat=True
 featurizer=neural_rec
-optimizer@optimizer_feat=adam1e-3
-scheduler@scheduler_feat=multistep
-scheduler_feat.kwargs.MultiStepLR.milestones=[50,75,87,120]
-optimizer@optimizer_coder=adam1e-3
+optimizer@optimizer_feat=Adam
+optimizer_feat.kwargs.lr=1e-3
+scheduler@scheduler_feat=unifmultistep1000
+optimizer@optimizer_coder=Adam
 scheduler@scheduler_coder=none
+optimizer_coder.kwargs.lr=1e-3
 trainer.max_epochs=200
 trainer.precision=32
-evaluation.is_est_entropies=True
 "
 
 kwargs="
@@ -74,10 +76,11 @@ $add_kwargs
 "
 
 kwargs_multi="
-data@data_feat=bananaRot,bananaXtrnslt,bananaYtrnslt 
+data@data_feat=banana_rot,banana_Xtrnslt,banana_Ytrnslt 
 distortion=ivae,vae
-featurizer.loss.beta=0.1
+featurizer.loss.beta=0.15
 " 
+
 
 
 if [ "$is_plot_only" = false ] ; then

@@ -28,9 +28,9 @@ encoder.z_dim=2
 
 # Distortion
 distortion_kwargs="
+distortion=ince
 distortion.factor_beta=1
 distortion.kwargs.effective_batch_size=null
-distortion.kwargs.is_symmetric=True
 "
 
 # Rate
@@ -52,15 +52,16 @@ trainer.reload_dataloaders_every_epoch=True
 general_kwargs="
 is_only_feat=True
 featurizer=neural_rec
-optimizer@optimizer_feat=adam1e-3
-scheduler@scheduler_feat=multistep
-scheduler_feat.kwargs.MultiStepLR.milestones=[50,75,87,120]
-optimizer@optimizer_coder=adam1e-3
+optimizer@optimizer_feat=Adam
+optimizer_feat.kwargs.lr=1e-3
+scheduler@scheduler_feat=unifmultistep1000
+optimizer@optimizer_coder=Adam
 scheduler@scheduler_coder=none
+optimizer_coder.kwargs.lr=1e-3
 trainer.max_epochs=200
 trainer.precision=32
-evaluation.is_est_entropies=True
 "
+#TODO scheculer feat can just use unifmultistep10000
 
 kwargs="
 experiment=$experiment 
@@ -74,9 +75,17 @@ $add_kwargs
 "
 
 kwargs_multi="
-data@data_feat=bananaRot
+data@data_feat=banana_rot
 distortion=ince,nce
+featurizer.loss.beta=0.01,0.1,1,3,10
+"
+
+
+kwargs_multi="
+data@data_feat=banana_rot
+distortion=ince
 featurizer.loss.beta=0.01,0.1,1
+distortion.factor_beta=0.001,0.01,0.1
 " 
 
 if [ "$is_plot_only" = false ] ; then

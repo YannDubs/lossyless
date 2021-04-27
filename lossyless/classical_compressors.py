@@ -157,7 +157,7 @@ class ClassicalCompressor(pl.LightningModule):
             else:
                 raise ValueError(f"Unkown featurizer={self.hparams.featurizer.mode}")
 
-    # @auto_move_data  # move data on correct device for inference
+    @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_return_out=False, **kwargs):
         """Represents the data `x`.
 

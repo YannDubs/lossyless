@@ -13,14 +13,15 @@ defaults:
   - data@data_feat: mnist
   - architecture@encoder: resnet18
   - architecture@online_evaluator: mlp_probe
-  - checkpoint@checkpoint_feat: bestValLoss # NB : will not be able to use Val loss for vib because validation is meaningless for distortion. Nor for INCE in the case where you don't use data augmentations at test time
+  - checkpoint@checkpoint_feat: bestValLoss # NB : will not be able to use Val loss for INCE in the case where you don't use data augmentations at test time because validation is meaningless for distortion. 
   - optimizer@optimizer_feat: AdamW_lr1e-3_w1e-5 # larger learning rate gives smaller rate but smaller acc. should stick to using adam if not changing the  beta will effectively change the lr
-  - scheduler@scheduler_feat: expdecay100 # expdecay also works well
+  - scheduler@scheduler_feat: expdecay100 
   - optimizer@optimizer_coder: Adam_lr3e-4_w1e-5 # quite robust to this but lr shouldn't be to small
   - scheduler@scheduler_coder: expdecay100
   - optimizer@optimizer_online: SGD_lr3e-1_w1e-4
   - scheduler@scheduler_online: expdecay100 # ensure that can always keep up with the chaning representation
   - distortion: ivae
+  - architecture@distortion.kwargs: none # just ensures that can change that from CLI
   - rate: H_hyper
   - finetune: none # change if using pretrained featurizer.
   - featurizer: neural_rec
@@ -43,7 +44,7 @@ job_id: ??? # unique identifier
 seed: 123
 timeout: 1440 # 24 hours
 time: ${hydra:job.num}_${now:%Y-%m-%d_%H-%M-%S} # add job num because tiem is not when job runs
-long_name_feat: exp_${experiment}/datafeat_${data_feat.name}/feat_${featurizer.name}/dist_${distortion.name}/enc_${encoder.name}/rate_${rate.name}/optfeat_${optimizer_feat.name}/schedfeat_${scheduler_feat.name}/zdim_${encoder.z_dim}/zs_${featurizer.loss.n_z_samples}/beta_${format:${featurizer.loss.beta},.1e}/seed_${seed}/addfeat_${other.add_feat}
+long_name_feat: exp_${experiment}/datafeat_${data_feat.name}/feat_${featurizer.name}/dist_${distortion.name}/enc_${encoder.name}/rate_${rate.name}/optfeat_${optimizer_feat.name}/schedfeat_${scheduler_feat.name}/zdim_${encoder.z_dim}/zs_1/beta_${format:${featurizer.loss.beta},.1e}/seed_${seed}/addfeat_${other.add_feat}
 long_name_comm: ${long_name_feat}/datapred_${data_pred.name}
 long_name_pred: ${long_name_comm}/optpred_${optimizer_pred.name}/schedpred_${scheduler_pred.name}/addpred_${other.add_pred}
 is_only_feat: false # run rpredicotr?
@@ -80,7 +81,6 @@ data: {}
 ### RUNNING ###
 evaluation:
   is_eval_on_test: True # whether to evaluate on test. If not uses validation which is necessry if don't have access to test set
-  is_est_entropies: False # whether to evaluate sample estimates of the entropies H[Y|Z], H[M(X)|Z], H[Z] should only use it with deterministic Z
   featurizer:
     ckpt_path: "best"
     is_evaluate: ${featurizer.is_train}
@@ -105,11 +105,11 @@ trainer:
   #default_root_dir: ${paths.results}
   max_epochs: 200
   terminate_on_nan: false # makes it slower if true
-  progress_bar_refresh_rate: 1000 # increase to show progress bar #TODO rm once prediction works
+  progress_bar_refresh_rate: 10000 # increase to show progress bar  #DEV
   resume_from_checkpoint: null # string to checkpoint if want to resume
   gradient_clip_val: 3 # 0 means no clip 
   reload_dataloaders_every_epoch: False
-  log_every_n_steps: 100
+  log_every_n_steps: 500
   val_check_interval: 1.0 # decrease for subepoch checkpoitint
 
   # DEEP LEARNING
@@ -194,7 +194,6 @@ predictor:
 
 ### OPTIMIZER ###
 optimizer_pred: 
-  is_lr_find: False # whether to automatically look for best lr (only set the sugggested value if lr is None, if not just plots)
   name: ${optimizer_pred.mode}_lr${format:${optimizer_pred.kwargs.lr},.1e}_w${format:${optimizer_pred.kwargs.weight_decay},.1e}
   mode: ???
   kwargs:

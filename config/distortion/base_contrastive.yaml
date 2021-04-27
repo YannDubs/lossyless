@@ -7,13 +7,14 @@ distortion:
   kwargs:
     is_train_temperature: true # whether to train the temperature (as in CLIP) => removes one hyperparam
     temperature: 0.01 
-    is_symmetric: true
     effective_batch_size: ${data.length} # new but seems to work better use `null` if want to deactivate
     is_project: true # strongly recommended
     is_cosine: true # recommended
+    is_batch_neg: true # recommended for images but not used for CLIP. TODO : test whether can help there
     project_kwargs:
       mode: mlp
       out_shape: 0.5
+      in_shape: ${encoder.z_dim}
 
 data_feat:
   kwargs:

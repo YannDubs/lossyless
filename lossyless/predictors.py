@@ -7,8 +7,13 @@ from torchmetrics.functional import accuracy
 
 from .architectures import get_Architecture
 from .distortions import prediction_loss
-from .helpers import (Normalizer, Timer, append_optimizer_scheduler_,
-                      is_img_shape, to_numpy)
+from .helpers import (
+    Normalizer,
+    Timer,
+    append_optimizer_scheduler_,
+    is_img_shape,
+    to_numpy,
+)
 
 __all__ = ["Predictor", "OnlineEvaluator"]
 
@@ -39,7 +44,7 @@ class Predictor(pl.LightningModule):
         if featurizer is not None:
             # ensure not saved in checkpoint and frozen
             featurizer.set_featurize_mode_()
-            featurizer.stage = "predfeat" 
+            featurizer.stage = "predfeat"
             self.featurizer = featurizer
             pred_in_shape = featurizer.out_shape
 
@@ -61,7 +66,7 @@ class Predictor(pl.LightningModule):
 
         self.stage = self.hparams.stage
 
-    # @auto_move_data  # move data on correct device for inference
+    @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_logits=True, is_return_logs=False):
         """Perform prediction for `x`.
 
@@ -112,7 +117,9 @@ class Predictor(pl.LightningModule):
         mapper = self.hparams.data.balancing_weights
         assert mapper["is_eval"]  # currently only during val
 
-        sample_weights = torch.tensor([mapper[yi.item()] for yi in y], device=y.device)
+        sample_weights = torch.tensor(
+            [mapper[str(yi.item())] for yi in y], device=y.device
+        )
         logs["balanced_loss"] = (loss * sample_weights).mean()
 
         if self.is_clf:
@@ -133,6 +140,9 @@ class Predictor(pl.LightningModule):
         loss, loss_logs = self.loss(Y_hat, y)
 
         if not self.training and len(self.hparams.data.balancing_weights) > 0:
+            # for some datasets we have to evaluate using the mean per class loss / accuracy
+            # we don't train it using that (because shouldn't have access to those weights during train)
+            # but we compute it during evaluation
             loss_logs = self.add_balanced_logs(loss, y, Y_hat, loss_logs)
 
         # Shape: []
@@ -164,7 +174,9 @@ class Predictor(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss, logs = self.step(batch)
-        self.log_dict({f"train/{self.stage}/{k}": v for k, v in logs.items()}, sync_dist=True)
+        self.log_dict(
+            {f"train/{self.stage}/{k}": v for k, v in logs.items()}, sync_dist=True
+        )
         return loss
 
     def validation_step(self, batch, batch_idx):

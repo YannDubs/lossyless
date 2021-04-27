@@ -49,8 +49,8 @@ def get_Architecture(mode, complexity=None, **kwargs):
     """
     if mode == "mlp":
         if complexity is not None:
-            # width 8,32,128,512,2048
-            kwargs["hid_dim"] = 8 * (4 ** (complexity))
+            # width 64,256,1024,4096
+            kwargs["hid_dim"] = 32 * (4 ** (complexity))
         return partial(FlattenMLP, **kwargs)
 
     elif mode == "linear":
@@ -79,6 +79,8 @@ def get_Architecture(mode, complexity=None, **kwargs):
         return partial(SimCLRProjector, **kwargs)
     elif mode == "clip":
         return partial(CLIPViT, **kwargs)
+    elif mode == "mlp_clip":
+        return partial(MLPCLIPViT, **kwargs)
     else:
         raise ValueError(f"Unkown mode={mode}.")
 
@@ -468,6 +470,23 @@ class CLIPViT(nn.Module):
 
     def reset_parameters(self):
         self.load_weights_()
+
+
+class MLPCLIPViT(CLIPViT):
+    def __init__(self, in_shape, out_shape, **kwargs):
+        super().__init__(in_shape, out_shape, **kwargs)
+        self.mlp = FlattenMLP(
+            self.out_shape, self.out_shape, n_hid_layers=2, hid_dim=1024
+        )
+
+    def forward(self, X):
+        z = super().forward(X)
+        z = self.mlp(z)
+        return z
+
+    def reset_parameters(self):
+        weights_init(self)
+        super().reset_parameters()
 
 
 class CNN(nn.Module):

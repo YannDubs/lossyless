@@ -2,6 +2,6 @@
 
 ### USER SPECIFIC ###
 #! change for your usecase
-user: ${env:USER} # automatically change if USER is not defined
+user: ${oc.env:USER} # automatically change if USER is not defined
 wandb_entity: lossyless # team name or user
 #####################

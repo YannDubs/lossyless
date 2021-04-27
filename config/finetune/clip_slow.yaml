@@ -3,7 +3,7 @@ defaults:
   - base
 
 finetune: 
-  name: clip_vslow
+  name: clip_slow
   
 callbacks:
   ViTFinetuning:

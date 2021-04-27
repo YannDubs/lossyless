@@ -1,7 +1,0 @@
-defaults:
-  - base_contrastive
-  
-name: nce # non-invariant NCE: try to classify unaugmented image. Need to be careful: theoretically you should also have augmented images as negatives
-factor_beta: 0.005 # compared to ivae gives importance ++ to rate so decrease it (value taken empirically)
-kwargs:
-  is_invariant: false # ensure that non invariant representations
