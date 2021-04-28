@@ -13,7 +13,7 @@ source `dirname $0`/../utils.sh
 
 # project and server kwargs
 kwargs="
-logger.project=lossyless
+logger.kwargs.project=lossyless
 wandb_entity=${env:USER}
 experiment=$experiment
 timeout=$time

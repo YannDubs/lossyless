@@ -16,7 +16,7 @@ source `dirname $0`/../utils.sh
 
 # project and server kwargs
 kwargs="
-logger.project=lossyless
+logger.kwargs.project=lossyless
 wandb_entity=${env:USER}
 experiment=$experiment
 timeout=$time
@@ -82,6 +82,8 @@ if [ "$is_plot_only" = false ] ; then
     +data_pred.kwargs.dataset_kwargs.val_equivalence=[hflip,color,gray,equiv_resize_crop_$val] other.add_feat=$val"
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt $kwargs_dep -m &
+
+    sleep 7
 
   done
 fi
