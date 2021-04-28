@@ -555,11 +555,13 @@ def evaluate(trainer, datamodule, cfg, stage):
         test_res = trainer.test(test_dataloaders=eval_dataloader, ckpt_path=ckpt_path)[0]
 
         if ("Galaxy" in type(datamodule.test_dataset).__name__) and stage == "predictor":
-            logger.warning("WARNING: Testing on Galaxy test set.")
+            logger.warning("Testing on Galaxy test set.")
             test_dataloader = datamodule.eval_dataloader(True)
             model = load_best_ckpt(trainer, ckpt_path=ckpt_path)
             test_preds = trainer.predict(model=model, dataloaders=test_dataloader)
-            test_res.update(kaggle_eval(predictions=test_preds, message="test_eval_{}".format(datetime.now())))
+            add_res = kaggle_eval(predictions=test_preds, message="test_pred_{}".format(datetime.now()))
+            test_res.update(add_res)
+            test_res.update({'test/pred/sqrt_loss': math.sqrt(test_res['test/pred/loss'])})
 
         # ensure that select only correct stage (important when communicating)
         test_res = {k: v for k, v in test_res.items() if f"/{cfg.stage}/" in k}
