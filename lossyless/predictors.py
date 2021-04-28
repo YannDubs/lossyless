@@ -90,8 +90,13 @@ class Predictor(pl.LightningModule):
             logs : dict
                 Dictionary of values to log.
         """
+        idx = None
+
         with torch.no_grad():
             # shape: [batch_size,  *featurizer.out_shape]
+            if isinstance(x, list):  # in case targets get passed too
+                idx = x[1]
+                x = x[0]
             features = self.featurizer(x)  # can be z_hat or x_hat
             features = self.normalizer(features)
 
@@ -111,7 +116,10 @@ class Predictor(pl.LightningModule):
             logs = dict(inference_time=inference_timer.duration / batch_size)
             return out, logs
 
-        return out
+        if idx is None:
+            return out
+        else: # special case just for kaggle
+            return idx, out
 
     def add_balanced_logs(self, loss, y, Y_hat, logs):
         mapper = self.hparams.data.balancing_weights
@@ -164,7 +172,7 @@ class Predictor(pl.LightningModule):
         logs = {}
         # assumes that shape is (Y_dim, n_tasks) or (Y_dim) for single task
         # if single task std will be nan which is ok
-        for agg_over_tasks in ["max", "std"]:
+        for agg_over_tasks in ["max", "std", "min", "mean", "median"]:
             agg = prediction_loss(
                 Y_hat.detach(), y, self.is_clf, agg_over_tasks=agg_over_tasks,
             )

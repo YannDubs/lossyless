@@ -1153,6 +1153,7 @@ class GalaxyDataset(ExternalImgDataset):
             # later need the image IDs to make a submission file that will be
             # evaluated via the kaggle api.
             self.ids = np.load(data_dir / f"{split}_ids.npy")
+            self.targets = self.ids
         else:
             self.targets = np.load(data_dir / f"{split}_targets.npy")
 
