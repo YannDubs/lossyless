@@ -29,7 +29,8 @@ from torchvision.transforms import (CenterCrop, ColorJitter, Compose, Lambda,
                                     ToPILImage, ToTensor)
 from utils.helpers import remove_rf
 
-from .augmentations import (CIFAR10Policy, EquivariantRotation, ImageNetPolicy,
+from .augmentations import (CIFAR10Policy, EquivariantRandomRotation,
+                            EquivariantRandomResizedCrop, ImageNetPolicy,
                             get_finetune_augmentations,
                             get_simclr_augmentations)
 from .base import LossylessDataModule, LossylessDataset
@@ -268,7 +269,7 @@ class LossylessImgDataset(LossylessDataset):
         Return a dictortionary of dictionaries containing all possible augmentations of interest.
         first dictionary say which kind of data they act on. Augmentations for (img,label).
         """
-        shape = self.shapes_x_t_Mx["input"]
+        shape = self.shapes["input"]
 
         return dict(
             PIL={
