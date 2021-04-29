@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 
 import pytorch_lightning as pl
 import torch
@@ -94,9 +95,8 @@ class Predictor(pl.LightningModule):
 
         with torch.no_grad():
             # shape: [batch_size,  *featurizer.out_shape]
-            if isinstance(x, list):  # in case targets get passed too
-                idx = x[1]
-                x = x[0]
+            if isinstance(x, Sequence):  # in case targets get passed too
+                x, idx = x
             features = self.featurizer(x)  # can be z_hat or x_hat
             features = self.normalizer(features)
 

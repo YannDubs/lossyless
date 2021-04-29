@@ -41,6 +41,7 @@ from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
 from utils.data import get_datamodule
+from utils.data.images import GalaxyDataset
 from utils.helpers import (
     ModelCheckpoint,
     apply_featurizer,
@@ -554,14 +555,13 @@ def evaluate(trainer, datamodule, cfg, stage):
 
         test_res = trainer.test(test_dataloaders=eval_dataloader, ckpt_path=ckpt_path)[0]
 
-        if ("Galaxy" in type(datamodule.test_dataset).__name__) and stage == "predictor":
+        if isinstance(datamodule.test_dataset,GalaxyDataset) and stage == "predictor":
             logger.warning("Testing on Galaxy test set.")
             test_dataloader = datamodule.eval_dataloader(True)
             model = load_best_ckpt(trainer, ckpt_path=ckpt_path)
             test_preds = trainer.predict(model=model, dataloaders=test_dataloader)
             add_res = kaggle_eval(predictions=test_preds, message="test_pred_{}".format(datetime.now()))
             test_res.update(add_res)
-            test_res.update({'test/pred/sqrt_loss': math.sqrt(test_res['test/pred/loss'])})
 
         # ensure that select only correct stage (important when communicating)
         test_res = {k: v for k, v in test_res.items() if f"/{cfg.stage}/" in k}
@@ -757,7 +757,7 @@ def kaggle_eval(predictions, message='Kaggle Evaluation {}'.format(datetime.now(
         my_submission = [s for s in kaggle.api.process_response(submissions_list) if s['description']==message]
         result = my_submission[0]['publicScore']
 
-        return {"test/pred/kaggle_score": float(result), "test/pred/err": float(result)}
+        return {"test/pred/kaggle_score": float(result), "test/pred/loss": float(result)**2 }
 
 if __name__ == "__main__":
     OmegaConf.register_new_resolver("format", format_resolver)
