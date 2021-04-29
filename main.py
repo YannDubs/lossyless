@@ -600,17 +600,18 @@ def finalize_stage_(
     logger.info(f"Finalizing {stage}.")
 
     if stage != "communication":
+
         # no checkpoints during communication
         assert (
             cfg.checkpoint.kwargs.dirpath != cfg.paths.pretrained.save
         ), "This will remove diesired checkpoints"
 
         # remove all checkpoints as best is already saved elsewhere
-        remove_rf(cfg.checkpoint.kwargs.dirpath) 
+        remove_rf(cfg.checkpoint.kwargs.dirpath, not_exist_ok=True) 
 
         # don't keep the pretrained model
         if not is_save_best:
-            remove_rf(cfg.paths.pretrained.save)
+            remove_rf(cfg.paths.pretrained.save, not_exist_ok=True)
 
     if not cfg.is_no_save:
         # save end file to make sure that you don't retrain if preemption

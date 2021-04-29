@@ -2,7 +2,7 @@
 
 experiment="clip_staggered"
 notes="
-**Goal**: Add an entropy bottleneck to CLIP, and trains only entropy bottleneck.
+**Goal**: Add an entropy bottleneck to CLIP, and trains only entropy bottleneck.This pretrains the generic compressor that will be reused for all downstream datasets.
 "
 
 # parses special mode for running the script
@@ -19,25 +19,11 @@ data@data_feat=coco
 checkpoint@checkpoint_feat=bestValLoss
 trainer.max_epochs=50
 featurizer=bottleneck_clip_lossyZ
+paths.pretrained.save=$pretrained_path
 $add_kwargs
 "
 
-# FEATURIZER
-# all hyperparameters (it's quite robust as you are only training a few hyperparameters)
-# the only really important ones are beta and factor_beta
-kwargs_multi="
-data_feat.kwargs.batch_size=32
-featurizer.loss.beta=5e-2
-distortion.factor_beta=1e-3
-optimizer@optimizer_feat=Adam
-optimizer_feat.kwargs.weight_decay=1e-5
-optimizer_feat.kwargs.lr=3e-4
-scheduler@scheduler_feat=plateau_quick
-optimizer@optimizer_coder=Adam
-optimizer_coder.kwargs.weight_decay=3e-6
-optimizer_coder.kwargs.lr=1e-4
-scheduler@scheduler_coder=expdecay100
-" 
+kwargs_multi="" 
 
 if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in ""         
