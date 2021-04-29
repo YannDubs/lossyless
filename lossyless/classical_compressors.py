@@ -1,7 +1,6 @@
 import logging
 
 import PIL
-
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
@@ -84,7 +83,7 @@ class WebP(PillowCodec):
 
 class PNG(PillowCodec):
     """
-    Use ZLIB linked in Pillow for PNG (lossless) compression. 
+    Use ZLIB linked in Pillow for PNG (lossless) compression.
     """
 
     fmt = "png"
@@ -166,7 +165,7 @@ class ClassicalCompressor(pl.LightningModule):
         X : torch.Tensor of shape=[batch_size, *data.shape]
             Data to compress.
 
-        kwargs : 
+        kwargs :
             Placeholder.
 
         Returns

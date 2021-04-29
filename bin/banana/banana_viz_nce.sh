@@ -83,12 +83,12 @@ fi
 wait 
 
 # for featurizer
-col_val_subset=""
-python aggregate.py \
-       experiment=$experiment  \
-       patterns.predictor=null \
-       $col_val_subset \
-       agg_mode=[summarize_metrics]
+# col_val_subset=""
+# python aggregate.py \
+#        experiment=$experiment  \
+#        patterns.predictor=null \
+#        $col_val_subset \
+#        agg_mode=[summarize_metrics]
 
 col_val_subset=""
 python load_pretrained.py \
@@ -98,5 +98,5 @@ python load_pretrained.py \
        server=local \
        trainer.gpus=0 \
        $kwargs_multi \
-       load_pretrained.mode=[maxinv_distribution_plot,codebook_plot] \
-       -m
+       +load_pretrained.codebook_plot.is_plot_codebook=false \
+       load_pretrained.mode=[codebook_plot] 
