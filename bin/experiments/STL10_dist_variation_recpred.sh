@@ -34,8 +34,6 @@ trainer.max_epochs=100
 hydra/sweeper=optuna
 hydra/sweeper/sampler=random
 hypopt=optuna
-monitor_direction=[minimize,minimize]
-monitor_return=[test/pred/err,test/feat/rate]
 "
 
 # sweeping arguments
@@ -45,6 +43,8 @@ featurizer=neural_rec
 architecture@encoder=resnet18
 hydra.sweeper.n_trials=200
 hydra.sweeper.n_jobs=200
+monitor_direction=[minimize,minimize]
+monitor_return=[test/pred/err,test/feat/rate]
 distortion.factor_beta=1.0
 data_feat.kwargs.batch_size=tag(log,int(interval(32,128)))
 encoder.z_dim=tag(log,int(interval(32,512)))
@@ -77,6 +77,8 @@ evaluation.featurizer.is_evaluate=False
 featurizer.quality=1,3,5,10,20,30,40,70,95
 hydra.sweeper.n_trials=300
 hydra.sweeper.n_jobs=300
+monitor_direction=[minimize]
+monitor_return=[test/pred/err]
 seed=0,1,2,3,4
 data_pred.kwargs.batch_size=tag(log,int(interval(16,64)))
 optimizer@optimizer_pred=SGD_likeadam,Adam
@@ -90,8 +92,6 @@ if [ "$is_plot_only" = false ] ; then
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt_jpeg $kwargs_dep -m &
-
-    sleep 7
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt_ivae $kwargs_dep -m &
 

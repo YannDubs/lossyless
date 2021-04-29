@@ -111,8 +111,6 @@ if [ "$is_plot_only" = false ] ; then
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt_ince $kwargs_dep -m &
 
-    sleep 7
-
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt_ivae $kwargs_dep -m &
 
     sleep 7
