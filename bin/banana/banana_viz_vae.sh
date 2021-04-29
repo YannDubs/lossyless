@@ -94,11 +94,11 @@ fi
 wait 
 
 # for featurizer
-# col_val_subset=""
-# python aggregate.py \
-#        experiment=$experiment  \
-#        $col_val_subset \
-#        agg_mode=[summarize_metrics]
+col_val_subset=""
+python aggregate.py \
+       experiment=$experiment  \
+       $col_val_subset \
+       agg_mode=[summarize_metrics]
 
 
 col_val_subset=""

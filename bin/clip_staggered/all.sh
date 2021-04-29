@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-export pretrained_path=`dirname $0`/../../clip
+export pretrained_path=`dirname $0`/../../hub
 
 # pretrain staggered model (only uncomment to rerun)
 #`dirname $0`/clip_staggered.sh "$@"
