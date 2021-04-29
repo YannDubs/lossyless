@@ -98,5 +98,6 @@ python load_pretrained.py \
        server=local \
        trainer.gpus=0 \
        $kwargs_multi \
-       load_pretrained.mode=[maxinv_distribution_plot,codebook_plot] \
+       +load_pretrained.codebook_plot.is_plot_codebook=false \
+       load_pretrained.mode=[codebook_plot] \
        -m

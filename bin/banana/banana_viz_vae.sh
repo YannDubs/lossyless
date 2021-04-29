@@ -94,19 +94,12 @@ fi
 wait 
 
 # for featurizer
-# col_val_subset=""
-# python aggregate.py \
-#        experiment=$experiment  \
-#        $col_val_subset \
-#        agg_mode=[summarize_metrics]
+col_val_subset=""
+python aggregate.py \
+       experiment=$experiment  \
+       $col_val_subset \
+       agg_mode=[summarize_metrics]
 
-
-kwargs_multi="
-data@data_feat=banana_rot
-distortion=ivae
-featurizer.loss.beta=0.07
-featurizer=neural_rec
-"
 
 col_val_subset=""
 python load_pretrained.py \
@@ -116,4 +109,5 @@ python load_pretrained.py \
        server=local \
        trainer.gpus=0 \
        $kwargs_multi \
-       load_pretrained.mode=[codebook_plot,maxinv_distribution_plot] 
+       load_pretrained.mode=[codebook_plot,maxinv_distribution_plot] \
+       -m 
