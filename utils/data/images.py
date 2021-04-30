@@ -29,7 +29,8 @@ from torchvision.transforms import (CenterCrop, ColorJitter, Compose, Lambda,
                                     ToPILImage, ToTensor)
 from utils.helpers import remove_rf
 
-from .augmentations import (CIFAR10Policy, EquivariantRotation, ImageNetPolicy,
+from .augmentations import (CIFAR10Policy, EquivariantRandomRotation,
+                            EquivariantRandomResizedCrop, ImageNetPolicy,
                             get_finetune_augmentations,
                             get_simclr_augmentations)
 from .base import LossylessDataModule, LossylessDataset
@@ -268,12 +269,30 @@ class LossylessImgDataset(LossylessDataset):
         Return a dictortionary of dictionaries containing all possible augmentations of interest.
         first dictionary say which kind of data they act on. Augmentations for (img,label).
         """
+        shape = self.shapes["input"]
+
         return dict(
             PIL={
-                "equiv_rotation_0": EquivariantRotation(30, 0),
-                "equiv_rotation_0.05": EquivariantRotation(30, 0.05),
-                "equiv_rotation_0.2": EquivariantRotation(30, 0.2),
-                "equiv_rotation_0.5": EquivariantRotation(30, 0.5),
+                "equiv_rotation_0": EquivariantRandomRotation(equivariant_degrees=10, invariant_degrees=5, p=0),
+                "equiv_rotation_0.05": EquivariantRandomRotation(equivariant_degrees=10, invariant_degrees=5, p=0.05),
+                "equiv_rotation_0.2": EquivariantRandomRotation(equivariant_degrees=10, invariant_degrees=5, p=0.2),
+                "equiv_rotation_0.5": EquivariantRandomRotation(equivariant_degrees=10, invariant_degrees=5, p=0.5),
+                "equiv_resize_crop_0": EquivariantRandomResizedCrop(size=(shape[1], shape[2]),
+                                                                    equivariant_scale=(0.3, 1.0),
+                                                                    invariant_scale=(0.5, 1.0), ratio=(0.7, 1.4),
+                                                                    p=0.0),
+                "equiv_resize_crop_0.05": EquivariantRandomResizedCrop(size=(shape[1], shape[2]),
+                                                                       equivariant_scale=(0.3, 1.0),
+                                                                       invariant_scale=(0.5, 1.0), ratio=(0.7, 1.4),
+                                                                       p=0.05),
+                "equiv_resize_crop_0.2": EquivariantRandomResizedCrop(size=(shape[1], shape[2]),
+                                                                      equivariant_scale=(0.3, 1.0),
+                                                                      invariant_scale=(0.5, 1.0), ratio=(0.7, 1.4),
+                                                                      p=0.2),
+                "equiv_resize_crop_0.5": EquivariantRandomResizedCrop(size=(shape[1], shape[2]),
+                                                                      equivariant_scale=(0.3, 1.0),
+                                                                      invariant_scale=(0.5, 1.0), ratio=(0.7, 1.4),
+                                                                      p=0.5),
             },
             tensor={},
         )

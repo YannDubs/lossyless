@@ -5,7 +5,7 @@ defaults:
 job_id: ${hydra:job.num}_${hydra:job.id} # job num is number in sweep. Id is unique ID like SLURM_JOB_ID
 
 logger:
-  name: tensorboard
+  name: wandb
 
 hydra:
   launcher:
