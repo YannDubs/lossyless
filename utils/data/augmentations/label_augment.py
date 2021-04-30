@@ -31,6 +31,8 @@ def _setup_angle(x, name, req_sizes=(2, )):
 
 def _torch_random_choice(x, pdf):
 
+    # ! waiting for https://github.com/PyTorchLightning/pytorch-lightning/discussions/6957
+
     if not isinstance(x, torch.Tensor):
         x = torch.tensor(x)
 
@@ -103,11 +105,11 @@ class EquivariantTransformation(torch.nn.Module):
         elif aug_idx == 0:
             img = self.equivariant_aug_left(img)
             if torch.rand((1,)) < self.p:
-                label = torch.randint(low = 0, high = self.num_classes - 1, size=(1,)).numpy()[0]
+                label = torch.randint(high = self.num_classes, size=(1,)).numpy()[0]
         else:
             img = self.equivariant_aug_right(img)
             if torch.rand((1,)) < self.p:
-                label = torch.randint(low = 0, high = self.num_classes - 1, size=(1,)).numpy()[0]
+                label = torch.randint(high = self.num_classes, size=(1,)).numpy()[0]
 
         return img, label
 
@@ -120,7 +122,7 @@ class EquivariantRandomRotation(EquivariantTransformation):
         Args:
             invariant_degrees (sequence or number): Range of degrees to select invariant actions from (label stays the
                 same). If degrees is a number instead of sequence like (min, max), the range of degrees will be
-                (-degrees, +degrees).
+                (-degrees, +degrees). This should contain the interval invariant_degrees.
             equivariant_degrees (sequence or number): Range of degrees to select equivariant actions from (label can
                 change change with propability p). If degrees is a number instead of sequence like (min, max), the range
                 of degrees will be (-degrees, +degrees).
@@ -167,7 +169,7 @@ class EquivariantRandomResizedCrop(EquivariantTransformation):
                 made. If provided a sequence of length 1, it will be interpreted as (size[0], size[0]).
                 In torchscript mode size as single int is not supported, use a sequence of length 1: ``[size, ]``.
             invariant_scale (tuple of float): scale range of the cropped image before resizing, relatively to the
-                origin image.
+                origin image. This should contain the interval invariant_scale.
             equivariant_scale (tuple of float): scale range of the cropped image before resizing, relatively to the
                 origin image.
         """
@@ -185,9 +187,9 @@ class EquivariantRandomResizedCrop(EquivariantTransformation):
         self.invariant_aug = RandomResizedCrop(size=size,scale=invariant_scale, *args, **kwargs)
 
         assert equivariant_scale[0] <= invariant_scale[0], "Problem with data augmentations: Range of equivariant " \
-                                                              "scale should entail invariant degrees."
+                                                              "scale should entail invariant scale."
         assert invariant_scale[1] <= equivariant_scale[1], "Problem with data augmentations: Range of equivariant " \
-                                                              "scale should entail invariant degrees."
+                                                              "scale should entail invariant scale."
 
         self.equivariant_aug_left = RandomResizedCrop(size=size,scale=(equivariant_scale[0], invariant_scale[0])
                                                    , *args, **kwargs)

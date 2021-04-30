@@ -40,8 +40,8 @@ kwargs_hypopt="
 hydra/sweeper=optuna
 hydra/sweeper/sampler=random
 hypopt=optuna
-hydra.sweeper.n_trials=600
-hydra.sweeper.n_jobs=600
+hydra.sweeper.n_trials=400
+hydra.sweeper.n_jobs=400
 monitor_direction=[minimize,minimize]
 monitor_return=[test/pred/err,test/comm/rate]
 data_feat.kwargs.batch_size=tag(log,int(interval(32,128)))
@@ -60,7 +60,7 @@ optimizer_coder.kwargs.lr=tag(log,interval(1e-4,1e-3))
 scheduler@scheduler_feat=cosine,plateau_quick,plateau
 scheduler@scheduler_coder=cosine_restart,expdecay100,plateau_quick,unifmultistep100
 seed=0,1,2,3,4
-data_pred.kwargs.batch_size=tag(log,int(interval(16,64)))
+data_pred.kwargs.batch_size=tag(log,int(interval(32,64)))
 predictor.arch_kwargs.hid_dim=tag(log,int(interval(1024,4096)))
 predictor.arch_kwargs.dropout_p=interval(0.,0.5)
 predictor.arch_kwargs.n_hid_layers=1,2
@@ -72,7 +72,7 @@ scheduler@scheduler_pred=cosine,plateau_quick,cosine_restart,expdecay100,expdeca
 
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in "rate=MI_unitgaussian,MI_vamp" "rate=H_factorized,H_hyper,H_hyper_large,H_clip rate.kwargs.invertible_processing=null,diag,psd "
+  for kwargs_dep in "rate=MI_unitgaussian,MI_vamp" "rate=H_factorized,H_hyper rate.kwargs.invertible_processing=null,diag,psd "
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt $kwargs_dep -m &
