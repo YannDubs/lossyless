@@ -553,8 +553,6 @@ def evaluate(trainer, datamodule, cfg, stage):
         eval_dataloader = datamodule.eval_dataloader(cfg.evaluation.is_eval_on_test)
         ckpt_path = cfg.evaluation[stage].ckpt_path
 
-
-
         if isinstance(datamodule.test_dataset,GalaxyDataset) and stage == "predictor":
             logger.warning("Testing on Galaxy test set.")
             test_dataloader = datamodule.eval_dataloader(True)
