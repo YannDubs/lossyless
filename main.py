@@ -4,9 +4,13 @@ This should be called by `python main.py <conf>` where <conf> sets all configs f
 the file `config/main.yaml` for details about the configs. or use `python main.py -h`.
 """
 import copy
+import csv
+from datetime import datetime
 import logging
 import math
 import subprocess
+from time import sleep
+import os
 from pathlib import Path
 
 import compressai
@@ -21,6 +25,9 @@ from omegaconf import OmegaConf
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from pytorch_lightning.plugins import DDPPlugin, DDPSpawnPlugin
+from pytorch_lightning.utilities.exceptions import MisconfigurationException
+from pytorch_lightning.utilities.cloud_io import load as pl_load
+from pytorch_lightning.utilities import rank_zero_warn
 
 import lossyless
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
@@ -34,6 +41,7 @@ from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
 from utils.data import get_datamodule
+from utils.data.images import GalaxyDataset
 from utils.helpers import (
     ModelCheckpoint,
     apply_featurizer,
@@ -52,6 +60,11 @@ try:
     import wandb
 except ImportError:
     pass
+
+try:
+    import kaggle
+except:
+    logger.warning("WARNING: import kaggle failed, only important if you run GalaxyZoo experiments.")
 
 
 logger = logging.getLogger(__name__)
@@ -539,9 +552,16 @@ def evaluate(trainer, datamodule, cfg, stage):
         trainer.lightning_module.stage = cfg.stage  # logging correct stage
         eval_dataloader = datamodule.eval_dataloader(cfg.evaluation.is_eval_on_test)
         ckpt_path = cfg.evaluation[stage].ckpt_path
-        test_res = trainer.test(test_dataloaders=eval_dataloader, ckpt_path=ckpt_path)[
-            0
-        ]
+
+        if isinstance(datamodule.test_dataset,GalaxyDataset) and stage == "predictor":
+            logger.warning("Testing on Galaxy test set.")
+            test_dataloader = datamodule.eval_dataloader(True)
+            model = load_best_ckpt(trainer, ckpt_path=ckpt_path)
+            test_preds = trainer.predict(model=model, dataloaders=test_dataloader)
+            test_res = kaggle_eval(predictions=test_preds, message="test_pred_{}".format(datetime.now()))
+        else: # most common case:
+            test_res = trainer.test(test_dataloaders=eval_dataloader, ckpt_path=ckpt_path)[0]
+
         # ensure that select only correct stage (important when communicating)
         test_res = {k: v for k, v in test_res.items() if f"/{cfg.stage}/" in k}
 
@@ -678,6 +698,66 @@ def get_hypopt_monitor(cfg, all_results):
         return out[0]  # return single value rather than tuple
     return tuple(out)
 
+def load_best_ckpt(trainer, ckpt_path):
+    """Returns the model from trainer that is assosiated with ckpt_path."""
+    model = trainer.lightning_module
+    # if user requests the best checkpoint but we don't have it, error
+    if ckpt_path == 'best' and not trainer.checkpoint_callback.best_model_path:
+        raise MisconfigurationException(
+            'ckpt_path is "best", but ModelCheckpoint is not configured to save the best model.'
+        )
+
+    # load best weights
+    if ckpt_path is not None:
+        # ckpt_path is 'best' so load the best model
+        if ckpt_path == 'best':
+            ckpt_path = trainer.checkpoint_callback.best_model_path
+
+        if len(ckpt_path) == 0:
+            rank_zero_warn(
+                f'.test() found no path for the best weights, {ckpt_path}. Please '
+                f'specify a path for a checkpoint .test(ckpt_path=PATH)'
+            )
+            return {}
+
+        trainer.training_type_plugin.barrier()
+
+        ckpt = pl_load(ckpt_path, map_location=lambda storage, loc: storage)
+        model.load_state_dict(ckpt['state_dict'])
+    return model
+
+def kaggle_eval(predictions, message='Kaggle Evaluation {}'.format(datetime.now())):
+
+        tmp_path = os.path.join(os.getcwd(),'test_predictions.csv')
+
+        with open(tmp_path, 'w') as csvfile:
+            writer = csv.writer(csvfile)
+
+            writer.writerow(
+                ['GalaxyID', 'Class1.1', 'Class1.2', 'Class1.3', 'Class2.1', 'Class2.2', 'Class3.1', 'Class3.2',
+                 'Class4.1',
+                 'Class4.2', 'Class5.1', 'Class5.2', 'Class5.3', 'Class5.4', 'Class6.1', 'Class6.2', 'Class7.1',
+                 'Class7.2',
+                 'Class7.3', 'Class8.1', 'Class8.2', 'Class8.3', 'Class8.4', 'Class8.5', 'Class8.6', 'Class8.7',
+                 'Class9.1',
+                 'Class9.2', 'Class9.3', 'Class10.1', 'Class10.2', 'Class10.3', 'Class11.1', 'Class11.2', 'Class11.3',
+                 'Class11.4', 'Class11.5', 'Class11.6'])
+
+            for prediction in predictions:
+                for idx, pred in zip(prediction[0], prediction[1]):
+                    row = [idx] + pred[0].tolist()
+                    writer.writerow(row)
+
+        kaggle.api.competition_submit(file_name=tmp_path,
+                                      message=message,
+                                      competition="galaxy-zoo-the-galaxy-challenge")
+
+        sleep(5)   # wait for kaggle to process our submission
+        submissions_list = kaggle.api.competitions_submissions_list_with_http_info(id="galaxy-zoo-the-galaxy-challenge")
+        my_submission = [s for s in kaggle.api.process_response(submissions_list) if s['description']==message]
+        result = my_submission[0]['publicScore']
+
+        return {"test/pred/kaggle_score": float(result), "test/pred/loss": float(result)**2 }
 
 if __name__ == "__main__":
     OmegaConf.register_new_resolver("format", format_resolver)
