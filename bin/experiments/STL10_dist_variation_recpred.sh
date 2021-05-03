@@ -98,3 +98,18 @@ if [ "$is_plot_only" = false ] ; then
     sleep 7
   done
 fi
+
+data="merged" # want to access both ther featurizer data and the  predictor data
+python aggregate.py \
+       experiment=$experiment  \
+       agg_mode=[summarize_metrics]
+
+python aggregate.py \
+       experiment=$experiment  \
+       $col_val_subset \
+       +plot_pareto_front.data="${data}" \
+       +plot_pareto_front.rate_col='test/comm/rate' \
+       +plot_pareto_front.distortion_col='test/pred/loss' \
+       +plot_pareto_front.logbase_x=2 \
+       +plot_pareto_front.hue='dist' \
+       agg_mode=[plot_pareto_front] # this will actually only do the plotting we don't have AURD on pareto optimal curves yet
