@@ -155,6 +155,8 @@ class ClassicalCompressor(pl.LightningModule):
                 self.compressor = WebP(quality)
             else:
                 raise ValueError(f"Unkown featurizer={self.hparams.featurizer.mode}")
+        
+        self.stage = self.hparams.stage  # allow changing to stages
 
     @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_return_out=False, **kwargs):
@@ -198,7 +200,7 @@ class ClassicalCompressor(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         loss, logs, _ = self.step(batch)
         self.log_dict(
-            {f"test/{k}": v for k, v in logs.items()},
+            {f"test/{self.stage}/{k}": v for k, v in logs.items()},
             on_epoch=True,
             on_step=False,
             sync_dist=True,
