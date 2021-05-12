@@ -46,6 +46,7 @@ class PillowCodec(codecs.PillowCodec):
 
         batch_out = dict_mean(outs)
         batch_out["n_bits"] = batch_out["bpp"] * height * width
+        batch_out["rate"] = batch_out["n_bits"] # for classical compressors theoretical and actual rate is same
         rename_keys_(
             batch_out,
             {"encoding_time": "sender_time", "decoding_time": "receiver_time"},
