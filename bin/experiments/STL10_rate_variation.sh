@@ -68,11 +68,12 @@ optimizer@optimizer_pred=SGD_likeadam,Adam,AdamW
 optimizer_pred.kwargs.weight_decay=tag(log,interval(1e-8,1e-4))
 optimizer_pred.kwargs.lr=tag(log,interval(1e-4,1e-3))
 scheduler@scheduler_pred=cosine,plateau_quick,cosine_restart,expdecay100,expdecay1000,unifmultistep100
+rate=H_factorized,H_hyper,MI_unitgaussian
 "
 
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in "rate=MI_unitgaussian,MI_vamp" "rate=H_factorized,H_hyper rate.kwargs.invertible_processing=null,diag,psd "
+  for kwargs_dep in ""
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt $kwargs_dep -m &

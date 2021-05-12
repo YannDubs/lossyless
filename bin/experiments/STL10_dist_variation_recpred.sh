@@ -4,7 +4,7 @@
 export MKL_SERVICE_FORCE_INTEL=1 # avoid server error
 export HYDRA_FULL_ERROR=1
 
-experiment="STL10_dist_variation_recpred_"
+experiment="STL10_dist_variation_recpred"
 notes="
 **Goal**: Different distortions on STL10: iNCE,iVAE,VAE, predicted on reconstructions with Resnet18, ca. 100 runs for each config
 "
@@ -98,18 +98,3 @@ if [ "$is_plot_only" = false ] ; then
     sleep 7
   done
 fi
-
-data="merged" # want to access both ther featurizer data and the  predictor data
-python aggregate.py \
-       experiment=$experiment  \
-       agg_mode=[summarize_metrics]
-
-python aggregate.py \
-       experiment=$experiment  \
-       $col_val_subset \
-       +plot_pareto_front.data="${data}" \
-       +plot_pareto_front.rate_col='test/comm/rate' \
-       +plot_pareto_front.distortion_col='test/pred/loss' \
-       +plot_pareto_front.logbase_x=2 \
-       +plot_pareto_front.hue='dist' \
-       agg_mode=[plot_pareto_front] # this will actually only do the plotting we don't have AURD on pareto optimal curves yet

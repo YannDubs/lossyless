@@ -479,9 +479,9 @@ def prediction_loss(
     elif agg_over_tasks == "std":
         loss = loss.std(keepdim=True, dim=1)
     elif agg_over_tasks == "min":
-        loss = loss.min(keepdim=True, dim=1)
+        loss = loss.min(keepdim=True, dim=1)[0]
     elif agg_over_tasks == "median":
-        loss = loss.median(keepdim=True, dim=1)
+        loss = loss.median(keepdim=True, dim=1)[0]
     elif agg_over_tasks is None:
         loss = loss  # shape = [batch_size, n_tasks]
     else:
