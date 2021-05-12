@@ -68,14 +68,31 @@ optimizer@optimizer_pred=SGD_likeadam,Adam,AdamW
 optimizer_pred.kwargs.weight_decay=tag(log,interval(1e-8,1e-4))
 optimizer_pred.kwargs.lr=tag(log,interval(1e-4,1e-3))
 scheduler@scheduler_pred=cosine,plateau_quick,cosine_restart,expdecay100,expdecay1000,unifmultistep100
+rate=H_factorized,H_hyper,MI_unitgaussian
 "
 
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in "rate=MI_unitgaussian,MI_vamp" "rate=H_factorized,H_hyper rate.kwargs.invertible_processing=null,diag,psd "
+  for kwargs_dep in ""
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt $kwargs_dep -m &
 
   done
 fi
+
+data="merged" # want to access both ther featurizer data and the  predictor data
+python aggregate.py \
+       experiment=$experiment  \
+       agg_mode=[summarize_metrics]
+
+python aggregate.py \
+       experiment=$experiment  \
+       $col_val_subset \
+       +plot_pareto_front.data="${data}" \
+       +plot_pareto_front.rate_col='test/comm/rate' \
+       +plot_pareto_front.distortion_col='test/pred/loss' \
+       +plot_pareto_front.logbase_x=2 \
+       +plot_pareto_front.hue='rate' \
+       agg_mode=[plot_pareto_front] # this will actually only do the plotting we don't have AURD on pareto optimal curves yet
+

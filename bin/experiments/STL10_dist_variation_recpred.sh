@@ -4,7 +4,7 @@
 export MKL_SERVICE_FORCE_INTEL=1 # avoid server error
 export HYDRA_FULL_ERROR=1
 
-experiment="STL10_dist_variation_recpred_"
+experiment="STL10_dist_variation_recpred"
 notes="
 **Goal**: Different distortions on STL10: iNCE,iVAE,VAE, predicted on reconstructions with Resnet18, ca. 100 runs for each config
 "
