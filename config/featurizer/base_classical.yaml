@@ -13,3 +13,6 @@ featurizer:
 evaluation:
   featurizer:
     ckpt_path: null # has to use current checkpoint (cannot use best because nottrained)
+  
+  communication:
+    ckpt_path: null # has to use current checkpoint (cannot use best because nottrained)

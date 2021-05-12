@@ -17,6 +17,9 @@ notebooks
 old
 .idea
 
+# pyotrch
+*.ckpt
+
 # MAC
 .DS_Store
 __MACOSX/
