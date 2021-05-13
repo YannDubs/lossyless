@@ -73,6 +73,8 @@ def get_Architecture(mode, complexity=None, **kwargs):
 
         return partial(CNN, **kwargs)
 
+    elif mode == "balle":
+        return partial(BALLE, **kwargs)
     elif mode == "simclr":
         return partial(SimCLRResnet50, **kwargs)
     elif mode == "simclr_projector":
@@ -538,32 +540,7 @@ class CNN(nn.Module):
 
         super().__init__()
 
-        if isinstance(out_dim, int) and not isinstance(in_shape, int):
-            self.is_transpose = False
-        else:
-            in_shape, out_dim = out_dim, in_shape
-            self.is_transpose = True
-
-        resizer = torch.nn.Identity()
-        is_input_pow2 = is_pow2(in_shape[1]) and is_pow2(in_shape[2])
-        if not is_input_pow2:
-            # shape that you will work with which are power of 2
-            in_shape_pow2 = list(in_shape)
-            in_shape_pow2[1] = closest_pow(in_shape[1], base=2)
-            in_shape_pow2[2] = closest_pow(in_shape[2], base=2)
-
-            if self.is_transpose:
-                # the model will output image of `in_shape_pow2` then will reshape to actual
-                resizer = transform_lib.Resize((in_shape[1], in_shape[2]))
-            else:
-                # the model will first resize to power of 2
-                resizer = transform_lib.Resize((in_shape_pow2[1], in_shape_pow2[2]))
-
-            logger.warning(
-                f"The input shape={in_shape} is not powers of 2 so we will rescale it and work with shape {in_shape_pow2}."
-            )
-            # for the rest treat the image as if pow 2
-            in_shape = in_shape_pow2
+        in_shape, out_dim, resizer = self.validate_sizes(out_dim, in_shape)
 
         self.in_shape = in_shape
         self.out_dim = out_dim
@@ -619,6 +596,36 @@ class CNN(nn.Module):
 
         self.reset_parameters()
 
+    def validate_sizes(self, out_dim, in_shape):
+        if isinstance(out_dim, int) and not isinstance(in_shape, int):
+            self.is_transpose = False
+        else:
+            in_shape, out_dim = out_dim, in_shape
+            self.is_transpose = True
+
+        resizer = torch.nn.Identity()
+        is_input_pow2 = is_pow2(in_shape[1]) and is_pow2(in_shape[2])
+        if not is_input_pow2:
+            # shape that you will work with which are power of 2
+            in_shape_pow2 = list(in_shape)
+            in_shape_pow2[1] = closest_pow(in_shape[1], base=2)
+            in_shape_pow2[2] = closest_pow(in_shape[2], base=2)
+
+            if self.is_transpose:
+                # the model will output image of `in_shape_pow2` then will reshape to actual
+                resizer = transform_lib.Resize((in_shape[1], in_shape[2]))
+            else:
+                # the model will first resize to power of 2
+                resizer = transform_lib.Resize((in_shape_pow2[1], in_shape_pow2[2]))
+
+            logger.warning(
+                f"The input shape={in_shape} is not powers of 2 so we will rescale it and work with shape {in_shape_pow2}."
+            )
+            # for the rest treat the image as if pow 2
+            in_shape = in_shape_pow2
+
+        return in_shape, out_dim, resizer
+
     def make_block(self, in_chan, out_chan, Norm, is_bias, is_last, **kwargs):
 
         if self.is_transpose:
@@ -652,6 +659,139 @@ class CNN(nn.Module):
                 Norm(out_chan),
                 Activation(out_chan),
             ]
+
+    def reset_parameters(self):
+        weights_init(self)
+
+    def forward(self, X):
+        return self.model(X)
+
+
+class BALLE(nn.Module):
+    """CNN from Balle's factorized prior. The key difference with the other encoders, is that it 
+    keeps some spatial structure in Z. I.e. representation can be seen as a flattened latent image.
+
+    Notes
+    -----
+    - replicates https://github.com/InterDigitalInc/CompressAI/blob/a73c3378e37a52a910afaf9477d985f86a06634d/compressai/models/priors.py#L104
+
+    Parameters
+    ----------
+    in_shape : tuple of int
+        Size of the inputs (channels first). If integer and `out_dim` is a tuple of int, then will
+        transpose ("reverse") the CNN.
+
+    out_dim : int
+        Number of output channels. If tuple of int  and `in_shape` is an int, then will transpose
+        ("reverse") the CNN.
+
+    hid_dim : int, optional
+        Number of channels for every layer.
+
+    n_layers : int, optional
+        Number of layers, after every layer divides image by 2 on each side.
+
+    norm_layer : callable or {"batchnorm", "identity"}
+        Normalization layer.
+
+    activation : {"gdn"}U{any torch.nn activation}, optional
+        Activation to use. Typically that would be GDN for lossy image compression, but did not 
+        work for Galaxy (maybe because all black pixels).
+    """
+
+    validate_sizes = CNN.validate_sizes
+
+    def __init__(
+        self,
+        in_shape,
+        out_dim,
+        hid_dim=256,
+        n_layers=4,
+        norm_layer="batchnorm",
+        activation="ReLU",
+    ):
+        super().__init__()
+
+        in_shape, out_dim, resizer = self.validate_sizes(out_dim, in_shape)
+
+        self.in_shape = in_shape
+        self.out_dim = out_dim
+        self.hid_dim = hid_dim
+        self.n_layers = n_layers
+        self.activation = activation
+        self.norm_layer = norm_layer
+
+        # divide length by 2 at every step until smallest is 2
+        end_h = self.in_shape[1] // (2 ** self.n_layers)
+        end_w = self.in_shape[2] // (2 ** self.n_layers)
+
+        # channels of the output latent image
+        self.channel_out_dim = self.out_dim // (end_w * end_h)
+
+        layers = [
+            self.make_block(self.hid_dim, self.hid_dim)
+            for _ in range(self.n_layers - 2)
+        ]
+
+        if self.is_transpose:
+            pre_layers = [
+                nn.Unflatten(
+                    dim=-1, unflattened_size=(self.channel_out_dim, end_h, end_w)
+                ),
+                self.make_block(self.channel_out_dim, self.hid_dim),
+            ]
+            post_layers = [
+                self.make_block(self.hid_dim, self.in_shape[0], is_last=True),
+                resizer,
+            ]
+
+        else:
+            pre_layers = [resizer, self.make_block(self.in_shape[0], self.hid_dim)]
+            post_layers = [
+                self.make_block(self.hid_dim, self.channel_out_dim, is_last=True),
+                nn.Flatten(start_dim=1),
+            ]
+
+        self.model = nn.Sequential(*(pre_layers + layers + post_layers))
+
+        self.reset_parameters()
+
+    def make_block(
+        self, in_chan, out_chan, is_last=False, kernel_size=5, stride=2,
+    ):
+        if is_last:
+            Norm = nn.Identity
+        else:
+            Norm = get_Normalization(self.norm_layer, 2)
+
+        # don't use bias with batch_norm https://twitter.com/karpathy/status/1013245864570073090?l...
+        is_bias = Norm == nn.Identity
+
+        if self.is_transpose:
+            conv = nn.ConvTranspose2d(
+                in_chan,
+                out_chan,
+                kernel_size=kernel_size,
+                stride=stride,
+                output_padding=stride - 1,
+                padding=kernel_size // 2,
+                bias=is_bias,
+            )
+        else:
+            conv = nn.Conv2d(
+                in_chan,
+                out_chan,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=kernel_size // 2,
+                bias=is_bias,
+            )
+
+        if not is_last:
+            Activation = get_Activation(self.activation, inverse=self.is_transpose)
+            conv = nn.Sequential(conv, Norm(out_chan), Activation(out_chan))
+
+        return conv
 
     def reset_parameters(self):
         weights_init(self)
