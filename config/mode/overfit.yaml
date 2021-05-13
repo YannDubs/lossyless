@@ -1,0 +1,18 @@
+# @package _global_
+
+# try to overfit 5% of the training data
+
+timeout: 60
+
+other:
+  is_quick: True
+
+trainer:
+  max_epochs: 100
+  overfit_batches: 0.1
+
+logger:
+  wandb_kwargs: 
+    tags: [overfit, quick]
+    anonymous: true
+    project: tmp
