@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-experiment="hypopt_clip_bottleneck_pcam"
+experiment="hypopt_clip_bottleneck_stl10"
 notes="
 **Goal**: Hyperparameter tunning for CLIP with an additional entropy bottleneck
 "
@@ -16,7 +16,7 @@ timeout=$time
 encoder.z_dim=512
 is_only_feat=False
 data@data_feat=coco
-data@data_pred=pcam
+data@data_pred=stl10
 checkpoint@checkpoint_feat=bestValLoss
 checkpoint@checkpoint_pred=bestValLoss
 trainer.max_epochs=50
@@ -32,7 +32,7 @@ hydra/sweeper=optuna
 hydra/sweeper/sampler=random
 hypopt=optuna
 hydra.sweeper.n_trials=200
-hydra.sweeper.n_jobs=30
+hydra.sweeper.n_jobs=20
 monitor_direction=[minimize,minimize]
 monitor_return=[test/pred/err,test/comm/rate]
 "
@@ -43,19 +43,16 @@ kwargs_multi="
 $kwargs_hypopt
 data_feat.kwargs.batch_size=64
 featurizer.loss.beta_anneal=linear
-featurizer.loss.beta=tag(log,interval(5e-3,2e-2))
-distortion.factor_beta=tag(log,interval(5e-3,5e-2))
+featurizer.loss.beta=1e-2
+distortion.factor_beta=1e-2
 optimizer@optimizer_feat=AdamW
-optimizer_feat.kwargs.weight_decay=tag(log,interval(1e-8,1e-7))
-optimizer_feat.kwargs.lr=tag(log,interval(5e-5,1e-4))
-optimizer@optimizer_coder=Adam,AdamW
-optimizer_coder.kwargs.weight_decay=tag(log,interval(5e-7,5e-6))
+optimizer_feat.kwargs.weight_decay=3e-8
+optimizer_feat.kwargs.lr=5e-5
+optimizer@optimizer_coder=AdamW
+optimizer_coder.kwargs.weight_decay=1e-6
 optimizer_coder.kwargs.lr=3e-4
-scheduler@scheduler_feat=expdecay1000,expdecay100,unifmultistep100,unifmultistep1000
-scheduler@scheduler_coder=expdecay1000,expdecay100
-rate.kwargs.invertible_processing=diag
-rate.kwargs.is_endToEnd=False
-distortion.p_norm=1,2
+scheduler@scheduler_feat=expdecay1000
+scheduler@scheduler_coder=expdecay1000
 seed=0,1,2,3,4,5,6,7,8,9
 " 
 # seeds are not tuned over but swept because using random sampler

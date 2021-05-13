@@ -3,7 +3,7 @@ defaults:
 
 name: H_clip
 kwargs:
-  side_z_dim: 128
+  side_z_dim: 32
   kwargs_ent_bottleneck:
     init_scale: 10 # input should be at initialization in [-init_scale, init_scale]. Larger might create overhead. You can use something like 10 for large images but smaller for smaller 
   

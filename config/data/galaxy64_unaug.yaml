@@ -1,0 +1,9 @@
+
+defaults:
+  - galaxy64
+
+name: galaxy64_unaug
+
+kwargs:
+  dataset_kwargs:
+    equivalence: []

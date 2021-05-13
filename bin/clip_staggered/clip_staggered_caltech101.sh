@@ -14,7 +14,7 @@ logger.kwargs.project=clip_staggered
 experiment=$experiment 
 timeout=$time
 encoder.z_dim=512
-is_only_feat=True
+is_only_feat=False
 data@data_feat=coco
 data@data_pred=caltech101
 trainer.max_epochs=100
@@ -26,8 +26,10 @@ checkpoint@checkpoint_pred=bestValLoss
 paths.pretrained.load=$pretrained_path
 featurizer.is_train=false
 evaluation.communication.ckpt_path=null
+rate.kwargs.side_z_dim=128
 $add_kwargs
 "
+# side_z_dim is temporary (should really use the default which will be 32)
 
 # sweeping arguments
 kwargs_hypopt="

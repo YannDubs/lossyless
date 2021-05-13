@@ -19,23 +19,52 @@ import torch
 from lossyless.helpers import BASE_LOG, Normalizer, check_import, to_numpy
 from torch.utils.data import DataLoader, random_split
 from torchvision import transforms as transform_lib
-from torchvision.datasets import (CIFAR10, CIFAR100, MNIST, STL10,
-                                  CocoCaptions, ImageFolder, ImageNet)
-from torchvision.transforms import (CenterCrop, ColorJitter, Compose, Lambda,
-                                    RandomAffine, RandomApply, RandomCrop,
-                                    RandomErasing, RandomGrayscale,
-                                    RandomHorizontalFlip, RandomResizedCrop,
-                                    RandomRotation, RandomVerticalFlip, Resize,
-                                    ToPILImage, ToTensor)
+from torchvision.datasets import (
+    CIFAR10,
+    CIFAR100,
+    MNIST,
+    STL10,
+    CocoCaptions,
+    ImageFolder,
+    ImageNet,
+)
+from torchvision.transforms import (
+    CenterCrop,
+    ColorJitter,
+    Compose,
+    Lambda,
+    RandomAffine,
+    RandomApply,
+    RandomCrop,
+    RandomErasing,
+    RandomGrayscale,
+    RandomHorizontalFlip,
+    RandomResizedCrop,
+    RandomRotation,
+    RandomVerticalFlip,
+    Resize,
+    ToPILImage,
+    ToTensor,
+)
 from utils.helpers import remove_rf
 
-from .augmentations import (CIFAR10Policy, EquivariantRotation, ImageNetPolicy,
-                            get_finetune_augmentations,
-                            get_simclr_augmentations)
+from .augmentations import (
+    CIFAR10Policy,
+    EquivariantRotation,
+    ImageNetPolicy,
+    get_finetune_augmentations,
+    get_simclr_augmentations,
+)
 from .base import LossylessDataModule, LossylessDataset
-from .helpers import (Caltech101BalancingWeights, Pets37BalancingWeights,
-                      download_url, image_loader, int_or_ratio, npimg_resize,
-                      unzip)
+from .helpers import (
+    Caltech101BalancingWeights,
+    Pets37BalancingWeights,
+    download_url,
+    image_loader,
+    int_or_ratio,
+    npimg_resize,
+    unzip,
+)
 
 try:
     import kaggle
@@ -1178,21 +1207,6 @@ class GalaxyDataset(ExternalImgDataset):
     @property
     def dataset_name(self):
         return "galaxy"
-
-    @property
-    def augmentations(self):
-        # TODO remove if we don't end up using those
-        augmentations = super().augmentations
-
-        # these are the augmentations used in kaggle
-        PIL_update = {
-            # in kaggle authors translate 69x69 images by /pm 4 pixel = 11.6%
-            "y_translation": RandomAffine(0, translate=(0, 0.116)),
-            "x_translation": RandomAffine(0, translate=(0.116, 0)),
-            "scale": RandomAffine(0, scale=(1.0 / 1.3, 1.3)),
-        }
-        augmentations["PIL"].update(PIL_update)
-        return augmentations
 
 
 class GalaxyDataModule(LossylessImgDataModule):

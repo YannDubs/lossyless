@@ -34,6 +34,7 @@ encoder:
 rate:
   kwargs: 
     is_endToEnd: False # shouldn't be needed becasue already frozen encoder
+    side_z_dim: 32
 
 optimizer_feat:
   mode: AdamW
