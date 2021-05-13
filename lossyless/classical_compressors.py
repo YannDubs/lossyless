@@ -116,6 +116,7 @@ class Identity(codecs.Codec):
         out = {
             "bpp": bpp,
             "n_bits": n_bits,
+            "rate": n_bits,
             "sender_time": 0,
             "receiver_time": 0,
         }

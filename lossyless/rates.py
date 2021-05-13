@@ -45,6 +45,9 @@ def get_rate_estimator(mode, z_dim=None, p_ZlX=None, **kwargs):
     elif mode == "H_hyper":
         return HRateHyperprior(z_dim, **kwargs)
 
+    elif mode == "H_spatial":
+        return HRateHyperpriorSpatial(z_dim, p_ZlX, **kwargs)
+
     elif mode == "MI":
         q_Z = get_marginalDist(
             kwargs.pop("prior_fam"), p_ZlX, **(kwargs.pop("prior_kwargs"))
@@ -54,7 +57,9 @@ def get_rate_estimator(mode, z_dim=None, p_ZlX=None, **kwargs):
     raise ValueError(f"Unkown rate estimator={mode}.")
 
 
-# only difference is that works with flatten z (it needs 4D tensor not 2d)
+# only difference is that we trreat all as a single vector, while in compressai treat as a small image
+# with channels.Each channel in compressai (and thus each point in our vector) is treated differently
+# but in compressai they "share" computations across spatial
 class EntropyBottleneck(CompressaiEntropyBottleneck):
     def forward(self, z):
         # entropy bottleneck takes 4 dim as inputs (as if images, where dim is channel)
@@ -806,3 +811,59 @@ class HRateHyperprior(HRateEstimator):
             unexpected_keys,
             error_msgs,
         )
+
+
+# Should really have allowed Z to be a tensor instead of a vector (in all parts of the code)
+class HRateHyperpriorSpatial(HRateHyperprior):
+    """HRateHyperprior but treats the spatial dimensions separately. THis only makes sense if the representation
+    can be treated spatially, which is the case with `BALLE` architecture. CUrrently only works
+    with square spaces.
+
+    Parameters
+    ----------
+    z_dim : int
+        Size of the representation as given. The representation is seen as a vector that should be 
+        flattened to (n_channels,-1,-1) where -1 is sqrt(z_dim // n_channels).
+
+    P_ZlX : CondDist, optional
+        Conditional distribution of the encoder. This should have a parameters 
+        `P_ZlX.mapper.channel_out_dim` that gives the number of channels of the latent z.
+
+    kwargs :
+        Additional arguments to HRateHyperprior.
+    """
+
+    def __init__(
+        self, z_dim, P_ZlX, **kwargs,
+    ):
+        self.raw_z_dim = z_dim
+        self.n_channels = P_ZlX.mapper.channel_out_dim
+        self.side_dim = int(math.sqrt(z_dim / self.n_channels))
+
+        super().__init__(self.n_channels, **kwargs)
+
+    def forward(self, z, p_Zlx, parent=None):
+        z = einops.rearrange(
+            z,
+            "b (c h w) -> (b h w) c",
+            h=self.side_dim,
+            w=self.side_dim,
+            c=self.n_channels,
+        )
+        z_hat, rates, r_logs, r_other = super().forward(z, p_Zlx, parent)
+
+        z_hat = einops.rearrange(
+            z_hat,
+            "(b h w) c -> b (c h w)",
+            h=self.side_dim,
+            w=self.side_dim,
+            c=self.n_channels,
+        )
+        rates = einops.reduce(
+            rates, "(b h w) -> b", "sum", h=self.side_dim, w=self.side_dim
+        )
+
+        # before you were taking a mean over a batch that is larger than the real one => simply multiply
+        r_logs = {k: v * self.side_dim ** 2 for k, v in r_logs.items()}
+
+        return z_hat, rates, r_logs, r_other

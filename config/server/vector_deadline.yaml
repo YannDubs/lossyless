@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - vector
+
+hydra:
+  launcher:
+    additional_parameters:
+      qos: deadline 
+      account: deadline
+      partition: t4v2
