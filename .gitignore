@@ -16,6 +16,7 @@ notebooks
 .hydra
 old
 .idea
+hub
 
 # pyotrch
 *.ckpt
