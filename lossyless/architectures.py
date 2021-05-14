@@ -285,8 +285,7 @@ class Resnet(nn.Module):
             )
             self.resnet.maxpool = nn.Identity()
 
-        if self.out_dim != 1000:
-            self.resnet.fc = nn.Linear(self.resnet.fc.in_features, self.out_dim)
+        # TODO should deal with the case of pretrained but out dim != 1000
 
         self.reset_parameters()
 
@@ -299,9 +298,6 @@ class Resnet(nn.Module):
         # resnet is already correctly initialized
         if self.in_shape[1] < 100:
             weights_init(self.resnet.conv1)
-
-        if self.out_dim != 1000:
-            weights_init(self.resnet.fc)
 
 
 # TODO remove and keep only clip ViT
@@ -324,7 +320,7 @@ class SimCLRResnet50(nn.Module):
     is_post_project : bool, optional
         Whether to return the output after projection head instead of before.
 
-    kwargs : 
+    kwargs :
         Additional argument to the pl_bolts model.
     """
 
@@ -440,7 +436,7 @@ class CLIPViT(nn.Module):
     out_shape : int or tuple, optional
         Size of the output. Flattened needs to be 512.
 
-    kwargs : 
+    kwargs :
         Additional argument to clip.load model.
     """
 
@@ -520,7 +516,7 @@ class CNN(nn.Module):
         Activation to use.
 
     n_layers : int, optional
-        Number of layers. If `None` uses the required number of layers so that the smallest side 
+        Number of layers. If `None` uses the required number of layers so that the smallest side
         is 2 after encoding (i.e. one less than the maximum).
 
     kwargs :
@@ -668,7 +664,7 @@ class CNN(nn.Module):
 
 
 class BALLE(nn.Module):
-    """CNN from Balle's factorized prior. The key difference with the other encoders, is that it 
+    """CNN from Balle's factorized prior. The key difference with the other encoders, is that it
     keeps some spatial structure in Z. I.e. representation can be seen as a flattened latent image.
 
     Notes
@@ -695,7 +691,7 @@ class BALLE(nn.Module):
         Normalization layer.
 
     activation : {"gdn"}U{any torch.nn activation}, optional
-        Activation to use. Typically that would be GDN for lossy image compression, but did not 
+        Activation to use. Typically that would be GDN for lossy image compression, but did not
         work for Galaxy (maybe because all black pixels).
     """
 
@@ -757,7 +753,12 @@ class BALLE(nn.Module):
         self.reset_parameters()
 
     def make_block(
-        self, in_chan, out_chan, is_last=False, kernel_size=5, stride=2,
+        self,
+        in_chan,
+        out_chan,
+        is_last=False,
+        kernel_size=5,
+        stride=2,
     ):
         if is_last:
             Norm = nn.Identity

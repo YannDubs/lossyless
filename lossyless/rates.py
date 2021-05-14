@@ -3,10 +3,9 @@ import logging
 import math
 from contextlib import closing
 
-import numpy as np
-
 import compressai
 import einops
+import numpy as np
 import torch
 from compressai.entropy_models import EntropyBottleneck as CompressaiEntropyBottleneck
 from compressai.entropy_models.entropy_models import (
@@ -190,7 +189,7 @@ class RateEstimator(torch.nn.Module):
         Parameters
         ----------
         z : torch.Tensor shape=[batch_shape, z_dim]
-            Representation to compress. 
+            Representation to compress.
 
         parent : LearnableCompressor, optional
             Parent module. This is useful for some rates if they need access to other parts of the
@@ -216,7 +215,7 @@ class RateEstimator(torch.nn.Module):
         Returns
         -------
         z_hat : torch.Tensor shape=[batch_shape, z_dim]
-            Approx. decompressed representation. 
+            Approx. decompressed representation.
         """
         raise NotImplementedError()
 
@@ -416,10 +415,10 @@ class HRateEstimator(RateEstimator):
 
     invertible_processing : {None, "psd", "diag"}, optional
         Wether to apply an invertible linear layer before the bottleneck and then undo it (apply inverse).
-        This is especially important when the encoder is pretrained, indeed the entropy bottleneck 
-        adds  noise in [-0.5,0.5] to z and treats all dimensions as independent. THis is theoretically 
-        fine as the previous layer can learn to perform all processing that is needed such that those 
-        2 (arbitrary) conventions are met. But in practice this can (1) make learning harder for 
+        This is especially important when the encoder is pretrained, indeed the entropy bottleneck
+        adds  noise in [-0.5,0.5] to z and treats all dimensions as independent. THis is theoretically
+        fine as the previous layer can learn to perform all processing that is needed such that those
+        2 (arbitrary) conventions are met. But in practice this can (1) make learning harder for
         the distortion; (2) cannot be changed when the encoder is pretrained. "diag" applies a
         diagonal matrix. "psd" applies a positive definite matrix (better but a little slower).
         None doesn't apply anything.
@@ -431,7 +430,11 @@ class HRateEstimator(RateEstimator):
     is_can_compress = True
 
     def __init__(
-        self, z_dim, kwargs_ent_bottleneck={}, invertible_processing="diag", **kwargs,
+        self,
+        z_dim,
+        kwargs_ent_bottleneck={},
+        invertible_processing="diag",
+        **kwargs,
     ):
         self.invertible_processing = invertible_processing
         super().__init__(z_dim, **kwargs)
@@ -656,12 +659,17 @@ class HRateHyperprior(HRateEstimator):
     """
 
     def __init__(
-        self, z_dim, factor_dim=5, side_z_dim=None, is_pred_mean=True, **kwargs,
+        self,
+        z_dim,
+        factor_dim=5,
+        side_z_dim=None,
+        is_pred_mean=True,
+        **kwargs,
     ):
         super().__init__(z_dim, **kwargs)
 
         if side_z_dim is None:
-            side_z_dim = self.z_dim // factor_dim
+            side_z_dim = max(10, self.z_dim // factor_dim)
 
         self.side_z_dim = side_z_dim
         self.is_pred_mean = is_pred_mean
@@ -822,11 +830,11 @@ class HRateHyperpriorSpatial(HRateHyperprior):
     Parameters
     ----------
     z_dim : int
-        Size of the representation as given. The representation is seen as a vector that should be 
+        Size of the representation as given. The representation is seen as a vector that should be
         flattened to (n_channels,-1,-1) where -1 is sqrt(z_dim // n_channels).
 
     P_ZlX : CondDist, optional
-        Conditional distribution of the encoder. This should have a parameters 
+        Conditional distribution of the encoder. This should have a parameters
         `P_ZlX.mapper.channel_out_dim` that gives the number of channels of the latent z.
 
     kwargs :
@@ -834,7 +842,10 @@ class HRateHyperpriorSpatial(HRateHyperprior):
     """
 
     def __init__(
-        self, z_dim, P_ZlX, **kwargs,
+        self,
+        z_dim,
+        P_ZlX,
+        **kwargs,
     ):
         self.raw_z_dim = z_dim
         self.n_channels = P_ZlX.mapper.channel_out_dim
