@@ -32,20 +32,14 @@ checkpoint@checkpoint_feat=bestTrainLoss
 
 kwargs_multi="
 featurizer.is_on_the_fly=false,true
-$add_kwargs
-"
-
-# PREDICTOR
-# parameters for the predictor
-kwargs_multi="
-$kwargs_hypopt
 +data_pred.kwargs.batch_size=64
 optimizer@optimizer_pred=AdamW
 optimizer_pred.kwargs.weight_decay=1e-4
 optimizer_pred.kwargs.lr=3e-4
 scheduler@scheduler_pred=expdecay100
 predictor.arch_kwargs.dropout_p=0.2
-" 
+$add_kwargs
+"
 
 
 if [ "$is_plot_only" = false ] ; then
