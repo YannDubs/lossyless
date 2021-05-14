@@ -12,31 +12,59 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from PIL import Image
-from tqdm import tqdm
-
 import torch
 from lossyless.helpers import BASE_LOG, Normalizer, check_import, to_numpy
+from PIL import Image
 from torch.utils.data import DataLoader, random_split
 from torchvision import transforms as transform_lib
-from torchvision.datasets import (CIFAR10, CIFAR100, MNIST, STL10,
-                                  CocoCaptions, ImageFolder, ImageNet)
-from torchvision.transforms import (CenterCrop, ColorJitter, Compose, Lambda,
-                                    RandomAffine, RandomApply, RandomCrop,
-                                    RandomErasing, RandomGrayscale,
-                                    RandomHorizontalFlip, RandomResizedCrop,
-                                    RandomRotation, RandomVerticalFlip, Resize,
-                                    ToPILImage, ToTensor)
+from torchvision.datasets import (
+    CIFAR10,
+    CIFAR100,
+    MNIST,
+    STL10,
+    CocoCaptions,
+    ImageFolder,
+    ImageNet,
+)
+from torchvision.transforms import (
+    CenterCrop,
+    ColorJitter,
+    Compose,
+    Lambda,
+    RandomAffine,
+    RandomApply,
+    RandomCrop,
+    RandomErasing,
+    RandomGrayscale,
+    RandomHorizontalFlip,
+    RandomResizedCrop,
+    RandomRotation,
+    RandomVerticalFlip,
+    Resize,
+    ToPILImage,
+    ToTensor,
+)
+from tqdm import tqdm
 from utils.helpers import remove_rf
 
-from .augmentations import (CIFAR10Policy, EquivariantRandomRotation,
-                            EquivariantRandomResizedCrop, ImageNetPolicy,
-                            get_finetune_augmentations,
-                            get_simclr_augmentations)
+from .augmentations import (
+    CIFAR10Policy,
+    EquivariantRandomResizedCrop,
+    EquivariantRandomRotation,
+    ImageNetPolicy,
+    get_finetune_augmentations,
+    get_simclr_augmentations,
+)
 from .base import LossylessDataModule, LossylessDataset
-from .helpers import (Caltech101BalancingWeights, Pets37BalancingWeights,
-                      download_url, image_loader, int_or_ratio, npimg_resize,
-                      unzip)
+from .helpers import (
+    Caltech101BalancingWeights,
+    Pets37BalancingWeights,
+    download_url,
+    image_loader,
+    int_or_ratio,
+    npimg_resize,
+    unzip,
+)
 
 try:
     import kaggle
@@ -260,7 +288,9 @@ class LossylessImgDataset(LossylessDataset):
                 "simclr_imagenet": get_simclr_augmentations("imagenet", shape[-1]),
                 "simclr_finetune": get_finetune_augmentations(shape[-1]),
             },
-            tensor={"erasing": RandomErasing(value=0.5),},
+            tensor={
+                "erasing": RandomErasing(value=0.5),
+            },
         )
 
     @property
@@ -273,26 +303,46 @@ class LossylessImgDataset(LossylessDataset):
 
         return dict(
             PIL={
-                "equiv_rotation_0": EquivariantRandomRotation(equivariant_degrees=10, invariant_degrees=5, p=0),
-                "equiv_rotation_0.05": EquivariantRandomRotation(equivariant_degrees=10, invariant_degrees=5, p=0.05),
-                "equiv_rotation_0.2": EquivariantRandomRotation(equivariant_degrees=10, invariant_degrees=5, p=0.2),
-                "equiv_rotation_0.5": EquivariantRandomRotation(equivariant_degrees=10, invariant_degrees=5, p=0.5),
-                "equiv_resize_crop_0": EquivariantRandomResizedCrop(size=(shape[1], shape[2]),
-                                                                    equivariant_scale=(0.3, 1.0),
-                                                                    invariant_scale=(0.5, 1.0), ratio=(0.7, 1.4),
-                                                                    p=0.0),
-                "equiv_resize_crop_0.05": EquivariantRandomResizedCrop(size=(shape[1], shape[2]),
-                                                                       equivariant_scale=(0.3, 1.0),
-                                                                       invariant_scale=(0.5, 1.0), ratio=(0.7, 1.4),
-                                                                       p=0.05),
-                "equiv_resize_crop_0.2": EquivariantRandomResizedCrop(size=(shape[1], shape[2]),
-                                                                      equivariant_scale=(0.3, 1.0),
-                                                                      invariant_scale=(0.5, 1.0), ratio=(0.7, 1.4),
-                                                                      p=0.2),
-                "equiv_resize_crop_0.5": EquivariantRandomResizedCrop(size=(shape[1], shape[2]),
-                                                                      equivariant_scale=(0.3, 1.0),
-                                                                      invariant_scale=(0.5, 1.0), ratio=(0.7, 1.4),
-                                                                      p=0.5),
+                "equiv_rotation_0": EquivariantRandomRotation(
+                    equivariant_degrees=10, invariant_degrees=5, p=0
+                ),
+                "equiv_rotation_0.05": EquivariantRandomRotation(
+                    equivariant_degrees=10, invariant_degrees=5, p=0.05
+                ),
+                "equiv_rotation_0.2": EquivariantRandomRotation(
+                    equivariant_degrees=10, invariant_degrees=5, p=0.2
+                ),
+                "equiv_rotation_0.5": EquivariantRandomRotation(
+                    equivariant_degrees=10, invariant_degrees=5, p=0.5
+                ),
+                "equiv_resize_crop_0": EquivariantRandomResizedCrop(
+                    size=(shape[1], shape[2]),
+                    equivariant_scale=(0.3, 1.0),
+                    invariant_scale=(0.5, 1.0),
+                    ratio=(0.7, 1.4),
+                    p=0.0,
+                ),
+                "equiv_resize_crop_0.05": EquivariantRandomResizedCrop(
+                    size=(shape[1], shape[2]),
+                    equivariant_scale=(0.3, 1.0),
+                    invariant_scale=(0.5, 1.0),
+                    ratio=(0.7, 1.4),
+                    p=0.05,
+                ),
+                "equiv_resize_crop_0.2": EquivariantRandomResizedCrop(
+                    size=(shape[1], shape[2]),
+                    equivariant_scale=(0.3, 1.0),
+                    invariant_scale=(0.5, 1.0),
+                    ratio=(0.7, 1.4),
+                    p=0.2,
+                ),
+                "equiv_resize_crop_0.5": EquivariantRandomResizedCrop(
+                    size=(shape[1], shape[2]),
+                    equivariant_scale=(0.3, 1.0),
+                    invariant_scale=(0.5, 1.0),
+                    ratio=(0.7, 1.4),
+                    p=0.5,
+                ),
             },
             tensor={},
         )
@@ -402,7 +452,10 @@ class LossylessImgDataset(LossylessDataset):
 class LossylessImgDataModule(LossylessDataModule):
     def get_train_val_dataset(self, **dataset_kwargs):
         dataset = self.Dataset(
-            self.data_dir, download=False, curr_split="train", **dataset_kwargs,
+            self.data_dir,
+            download=False,
+            curr_split="train",
+            **dataset_kwargs,
         )
 
         n_val = int_or_ratio(self.val_size, len(dataset))
@@ -421,7 +474,10 @@ class LossylessImgDataModule(LossylessDataModule):
     def get_train_dataset(self, **dataset_kwargs):
         if "validation" in self.Dataset.get_available_splits():
             train = self.Dataset(
-                self.data_dir, curr_split="train", download=False, **dataset_kwargs,
+                self.data_dir,
+                curr_split="train",
+                download=False,
+                **dataset_kwargs,
             )
         else:
             # if there is no valdation split will compute it on the fly
@@ -443,7 +499,10 @@ class LossylessImgDataModule(LossylessDataModule):
 
     def get_test_dataset(self, **dataset_kwargs):
         test = self.Dataset(
-            self.data_dir, curr_split="test", download=False, **dataset_kwargs,
+            self.data_dir,
+            curr_split="test",
+            download=False,
+            **dataset_kwargs,
         )
         return test
 
@@ -688,7 +747,12 @@ class TensorflowBaseDataset(LossylessImgDataset, ImageFolder):
     min_size = 256
 
     def __init__(
-        self, root, curr_split="train", download=True, base_resize="clip", **kwargs,
+        self,
+        root,
+        curr_split="train",
+        download=True,
+        base_resize="clip",
+        **kwargs,
     ):
         check_import("tensorflow_datasets", "TensorflowBaseDataset")
 
@@ -976,7 +1040,12 @@ class ExternalImgDataset(LossylessImgDataset):
     required_packages = []
 
     def __init__(
-        self, root, *args, download=True, curr_split="train", **kwargs,
+        self,
+        root,
+        *args,
+        download=True,
+        curr_split="train",
+        **kwargs,
     ):
         for p in self.required_packages:
             check_import(p, type(self).__name__)
@@ -990,7 +1059,9 @@ class ExternalImgDataset(LossylessImgDataset):
         self.length = len(list(self.get_dir(curr_split).glob("*.jpeg")))
 
         super().__init__(
-            *args, curr_split=curr_split, **kwargs,
+            *args,
+            curr_split=curr_split,
+            **kwargs,
         )
 
     def get_dir(self, split=None):
@@ -1106,7 +1177,10 @@ class GalaxyDataset(ExternalImgDataset):
 
     required_packages = ["cv2", "kaggle"]
 
-    split_to_root = dict(test="images_test_rev1", train="images_training_rev1",)
+    split_to_root = dict(
+        test="images_test_rev1",
+        train="images_training_rev1",
+    )
 
     def __init__(
         self,
@@ -1128,7 +1202,9 @@ class GalaxyDataset(ExternalImgDataset):
             raise e
 
         super().__init__(
-            *args, is_normalize=is_normalize, **kwargs,
+            *args,
+            is_normalize=is_normalize,
+            **kwargs,
         )
 
     def download(self, data_dir):
@@ -1185,7 +1261,7 @@ class GalaxyDataset(ExternalImgDataset):
     @property
     def shapes(self):
         shapes = super().shapes
-        shapes["input"] = (3, self.resolution, self.resolution)
+        shapes["input"] = shapes.get("input", (3, self.resolution, self.resolution))
         # (1,37) instead of (37,) because those are 37 different tasks => want mean/std over tasks
         shapes["target"] = (1, 37)
         return shapes
@@ -1240,17 +1316,25 @@ class CocoClipDataset(ExternalImgDataset):
     ]
 
     # test annotation are not given => use val instead
-    split_to_root = dict(test="val2017", train="train2017",)
+    split_to_root = dict(
+        test="val2017",
+        train="train2017",
+    )
     split_to_annotate = dict(
         test="annotations/captions_val2017.json",
         train="annotations/captions_train2017.json",
     )
 
     def __init__(
-        self, *args, base_resize="clip", **kwargs,
+        self,
+        *args,
+        base_resize="clip",
+        **kwargs,
     ):
         super().__init__(
-            *args, base_resize=base_resize, **kwargs,
+            *args,
+            base_resize=base_resize,
+            **kwargs,
         )
 
     def download(self, data_dir):

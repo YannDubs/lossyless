@@ -1,0 +1,9 @@
+
+defaults:
+  - galaxy
+
+name: galaxy256
+
+kwargs:
+  dataset_kwargs:
+    resolution: 256
