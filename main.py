@@ -486,7 +486,8 @@ def get_trainer(cfg, module, is_featurizer):
 
 def placeholder_fit(trainer, module, datamodule):
     """Necessary setup of trainer before testing if you don't fit it."""
-    trainer.train_loop.setup_fit(module, None, None, datamodule)
+    #! if issue has to replace because was removed in https://github.com/PyTorchLightning/pytorch-lightning/pull/7258
+    # trainer.data_connector.attach_data(model, None, None, datamodule)
     trainer.model = module
 
 
@@ -526,6 +527,7 @@ def load_pretrained(cfg, Module, stage, **kwargs):
 
 def evaluate(trainer, datamodule, cfg, stage):
     """Evaluate the trainer by loging all the metrics from the test set from the best model."""
+    breakpoint()
     try:
         trainer.lightning_module.stage = cfg.stage  # logging correct stage
         eval_dataloader = datamodule.eval_dataloader(cfg.evaluation.is_eval_on_test)

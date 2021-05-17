@@ -69,9 +69,7 @@ class LearnableCompressor(pl.LightningModule):
         """Return the correct rate estimator. Contains the prior and the coder."""
         cfg_rate = self.hparams.rate
         rate_estimator = get_rate_estimator(
-            cfg_rate.mode,
-            p_ZlX=self.p_ZlX,
-            **cfg_rate.kwargs,
+            cfg_rate.mode, p_ZlX=self.p_ZlX, **cfg_rate.kwargs,
         )
         # ensure that pickable before DataDistributed
         rate_estimator.make_pickable_()
@@ -241,7 +239,10 @@ class LearnableCompressor(pl.LightningModule):
         beta_rate = curr_beta * rate  # actual gradients
         beta_rate = beta_rate - beta_rate.detach() + (final_beta * rate.detach())
 
-        loss = labda * distortion + beta_rate
+        if self.hparams.featurizer.loss.is_square:
+            loss = labda * distortion ** 2 + beta_rate
+        else:
+            loss = labda * distortion + beta_rate
 
         logs = dict(
             loose_loss=loose_loss / math.log(BASE_LOG),
@@ -416,17 +417,3 @@ class LearnableCompressor(pl.LightningModule):
         self.freeze()
         self.eval()
         self.rate_estimator.make_pickable_()
-
-    def on_load_checkpoint(self, checkpoint):
-        # has to change the checkpoint to ensure that you can load a previous checkpoint even if
-        # the number of groups in the optimizer changes. This is needed when using finetuning
-        # as the number of parameters will change during training
-
-        if self.trainer is not None:  # only if resuming
-            #! waiting for https://github.com/PyTorchLightning/pytorch-lightning/issues/6891
-            for callback in self.trainer.callbacks:
-                if isinstance(callback, BaseFinetuning):
-                    callback.loaded_epoch = checkpoint["epoch"]
-                    callback.on_before_accelerator_backend_setup(self.trainer, self)
-                    callback.on_train_epoch_start(self.trainer, self)
-                    callback.loaded_epoch = -1

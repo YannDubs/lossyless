@@ -8,17 +8,6 @@ notes="
 # parses special mode for running the script
 source `dirname $0`/../utils.sh
 
-
-# most of these arguments are chose so as to replicate Fig.1.b. from "Non linear Transform coding" paper. 
-# See their code here: https://github.com/tensorflow/compression/blob/master/models/toy_sources/toy_sources.ipynb
-# there are known diferences like:
-# - use batch norm
-# - hidden dim for MLPs is 1024 instead of 100
-# - beta = 0.1 (for no invaraince) instead of 1
-# - not using soft rounding
-# - 200 epochs and scheduler
-# - annealing beta
-
 # Encoder
 encoder_kwargs="
 architecture@encoder=fancymlp
@@ -93,21 +82,25 @@ fi
 
 wait 
 
-# for featurizer
-col_val_subset=""
-python aggregate.py \
-       experiment=$experiment  \
-       $col_val_subset \
-       agg_mode=[summarize_metrics]
+if [ "$is_plot_only" = true ] ; then
+  # for featurizer
+  col_val_subset=""
+  python aggregate.py \
+        experiment=$experiment  \
+        $col_val_subset \
+        agg_mode=[summarize_metrics]
 
 
-col_val_subset=""
-python load_pretrained.py \
-       load_pretrained.experiment=$experiment  \
-       $col_val_subset \
-       $kwargs  \
-       server=local \
-       trainer.gpus=0 \
-       $kwargs_multi \
-       load_pretrained.mode=[codebook_plot,maxinv_distribution_plot] \
-       -m 
+  col_val_subset=""
+  python load_pretrained.py \
+        load_pretrained.experiment=$experiment  \
+        $col_val_subset \
+        $kwargs  \
+        server=local \
+        trainer.gpus=0 \
+        $kwargs_multi \
+        load_pretrained.mode=[codebook_plot,maxinv_distribution_plot] \
+        -m 
+
+  done
+fi

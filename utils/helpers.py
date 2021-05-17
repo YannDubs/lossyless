@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
+
 import pl_bolts
 import pytorch_lightning as pl
 import torch
@@ -307,8 +308,8 @@ def apply_featurizer(datamodule, featurizer, is_eval_on_test=True, **kwargs):
 
 
 class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
-    def on_load_checkpoint(self, checkpointed_state):
-        super().on_load_checkpoint(checkpointed_state)
+    def on_load_checkpoint(self, *args, **kwargs):
+        super().on_load_checkpoint(*args, **kwargs)
 
         # trick to keep only one model because pytorch lighnign by default doesn't save
         # best k_models, so when preempting they stask up. Open issue. THis is only correct for k=1

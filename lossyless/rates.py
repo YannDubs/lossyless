@@ -560,7 +560,12 @@ class HRateEstimator(RateEstimator):
     @property
     def is_compute_real_rate(self):
         """Whether compute the real rate."""
-        return (not self.training) and self.is_coder_updated and self.is_coder_present
+        return (
+            (not self.training)
+            and self.is_coder_updated
+            and self.is_coder_present
+            and self.z_dim > 1
+        )
 
 
 class HRateFactorizedPrior(HRateEstimator):

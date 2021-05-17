@@ -271,6 +271,7 @@ class Resnet(nn.Module):
         self.in_shape = in_shape
         self.out_shape = [out_shape] if isinstance(out_shape, int) else out_shape
         self.out_dim = prod(self.out_shape)
+        self.is_new_fc = False
 
         self.resnet = torchvision.models.__dict__[base](
             pretrained=is_pretrained,
@@ -285,8 +286,13 @@ class Resnet(nn.Module):
             )
             self.resnet.maxpool = nn.Identity()
 
-        if self.out_dim != 1000:
+        if self.out_dim == self.resnet.fc.out_features:
+            pass
+        elif self.out_dim == self.resnet.fc.in_features:
+            self.resnet.fc = nn.Identity()
+        else:
             self.resnet.fc = nn.Linear(self.resnet.fc.in_features, self.out_dim)
+            self.is_new_fc = True
 
         self.reset_parameters()
 
@@ -300,7 +306,7 @@ class Resnet(nn.Module):
         if self.in_shape[1] < 100:
             weights_init(self.resnet.conv1)
 
-        if self.out_dim != 1000:
+        if self.is_new_fc:
             weights_init(self.resnet.fc)
 
 

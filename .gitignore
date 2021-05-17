@@ -17,6 +17,8 @@ notebooks
 old
 .idea
 hub
+*old
+lightning_logs
 
 # pyotrch
 *.ckpt

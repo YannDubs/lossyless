@@ -1182,6 +1182,7 @@ class GalaxyDataset(ExternalImgDataset):
             # later need the image IDs to make a submission file that will be
             # evaluated via the kaggle api.
             self.ids = np.load(data_dir / f"{split}_ids.npy")
+            self.targets = self.ids
         else:
             self.targets = np.load(data_dir / f"{split}_targets.npy")
 
@@ -1194,7 +1195,7 @@ class GalaxyDataset(ExternalImgDataset):
     @property
     def shapes(self):
         shapes = super().shapes
-        shapes["input"] = (3, self.resolution, self.resolution)
+        shapes["input"] = shapes.get("input", (3, self.resolution, self.resolution))
         # (1,37) instead of (37,) because those are 37 different tasks => want mean/std over tasks
         shapes["target"] = (1, 37)
         return shapes
@@ -1207,6 +1208,21 @@ class GalaxyDataset(ExternalImgDataset):
     @property
     def dataset_name(self):
         return "galaxy"
+
+    @property
+    def augmentations(self):
+        # TODO remove if we don't end up using those
+        augmentations = super().augmentations
+
+        # these are the augmentations used in kaggle
+        PIL_update = {
+            # in kaggle authors translate 69x69 images by /pm 4 pixel = 11.6%
+            "y_translation": RandomAffine(0, translate=(0, 0.116)),
+            "x_translation": RandomAffine(0, translate=(0.116, 0)),
+            "scale": RandomAffine(0, scale=(1.0 / 1.3, 1.3)),
+        }
+        augmentations["PIL"].update(PIL_update)
+        return augmentations
 
 
 class GalaxyDataModule(LossylessImgDataModule):

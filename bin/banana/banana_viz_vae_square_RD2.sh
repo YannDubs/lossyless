@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 
-experiment="banana_viz_nce"
-notes="
-**Goal**: Run INCE on banana distributions to get nice figures.
-"
+experiment="banana_viz_vae_square_RD2"
+notes="**Goal**: Run rate distortion curve for rotated banana distribution."
 
 # parses special mode for running the script
 source `dirname $0`/../utils.sh
@@ -16,10 +14,10 @@ encoder.z_dim=2
 
 # Distortion
 distortion_kwargs="
-distortion=ince
 distortion.factor_beta=1
-distortion.kwargs.effective_batch_size=null
+architecture@distortion.kwargs=fancymlp
 "
+# like in their paper we are using softplus activation which gives slightly more smooth decision boundaries 
 
 # Rate
 rate_kwargs="
@@ -29,8 +27,8 @@ rate.factor_beta=1
 
 # Data
 data_kwargs="
+data@data_feat=banana_rot
 trainer.reload_dataloaders_every_epoch=True
-data@data_feat=banana_Xtrnslt
 "
 
 # Featurizer
@@ -49,8 +47,6 @@ architecture@predictor=mlp_probe
 optimizer@optimizer_pred=Adam
 scheduler@scheduler_pred=unifmultistep100
 optimizer_pred.kwargs.lr=1e-3
-distortion.kwargs.is_train_temperature=false
-distortion.kwargs.temperature=0.1 
 featurizer.loss.is_square=true
 "
 
@@ -67,16 +63,13 @@ $add_kwargs
 "
 
 kwargs_multi="
-data@data_feat=banana_Xtrnslt
-distortion=ince
-featurizer.loss.beta=11
-encoder.z_dim=1
+data@data_feat=banana_rot
+featurizer.loss.beta=1e-5,1e-4,1e-3,3e-3,1e-2,3e-2,1e-1,1e-0,10
+seed=1
 "
-#banana_rot
-#0.6
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in  "data@data_feat=banana_Xtrnslt featurizer.loss.beta=11,11.2,11.5" "data@data_feat=banana_rot featurizer.loss.beta=10"  "data@data_feat=banana_rot featurizer.loss.beta=7 encoder.z_dim=2" 
+  for kwargs_dep in  "encoder.z_dim=2 distortion=ivae" 
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
@@ -96,7 +89,7 @@ if [ "$is_plot_only" = true ] ; then
         $col_val_subset \
         agg_mode=[summarize_metrics]
 
-  for kwargs_dep in  "data@data_feat=banana_Xtrnslt featurizer.loss.beta=11,11.2,11.5" "data@data_feat=banana_rot featurizer.loss.beta=10"  "data@data_feat=banana_rot featurizer.loss.beta=7 encoder.z_dim=2" 
+  for kwargs_dep in  "encoder.z_dim=2 distortion=ivae"  "encoder.z_dim=2 distortion=vae" 
     do
 
       col_val_subset=""
@@ -108,13 +101,12 @@ if [ "$is_plot_only" = true ] ; then
             trainer.gpus=1 \
             $kwargs_multi \
             $kwargs_dep \
-            load_pretrained.mode=[codebook_plot] \
+            load_pretrained.mode=[codebook_plot,maxinv_distribution_plot] \
             -m
 
       wait
     done
   fi
-
 
   done
 fi

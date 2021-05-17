@@ -5,6 +5,8 @@ notes="
 **Goal**: Run rate distortion curve for rotated banana distribution.
 "
 
+#TODO run the workshop version again => no augmenting
+
 # parses special mode for running the script
 source `dirname $0`/../utils.sh
 

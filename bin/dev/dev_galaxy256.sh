@@ -49,14 +49,13 @@ scheduler@scheduler_pred=expdecay100
 evaluation.featurizer.is_evaluate=False
 architecture@encoder=balle 
 distortion.kwargs.arch=balle 
-+distortion.kwargs.arch_kwargs.norm_layer=identity,batchnorm
 "
 
 if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in "" 
   do
 
-    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs distortion=vae data@data_feat=galaxy256 $kwargs_hypopt_ivae $kwargs_dep -m &
+    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs distortion=ivae data@data_feat=galaxy256 $kwargs_hypopt_ivae $kwargs_dep -m &
 
   done
 fi

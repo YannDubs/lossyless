@@ -84,7 +84,7 @@ class PretrainedAnalyser(PostPlotter):
         self.trainers = dict()
         self.datamodules = dict()
 
-    def collect_data(self, cfg, is_only_feat=True, is_force_cpu=True):
+    def collect_data(self, cfg, is_only_feat=True, is_force_cpu=False):
         """Collects all the data.
 
         Parameters
@@ -114,9 +114,15 @@ class PretrainedAnalyser(PostPlotter):
             cfg.is_only_feat = True
 
         with all_logging_disabled(highest_level=logging.INFO):
-            self.modules, self.trainers, self.datamodules, self.cfgs = main_training(
-                cfg
-            )
+            try:
+                (
+                    self.modules,
+                    self.trainers,
+                    self.datamodules,
+                    self.cfgs,
+                ) = main_training(cfg)
+            except Exception as e:
+                raise e
 
     def plot_using_callback(
         self,
@@ -178,9 +184,14 @@ class PretrainedAnalyser(PostPlotter):
         kwargs :
             Additional arguments to lossyless.callbacks.CodebookPlot.
         """
+        additional_target = self.cfgs[
+            "featurizer"
+        ].data.kwargs.dataset_kwargs.additional_target
+        is_reconstruct = additional_target in ["representative", "input"]
         self.plot_using_callback(
             CodebookPlot,
             is_featurizer=True,
+            is_plot_codebook=is_reconstruct,
             plot_config_kwargs=plot_config_kwargs,
             **kwargs,
         )

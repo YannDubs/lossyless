@@ -6,3 +6,4 @@ is_train: True # whether to train the compressor, if not will load a pretrained 
 
 loss:
   beta: 1 # this will be `quality` for classical
+  is_square: false

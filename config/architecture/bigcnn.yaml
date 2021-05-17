@@ -1,0 +1,4 @@
+name: bigcnn
+arch: cnn
+arch_kwargs:
+  complexity: 3

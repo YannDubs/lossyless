@@ -5,6 +5,5 @@ name: stl10
 dataset: stl10
 
 kwargs:
-  val_size: 0.05 #! very little labels so that might make an impact ? 
   dataset_kwargs:
     equivalence: [hflip,resize_crop,color,gray] #? should we also use augmentations when training the classifier ?

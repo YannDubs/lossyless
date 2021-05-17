@@ -17,16 +17,8 @@ from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
 from pytorch_lightning.utilities import rank_zero_only
 
-from .helpers import (
-    BASE_LOG,
-    UnNormalizer,
-    is_colored_img,
-    plot_config,
-    plot_density,
-    setup_grid,
-    tensors_to_fig,
-    to_numpy,
-)
+from .helpers import (BASE_LOG, UnNormalizer, is_colored_img, plot_config,
+                      plot_density, setup_grid, tensors_to_fig, to_numpy)
 
 try:
     import wandb
@@ -352,7 +344,7 @@ class CodebookPlot(PlottingCallback):
             idcs.reshape(self.n_pts, self.n_pts),
             np.arange(n_codebook) + 0.5,
             colors=[google_pink],
-            linewidths=0.5,
+            linewidths=1.5,
         )
 
         if self.is_plot_codebook:
@@ -363,7 +355,7 @@ class CodebookPlot(PlottingCallback):
                 codebook[counts > 0, 0],
                 codebook[counts > 0, 1],
                 color=google_pink,
-                s=500 * p_codebook[counts > 0],  # size prop. to proba q(z)
+                s=700 * p_codebook[counts > 0],  # size prop. to proba q(z)
             )
 
         return fig
@@ -438,7 +430,7 @@ class MaxinvDistributionPlot(PlottingCallback):
                 mx_hat = dataset.max_invariant(x_hat) if x_hat.shape[-1] == 2 else x_hat
                 mx = dataset.max_invariant(x)
 
-                with plot_config(**self.plot_config_kwargs):
+                with plot_config(**self.plot_config_kwargs, font_scale=3):
                     fig = self.plot_maxinv(mx, mx_hat)
 
                 yield fig, dict(name=f"max. inv. {eq}")
@@ -468,7 +460,7 @@ class MaxinvDistributionPlot(PlottingCallback):
             discrete=True,
             color="tab:red",
             linestyle="-",
-            lw=0.1,
+            lw=0.2,
             ax=ax,
             legend=False,
             alpha=0.3,
@@ -485,13 +477,14 @@ class MaxinvDistributionPlot(PlottingCallback):
             fill=True,
             color="tab:blue",
             legend=False,
-            alpha=0.1,
+            alpha=0.15,
+            linewidth=2,
         )
 
         # manual legend because changes colors
         custom_lines = [
-            Line2D([0], [0], color="tab:red", lw=1, linestyle="-"),
-            Line2D([0], [0], color="tab:blue", lw=1),
+            Line2D([0], [0], color="tab:red", lw=2, linestyle="-"),
+            Line2D([0], [0], color="tab:blue", lw=2),
         ]
         ax.legend(custom_lines, [r"$q(M(X))$", r"$p(M(X))$"])
         ax.set_xlim(
@@ -500,6 +493,8 @@ class MaxinvDistributionPlot(PlottingCallback):
         )
         ax.set_xlabel(r"$M(X)$")
         sns.despine()
+        ax.set_yticks([])
+        ax.set_xticks([])
 
         return fig
 

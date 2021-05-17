@@ -8,15 +8,15 @@ import glob
 import logging
 from pathlib import Path
 
-import hydra
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from omegaconf import OmegaConf
 
+import hydra
 from lossyless.helpers import BASE_LOG, check_import
 from main import CONFIG_FILE, get_stage_name
+from omegaconf import OmegaConf
 from utils.helpers import (cfg_load, cfg_save, getattr_from_oneof,
                            omegaconf2namespace)
 from utils.postplotting import (PRETTY_RENAMER, PostPlotter, data_getter,
@@ -727,10 +727,7 @@ class ResultAggregator(PostPlotter):
 
         elif mode == "lmplot":
             used_kwargs = dict(
-                legend="full",
-                sharey=sharey,
-                sharex=sharex,
-                legend_out=legend_out,
+                legend="full", sharey=sharey, sharex=sharex, legend_out=legend_out,
             )
             used_kwargs.update(kwargs)
 
