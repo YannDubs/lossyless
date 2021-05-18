@@ -8,7 +8,7 @@ other:
   is_quick: True
 
 trainer:
-  max_epochs: 2
+  max_epochs: 5
   log_every_n_steps: 10
   num_sanity_val_steps: 0 # was giving error
   # uses 5 % of data
@@ -21,14 +21,12 @@ data_feat:
     # use smaller because was giving error
     batch_size: 128
     val_batch_size: 128
-    num_workers: 0
 
 data_pred:
   kwargs:
     # use smaller because was giving error
     batch_size: 128
     val_batch_size: 128
-    num_workers: 0
 
 logger:
   wandb_kwargs: 

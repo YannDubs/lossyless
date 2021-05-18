@@ -1,4 +1,10 @@
+# @package _global_
 defaults:
-  - base
+  - base@logger
   
-name: null
+logger:
+  name: null
+
+callbacks: # can use any callback name of lossyless.calllbacks, pl_bolts.callbacks, pl.callbacks
+  LearningRateMonitor:
+    is_use : false

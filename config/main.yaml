@@ -18,7 +18,7 @@ defaults:
   - scheduler@scheduler_feat: expdecay100 
   - optimizer@optimizer_coder: Adam_lr3e-4_w1e-5 # quite robust to this but lr shouldn't be to small
   - scheduler@scheduler_coder: expdecay100
-  - optimizer@optimizer_online: SGD_lr3e-1_w1e-4
+  - optimizer@optimizer_online: AdamW_lr1e-3_w1e-5
   - scheduler@scheduler_online: expdecay100 # ensure that can always keep up with the chaning representation
   - distortion: ivae
   - architecture@distortion.kwargs: none # just ensures that can change that from CLI
@@ -31,7 +31,7 @@ defaults:
   - architecture@predictor: resnet18
   - checkpoint@checkpoint_pred: bestValLoss  # really important if using cosine sceduler
   - optimizer@optimizer_pred: Adam_lr1e-3_w1e-4
-  - scheduler@scheduler_pred: cosine_restart
+  - scheduler@scheduler_pred: unifmultistep100
 
   # OVERIDES #
   - override hydra/job_logging: colorlog

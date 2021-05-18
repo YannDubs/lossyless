@@ -1,11 +1,13 @@
 import logging
 
 import PIL
+
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from compressai.utils.bench import codecs
 from pytorch_lightning.core.decorators import auto_move_data
+from torch.nn import functional as F
 from torchvision.transforms import ToPILImage, ToTensor
 
 from .helpers import UnNormalizer, dict_mean, rename_keys_
@@ -33,20 +35,23 @@ class PillowCodec(codecs.PillowCodec):
             return_metrics = False  # cannot use mssim if smaller than 160
 
         for tensor in tensors:
-            img = self.to_PIL(tensor.cpu().detach())
-            out = self._run(
-                img, self.quality, return_rec=return_rec, return_metrics=return_metrics
+            x = tensor.cpu().detach()
+            img = self.to_PIL(x)
+            out, x_hat = self._run(
+                img, self.quality, return_rec=True, return_metrics=return_metrics
             )
+            x_hat = self.to_tensor(x_hat)
+            # use a distortion measure that is comparable to learnable compressors
+            out["distortion"] = float(F.mse_loss(x_hat, x, reduction="sum"))
 
             if return_rec:
-                out, rec = out
-                recs.append(self.to_tensor(rec))
+                recs.append(x_hat)
 
             outs.append(out)
 
         batch_out = dict_mean(outs)
         batch_out["n_bits"] = batch_out["bpp"] * height * width
-        batch_out["rate"] = batch_out["n_bits"] # for classical compressors theoretical and actual rate is same
+        batch_out["rate"] = batch_out["n_bits"]  # theoretical and actual rate is same
         rename_keys_(
             batch_out,
             {"encoding_time": "sender_time", "decoding_time": "receiver_time"},
@@ -157,7 +162,7 @@ class ClassicalCompressor(pl.LightningModule):
                 self.compressor = WebP(quality)
             else:
                 raise ValueError(f"Unkown featurizer={self.hparams.featurizer.mode}")
-        
+
         self.stage = self.hparams.stage  # allow changing to stages
 
     @auto_move_data  # move data on correct device for inference

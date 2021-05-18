@@ -9,3 +9,4 @@ trainer:
 callbacks:
   GPUStatsMonitor: 
     is_use : false
+    

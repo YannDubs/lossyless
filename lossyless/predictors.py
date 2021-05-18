@@ -91,12 +91,8 @@ class Predictor(pl.LightningModule):
             logs : dict
                 Dictionary of values to log.
         """
-        idx = None
-
         with torch.no_grad():
             # shape: [batch_size,  *featurizer.out_shape]
-            if isinstance(x, Sequence):  # in case targets get passed too
-                x, idx = x
             features = self.featurizer(x)  # can be z_hat or x_hat
             features = self.normalizer(features)
 
@@ -116,10 +112,19 @@ class Predictor(pl.LightningModule):
             logs = dict(inference_time=inference_timer.duration / batch_size)
             return out, logs
 
-        if idx is None:
-            return out
-        else: # special case just for kaggle
-            return idx, out
+        return out
+
+    def predict_step(self, batch, batch_idx, dataloader_idx=None):
+        """
+        Predict function, this will represent the data and also return the correct label.
+        Which is useful in case you want to create a featurized dataset.
+        """
+        x, y = batch
+        y_hat = self(x)
+        return y_hat, y
+
+    def predict(self, *args, **kwargs):  # TODO remove in newer version of lightning
+        return self.predict_step(*args, **kwargs)
 
     def add_balanced_logs(self, loss, y, Y_hat, logs):
         mapper = self.hparams.data.balancing_weights

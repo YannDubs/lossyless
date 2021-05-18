@@ -13,22 +13,15 @@ from datetime import datetime
 from pathlib import Path
 from time import sleep
 
-import hydra
 import matplotlib.pyplot as plt
-import omegaconf
 import pandas as pd
+
+import hydra
+import lossyless
+import omegaconf
 import pl_bolts
 import pytorch_lightning as pl
 import torch
-from omegaconf import OmegaConf
-from pytorch_lightning.callbacks.finetuning import BaseFinetuning
-from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
-from pytorch_lightning.plugins import DDPPlugin, DDPSpawnPlugin
-from pytorch_lightning.utilities import rank_zero_warn
-from pytorch_lightning.utilities.cloud_io import load as pl_load
-from pytorch_lightning.utilities.exceptions import MisconfigurationException
-
-import lossyless
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
 from lossyless.callbacks import (
     CodebookPlot,
@@ -39,6 +32,13 @@ from lossyless.callbacks import (
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
+from omegaconf import OmegaConf
+from pytorch_lightning.callbacks.finetuning import BaseFinetuning
+from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
+from pytorch_lightning.plugins import DDPPlugin, DDPSpawnPlugin
+from pytorch_lightning.utilities import rank_zero_warn
+from pytorch_lightning.utilities.cloud_io import load as pl_load
+from pytorch_lightning.utilities.exceptions import MisconfigurationException
 from utils.data import get_datamodule
 from utils.data.images import GalaxyDataset
 from utils.helpers import (
@@ -104,11 +104,7 @@ def main(cfg):
     if not comp_cfg.featurizer.is_learnable:
         logger.info(f"Using classical compressor {comp_cfg.featurizer.mode} ...")
         compressor = ClassicalCompressor(hparams=comp_cfg)
-        comp_trainer = get_trainer(
-            comp_cfg,
-            compressor,
-            is_featurizer=True,
-        )
+        comp_trainer = get_trainer(comp_cfg, compressor, is_featurizer=True,)
         placeholder_fit(comp_trainer, compressor, comp_datamodule)
 
     elif comp_cfg.featurizer.is_train and not is_trained(comp_cfg, stage):
@@ -402,11 +398,7 @@ def get_callbacks(cfg, is_featurizer):
                     callbacks += [ReconstructImages()]
 
             elif cfg.data.mode == "distribution":
-                callbacks += [
-                    CodebookPlot(
-                        is_plot_codebook=is_reconstruct,
-                    )
-                ]
+                callbacks += [CodebookPlot(is_plot_codebook=is_reconstruct,)]
                 if is_reconstruct:
                     callbacks += [
                         MaxinvDistributionPlot(),
@@ -492,8 +484,7 @@ def get_trainer(cfg, module, is_featurizer):
         elif accelerator == "ddp_spawn":
             kwargs["accelerator"] = "ddp"
             kwargs["plugins"] = DDPSpawnPlugin(
-                parallel_devices=parallel_devices,
-                find_unused_parameters=True,
+                parallel_devices=parallel_devices, find_unused_parameters=True,
             )
 
     # TRAINER
@@ -503,6 +494,10 @@ def get_trainer(cfg, module, is_featurizer):
         checkpoint_callback=True,
         **kwargs,
     )
+
+    #! lightning automatically detects clurm and tries to handle checkpoiting but we want touside
+    # so simply remove hpc save until  #6204 #6389 #5225
+    trainer.checkpoint_connector.hpc_save = lambda *args, **kwargs: None
 
     return trainer
 
@@ -784,8 +779,8 @@ def kaggle_eval(predictions, message="Kaggle Evaluation {}".format(datetime.now(
         )
 
         for prediction in predictions:
-            for idx, pred in zip(prediction[0], prediction[1]):
-                row = [idx] + pred[0].tolist()
+            for pred, idx in zip(prediction[0], prediction[1]):
+                row = [int(idx)] + pred[0].tolist()
                 writer.writerow(row)
 
     kaggle.api.competition_submit(
