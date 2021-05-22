@@ -20,12 +20,9 @@ import pl_bolts
 import pytorch_lightning as pl
 import torch
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
-from lossyless.callbacks import (
-    CodebookPlot,
-    LatentDimInterpolator,
-    MaxinvDistributionPlot,
-    ReconstructImages,
-)
+from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
+                                 MaxinvDistributionPlot, MxCodebookPlot,
+                                 ReconstructImages)
 from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
@@ -34,19 +31,10 @@ from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from pytorch_lightning.plugins import DDPPlugin, DDPSpawnPlugin
 from utils.data import get_datamodule
-from utils.helpers import (
-    ModelCheckpoint,
-    apply_featurizer,
-    cfg_save,
-    format_resolver,
-    get_latest_match,
-    getattr_from_oneof,
-    log_dict,
-    omegaconf2namespace,
-    remove_rf,
-    replace_keys,
-    set_debug,
-)
+from utils.helpers import (ModelCheckpoint, apply_featurizer, cfg_save,
+                           format_resolver, get_latest_match,
+                           getattr_from_oneof, log_dict, omegaconf2namespace,
+                           remove_rf, replace_keys, set_debug)
 
 try:
     import wandb
@@ -388,6 +376,7 @@ def get_callbacks(cfg, is_featurizer):
                 if is_reconstruct:
                     callbacks += [
                         MaxinvDistributionPlot(),
+                        MxCodebookPlot()
                     ]
 
     callbacks += [ModelCheckpoint(**cfg.checkpoint.kwargs)]

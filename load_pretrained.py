@@ -10,18 +10,11 @@ from pathlib import Path
 import einops
 import hydra
 import torch
-from lossyless.callbacks import (
-    CodebookPlot,
-    LatentDimInterpolator,
-    MaxinvDistributionPlot,
-)
-from lossyless.helpers import (
-    UnNormalizer,
-    is_colored_img,
-    plot_config,
-    tensors_to_fig,
-    tmp_seed,
-)
+from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
+                                 MaxinvDistributionPlot, MxCodebookPlot,
+                                 MxECDFPlot)
+from lossyless.helpers import (UnNormalizer, is_colored_img, plot_config,
+                               tensors_to_fig, tmp_seed)
 from main import main as main_training
 from omegaconf import OmegaConf
 from utils.helpers import all_logging_disabled, format_resolver
@@ -171,6 +164,42 @@ class PretrainedAnalyser(PostPlotter):
         """
         self.plot_using_callback(
             MaxinvDistributionPlot,
+            is_featurizer=True,
+            plot_config_kwargs=plot_config_kwargs,
+            **kwargs,
+        )
+
+    def implicit_maxinv_codebook_plot(
+        self, plot_config_kwargs={"is_rm_xticks": True, "is_rm_yticks": True}, **kwargs
+    ):
+        """
+        Plot the implicit M(X) codebook plot.
+
+        Parameters
+        ----------
+        kwargs :
+            Additional arguments to lossyless.callbacks.MxCodebookPlot.
+        """
+        self.plot_using_callback(
+            MxCodebookPlot,
+            is_featurizer=True,
+            plot_config_kwargs=plot_config_kwargs,
+            **kwargs,
+        )
+
+    def implicit_maxinv_ecdf_plot(
+        self, plot_config_kwargs={"is_rm_xticks": True, "is_rm_yticks": True}, **kwargs
+    ):
+        """
+        Plot the implicit M(X) CDF plot.
+
+        Parameters
+        ----------
+        kwargs :
+            Additional arguments to lossyless.callbacks.MxECDFPlot.
+        """
+        self.plot_using_callback(
+            MxECDFPlot,
             is_featurizer=True,
             plot_config_kwargs=plot_config_kwargs,
             **kwargs,

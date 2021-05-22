@@ -299,8 +299,8 @@ class CodebookPlot(PlottingCallback):
             to_numpy(z_hat), return_index=True, return_inverse=True, axis=0
         )
 
-        # shape: [n_codebook]
-        ratebook = to_numpy(rates[i])  # rate for each codebook
+        # rate for each codebook (in bits). shape: [n_codebook]
+        ratebook = to_numpy(rates[i]) / math.log(BASE_LOG)
 
         if self.is_plot_codebook:
             # shape: [batch_size, *y_shape]
@@ -361,6 +361,281 @@ class CodebookPlot(PlottingCallback):
         return fig
 
 
+class MxECDFPlot(PlottingCallback):
+    """Plot the M(X) distribution and implicit ecdf for M(X).
+
+    Notes
+    -----
+    - datamodule has to be `DistributionDataModule`.
+    - Z should be deterministic
+    - distortion should be ivae / vae
+
+    Parameters
+    ----------
+    range_lim : int, optional
+        Will plot M(X) that correspond to x axis and y axis in (-range_lim, range_lim).
+
+    quantile_lim : int, optional
+        Will plot M(X) in (quantile_lim,1-quantile_lim).
+
+    n_pts : int, optional
+        Number of points to use for the mesgrid will be n_pts**2. Can be memory heavy as all given
+        in a single batch.
+
+    n_Mx : int, optional
+        NUmber of points to sample to estimate the density of M(X).
+
+    figsize : tuple of int, optional
+        Size fo figure.
+
+    kwargs :
+        Additional arguments to PlottingCallback.
+    """
+
+    def __init__(
+        self, range_lim=8, quantile_lim=0.01, n_pts=500, figsize=(9, 9), **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.range_lim = range_lim
+        self.quantile_lim = quantile_lim
+        self.n_pts = n_pts
+        self.figsize = figsize
+        self.is_plot_codebook = True
+
+    quantize = CodebookPlot.quantize
+
+    def yield_figs_kwargs(self, trainer, pl_module):
+        dataset = trainer.datamodule.train_dataset
+
+        with torch.no_grad():
+            pl_module.eval()
+
+            with plot_config(
+                **self.plot_config_kwargs, font_scale=2.5, rc={"lines.linewidth": 4}
+            ):
+                fig = self.plot_implicit_ecdf_maxinv(pl_module, dataset)
+
+            yield fig, dict(name=f"implicit Mx ecdf")
+
+        # restore
+        pl_module.train()
+
+    def plot_implicit_ecdf_maxinv(self, pl_module, dataset):
+        """Return a figure of the implicit quantizer learned in M(X) space."""
+
+        # shape: [n_pts, n_pts, 2]
+        xy = setup_grid(
+            range_lim=self.range_lim, n_pts=self.n_pts, device=pl_module.device
+        )
+
+        # shape: [n_pts * n_pts, 2]
+        flat_xy = einops.rearrange(xy, "x y d -> (x y) d", d=2)
+
+        # codebook. shape: [n_codebook, 2]
+        # ratebook, counts, p_codebook. shape: [n_codebook]
+        # idcs. shape: [n_pts * n_pts]
+        codebook, ratebook, idcs = self.quantize(pl_module, flat_xy)
+        n_codebook = len(ratebook)  # uses ratebook because codebook can be None
+        counts = np.bincount(idcs, minlength=n_codebook)
+        p_codebook = BASE_LOG ** -(ratebook)
+
+        # shape: [batch_size, *mx_shape]
+        x, mx = dataset.get_n_data_Mxs(self.n_pts ** 2)
+        mx = mx[(x[:, 0].abs() < self.range_lim) & (x[:, 1].abs() < self.range_lim)]
+        mx = mx.squeeze().numpy()
+
+        # shape: [n_codebook]
+        mx_codebook = (
+            dataset.max_invariant(torch.from_numpy(codebook)).squeeze().numpy()
+        )
+
+        # sort all
+        idx_sort = np.argsort(np.copy(mx_codebook))
+        mx_codebook = mx_codebook[idx_sort]
+        p_codebook = p_codebook[idx_sort]
+        counts = counts[idx_sort]
+
+        # fig, ax = plt.subplots(1, 1, figsize=self.figsize)
+        # k = sns.kdeplot(data=pd.DataFrame(mx, columns=[r"$M(X)$"]), ax=ax, linewidth=2, palette=["tab:blue"], clip=(0,8))
+        # save_fig(fig,"/scratch/ssd002/home/yannd/projects/lossyless/kde.png",300)
+
+        # compute CDF
+        q_cdf = p_codebook.cumsum()
+
+        #! very improbable that codebook after M(X) is not unique but possible
+        assert len(np.unique(mx_codebook)) == len(codebook)
+
+        fig, ax = plt.subplots(1, 1, figsize=self.figsize)
+
+        kwargs = dict()
+        if dataset.equivalence == "rotation":
+            kwargs["clip"] = (0, mx_codebook.max())
+
+        boundaries = (mx_codebook[1:] + mx_codebook[:-1]) / 2
+
+        for r in boundaries:
+            plt.axvline(
+                r,
+                color="black",
+                lw=0.5,
+                ls=":",
+                label="Quantization" if r == boundaries[0] else None,
+            )
+
+        k = sns.ecdfplot(
+            data=pd.DataFrame(mx), ax=ax, palette=["tab:blue"], label="Actual P(M(X))",
+        )
+
+        ax.step(mx_codebook, q_cdf, label="Implicit Q(M(X))", color="tab:red")
+
+        ax.legend()
+        ax.set_xlabel(r"$M(X)$")
+        sns.despine()
+        ax.set_yticks([])
+        ax.set_xticks([])
+
+        return fig
+
+
+class MxCodebookPlot(PlottingCallback):
+    """Plot the M(X) distribution and implicit codebook for M(X).
+
+    Notes
+    -----
+    - datamodule has to be `DistributionDataModule`.
+    - Z should be deterministic
+    - distortion should be ivae / vae
+
+    Parameters
+    ----------
+    range_lim : int, optional
+        Will plot M(X) that correspond to x axis and y axis in (-range_lim, range_lim).
+
+    quantile_lim : int, optional
+        Will plot M(X) in (quantile_lim,1-quantile_lim).
+
+    n_pts : int, optional
+        Number of points to use for the mesgrid will be n_pts**2. Can be memory heavy as all given
+        in a single batch.
+
+    n_Mx : int, optional
+        NUmber of points to sample to estimate the density of M(X).
+
+    figsize : tuple of int, optional
+        Size fo figure.
+
+    kwargs :
+        Additional arguments to PlottingCallback.
+    """
+
+    def __init__(
+        self, range_lim=5, quantile_lim=0.01, n_pts=500, figsize=(9, 9), **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.range_lim = range_lim
+        self.quantile_lim = quantile_lim
+        self.n_pts = n_pts
+        self.figsize = figsize
+        self.is_plot_codebook = True
+
+    quantize = CodebookPlot.quantize
+
+    def yield_figs_kwargs(self, trainer, pl_module):
+        dataset = trainer.datamodule.train_dataset
+
+        with torch.no_grad():
+            pl_module.eval()
+
+            with plot_config(**self.plot_config_kwargs, font_scale=3):
+                fig = self.plot_implicit_maxinv(pl_module, dataset)
+
+            yield fig, dict(name=f"implicit max. inv")
+
+        # restore
+        pl_module.train()
+
+    def plot_implicit_maxinv(self, pl_module, dataset):
+        """Return a figure of the implicit quantizer learned in M(X) space."""
+
+        # shape: [n_pts, n_pts, 2]
+        xy = setup_grid(
+            range_lim=self.range_lim, n_pts=self.n_pts, device=pl_module.device
+        )
+
+        # shape: [n_pts * n_pts, 2]
+        flat_xy = einops.rearrange(xy, "x y d -> (x y) d", d=2)
+
+        # codebook. shape: [n_codebook, 2]
+        # ratebook, counts, p_codebook. shape: [n_codebook]
+        # idcs. shape: [n_pts * n_pts]
+        codebook, ratebook, idcs = self.quantize(pl_module, flat_xy)
+        n_codebook = len(ratebook)  # uses ratebook because codebook can be None
+        counts = np.bincount(idcs, minlength=n_codebook)
+        p_codebook = BASE_LOG ** -(ratebook)
+
+        # shape: [batch_size, *mx_shape]
+        _, mx = dataset.get_n_data_Mxs(self.n_pts ** 2)
+        mx = mx.squeeze().numpy()
+
+        # shape: [n_codebook]
+        mx_codebook = (
+            dataset.max_invariant(torch.from_numpy(codebook)).squeeze().numpy()
+        )
+
+        # sort all
+        idx_sort = np.argsort(np.copy(mx_codebook))
+        mx_codebook = mx_codebook[idx_sort]
+        p_codebook = p_codebook[idx_sort]
+        counts = counts[idx_sort]
+
+        #! very improbable that codebook after M(X) is not unique but possible
+        assert len(np.unique(mx_codebook)) == len(codebook)
+
+        fig, ax = plt.subplots(1, 1, figsize=self.figsize)
+
+        kwargs = dict()
+        if dataset.equivalence == "rotation":
+            kwargs["clip"] = (0, mx_codebook.max())
+
+        k = sns.kdeplot(
+            data=pd.DataFrame(mx, columns=[r"$M(X)$"]),
+            ax=ax,
+            linewidth=2,
+            palette=["tab:blue"],
+            **kwargs,
+        )
+
+        boundaries = (mx_codebook[1:] + mx_codebook[:-1]) / 2
+
+        markers, stems, base = ax.stem(
+            mx_codebook[counts > 0], p_codebook[counts > 0], label="codebook",
+        )
+        plt.setp(markers, color="black")
+        plt.setp(stems, color="black")
+        plt.setp(base, linestyle="None")
+
+        for r in boundaries:
+            plt.axvline(
+                r,
+                color="black",
+                lw=1,
+                ls=":",
+                label="boundaries" if r == boundaries[0] else None,
+            )
+
+        if dataset.equivalence == "rotation":
+            ax.set_xlim(0, mx_codebook.max() - 1e-5)
+        else:
+            ax.set_xlim(mx.min(), mx.max())
+
+        ax.set_xlabel(r"$M(X)$")
+        sns.despine()
+        ax.set_yticks([])
+        ax.set_xticks([])
+
+        return fig
+
+
 class MaxinvDistributionPlot(PlottingCallback):
     """Plot the distribtion of a maximal invariant p(M(X)) as well as the learned marginal
     q(M(X)) = E_{p(Z)}[q(M(X)|Z)].
@@ -393,7 +668,7 @@ class MaxinvDistributionPlot(PlottingCallback):
 
     def __init__(
         self,
-        quantile_lim=5,
+        quantile_lim=0.01,
         n_pts=500 ** 2,
         figsize=(9, 9),
         equivalences=["rotation", "y_translation", "x_translation"],
@@ -440,9 +715,6 @@ class MaxinvDistributionPlot(PlottingCallback):
         dataset.equivalence = equiv
         pl_module.train()
 
-    def prepare(data, source):
-        return data
-
     def plot_maxinv(self, mx, mx_hat):
         """Return a figure of the maximal invariant computed from the source and the reconstructions."""
 
@@ -488,8 +760,8 @@ class MaxinvDistributionPlot(PlottingCallback):
         ]
         ax.legend(custom_lines, [r"$q(M(X))$", r"$p(M(X))$"])
         ax.set_xlim(
-            data[["p(M(X))"]].quantile(0.001)[0],
-            data[["p(M(X))"]].quantile(1 - 0.001)[0],
+            data[["p(M(X))"]].quantile(self.quantile_lim)[0],
+            data[["p(M(X))"]].quantile(1 - self.quantile_lim)[0],
         )
         ax.set_xlabel(r"$M(X)$")
         sns.despine()
