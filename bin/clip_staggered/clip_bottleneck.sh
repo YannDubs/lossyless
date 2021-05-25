@@ -79,8 +79,8 @@ kwargs_hypopt="
 hydra/sweeper=optuna
 hydra/sweeper/sampler=random
 hypopt=optuna
-hydra.sweeper.n_trials=10
-hydra.sweeper.n_jobs=10
+hydra.sweeper.n_trials=30
+hydra.sweeper.n_jobs=30
 monitor_direction=[minimize]
 monitor_return=[test/pred/loss]
 "
