@@ -5,11 +5,6 @@ notes="
 **Goal**: Add an entropy bottleneck to CLIP and evaluates on all data.
 "
 
-# download all data
-chmod +x `dirname $0`/download_data.sh
-`dirname $0`/download_data.sh
-
-wait
 
 
 # parses special mode for running the script
