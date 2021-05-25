@@ -55,7 +55,7 @@ seed=int(interval(0,10))
 
 
 if [ "$is_plot_only" = false ] ; then
-  for data in "stl10" "caltech101" "cifar10" "cars196"  "food101" "imagenet" "pcam" "pets37"  "cifar100"    "galaxy"      
+  for data in "stl10" "caltech101"  "food101"  "pcam" "pets37" "cifar10"    "cifar100"  "imagenet"  "cars196" 
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi data@data_pred=$data hydra.sweeper.study_name=$data -m &

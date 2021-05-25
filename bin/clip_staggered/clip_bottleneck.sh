@@ -98,7 +98,7 @@ $kwargs_hypopt
 " 
 
 if [ "$is_plot_only" = false ] ; then
-  for data in "imagenet"  "cars196"  "stl10" "caltech101"  "food101"  "pcam" "pets37" "cifar10"    #"cifar100"    "galaxy"      
+  for data in  "stl10" "caltech101"  "food101"  "pcam" "pets37" "cifar10"    "cifar100"  "imagenet"  "cars196"    "galaxy"      
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi data@data_pred=$data hydra.sweeper.study_name=$data -m &
