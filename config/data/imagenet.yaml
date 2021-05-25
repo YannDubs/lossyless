@@ -3,6 +3,7 @@ defaults:
   - base
 
 name: imagenet
+dataset: imagenet 
 
 kwargs:
   dataset_kwargs:

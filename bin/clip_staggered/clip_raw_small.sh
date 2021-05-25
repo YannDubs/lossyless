@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-experiment="clip_staggered_imagenet"
+experiment="clip_raw"
 notes="
-**Goal**: Test and tune MLP probe of Imagenet with staggered CLIP
+**Goal**: CLIP in without entropy bottleneck
 "
 
 # parses special mode for running the script
@@ -14,18 +14,16 @@ logger.kwargs.project=clip_staggered
 experiment=$experiment 
 timeout=$time
 encoder.z_dim=512
-is_only_feat=True
 data@data_feat=coco
-data@data_pred=imagenet
+data@data_pred=stl10
 trainer.max_epochs=100
-featurizer=bottleneck_clip_lossyZ
++update_trainer_feat.max_epochs=1
++update_trainer_feat.limit_train_batches=1
+featurizer=clip_freeze
 featurizer.is_on_the_fly=false
 data_feat.kwargs.num_workers=4
 architecture@predictor=mlp_probe
 checkpoint@checkpoint_pred=bestValLoss
-paths.pretrained.load=$pretrained_path
-featurizer.is_train=false
-evaluation.communication.ckpt_path=null
 $add_kwargs
 "
 
@@ -34,10 +32,10 @@ kwargs_hypopt="
 hydra/sweeper=optuna
 hydra/sweeper/sampler=random
 hypopt=optuna
-hydra.sweeper.n_trials=50
-hydra.sweeper.n_jobs=25
+hydra.sweeper.n_trials=10
+hydra.sweeper.n_jobs=10
 monitor_direction=[minimize]
-monitor_return=[test/pred/err]
+monitor_return=[test/pred/loss]
 "
 
 # PREDICTOR
@@ -48,16 +46,18 @@ data_pred.kwargs.batch_size=tag(log,int(interval(32,64)))
 optimizer@optimizer_pred=Adam,SGD_likeadam,AdamW
 optimizer_pred.kwargs.weight_decay=tag(log,interval(1e-7,1e-4))
 optimizer_pred.kwargs.lr=tag(log,interval(1e-5,1e-3))
-scheduler@scheduler_pred=plateau_quick,unifmultistep1000,cosine_restart,cosine,expdecay100,expdecay1000,plateau
+scheduler@scheduler_pred=plateau_quick,unifmultistep1000,cosine_restart,expdecay100,expdecay1000,plateau
 predictor.arch_kwargs.dropout_p=interval(0.,0.5)
 seed=int(interval(0,10))
 " 
 
+
+
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in ""         
+  for data in  "cars196" "imagenet" "stl10" "caltech101" "cifar10"   "food101"  "pcam" "pets37"  #"cifar100"   
   do
 
-    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
+    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi data@data_pred=$data hydra.sweeper.study_name=$data -m &
 
     sleep 7
 
