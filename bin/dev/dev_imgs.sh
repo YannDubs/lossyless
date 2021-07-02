@@ -22,7 +22,7 @@ $add_kwargs
 # every arguments that you are sweeping over
 kwargs_multi="
 distortion=ivae,ince,taskvib
-rate=H_hyper,MI_vamp
+rate=H_hyper
 " 
 
 

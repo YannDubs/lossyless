@@ -29,7 +29,6 @@ from lossyless.callbacks import (
     MaxinvDistributionPlot,
     ReconstructImages,
 )
-from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
@@ -368,19 +367,6 @@ def instantiate_datamodule_(cfg, pre_featurizer=None):
 
 def initialize_compressor_(module, datamodule, trainer, cfg):
     """Additional steps needed for intitalization of the compressor + logging."""
-
-    # TODO remove if not using vampprior
-    # marginal vampprior
-    rate_est = module.rate_estimator
-    if hasattr(rate_est, "q_Z") and isinstance(rate_est.q_Z, MarginalVamp):
-        # initialize vamprior such that pseudoinputs are some random images
-        real_batch_size = datamodule.batch_size
-        datamodule.batch_size = rate_est.q_Z.n_pseudo
-        dataloader = datamodule.train_dataloader()
-        X, _ = iter(dataloader).next()
-        rate_est.q_Z.set_pseudoinput_(X)
-        datamodule.batch_size = real_batch_size
-
     # LOGGING
     # save number of parameters for the main model (not online optimizer but with coder)
     n_param = sum(

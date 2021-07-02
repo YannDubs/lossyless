@@ -1,9 +1,0 @@
-defaults:
-  - base_MI
-  
-name: MI_vamp
-mode: MI
-kwargs:
-  prior_fam: vamp
-  prior_kwargs: 
-    n_pseudo: 64

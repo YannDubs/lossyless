@@ -21,7 +21,7 @@ $add_kwargs
 kwargs_multi="
 encoder=mlp
 distortion=ivae,ince
-rate=H_hyper,MI_vamp
+rate=H_hyper
 data=mnist,bananaRot
 " 
 
