@@ -55,7 +55,6 @@ rate.kwargs.warmup_k_epoch=int(interval(0,3))
 optimizer@optimizer_feat=Adam,AdamW
 optimizer_feat.kwargs.weight_decay=tag(log,interval(1e-8,5e-4))
 optimizer_feat.kwargs.lr=tag(log,interval(1e-4,3e-3))
-optimizer_feat.kwargs.is_lars=true,false
 optimizer@optimizer_coder=SGD_likeadam,Adam
 optimizer_coder.kwargs.weight_decay=tag(log,interval(1e-7,5e-4))
 optimizer_coder.kwargs.lr=tag(log,interval(1e-4,1e-3))

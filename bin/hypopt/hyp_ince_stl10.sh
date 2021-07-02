@@ -65,7 +65,7 @@ distortion.kwargs.project_kwargs.out_shape=tag(log,interval(0.05,0.5))
 distortion.kwargs.temperature=tag(log,interval(0.01,0.3))
 " 
 # distortion.factor_beta : instead of deacreasing weight given to rate will increase weight given to distortion
-# BATCH SIZE: for INCE it can be beneficial to use larger batches. THe issues is that this might be worst for other parts of the networks. SOme papers say using `is_lars=True` can mititgate the issue when using large batches
+# BATCH SIZE: for INCE it can be beneficial to use larger batches. THe issues is that this might be worst for other parts of the networks.
 # SEED: here the seed is not optimized over because we are using random sampling (+ anyways it's ok to optimize over the initialization as long as it's done the same way for baselines also)
 # the only different parameters with IVAE are the last 2 ones (all other hyperameters you can play around with them but I found that the current values were good)
 

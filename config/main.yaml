@@ -156,7 +156,6 @@ optimizer_feat:
   kwargs:
     lr: ???
     weight_decay: 0
-    is_lars: false # true can be useful if large batch sizes
 scheduler_feat: {}
 
 optimizer_coder: 
@@ -165,7 +164,6 @@ optimizer_coder:
   kwargs:
     lr: ???
     weight_decay: 0
-    is_lars: ${optimizer_feat.kwargs.is_lars}
 scheduler_coder: {}
 
 optimizer_online: 
@@ -174,7 +172,6 @@ optimizer_online:
   kwargs:
     lr: ???
     weight_decay: 0
-    is_lars: ${optimizer_feat.kwargs.is_lars}
 scheduler_online: {}
 
 ### RUNNING ###

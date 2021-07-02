@@ -13,17 +13,16 @@ from numbers import Number
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-from matplotlib.cbook import MatplotlibDeprecationWarning
-
-import einops
 import torch
-from pl_bolts.optimizers.lars_scheduling import LARSWrapper
+from matplotlib.cbook import MatplotlibDeprecationWarning
 from torch import nn
 from torch.distributions import Distribution, constraints
 from torch.distributions.utils import broadcast_all
 from torch.nn import functional as F
 from torch.nn.utils.rnn import PackedSequence
 from torchvision import transforms as transform_lib
+
+import einops
 
 BASE_LOG = 2
 
@@ -551,16 +550,13 @@ def get_lr_scheduler(
     return dict(scheduler=scheduler, name=name, **kwargs_config_scheduler)
 
 
-def get_optimizer(parameters, mode, is_lars=False, **kwargs):
+def get_optimizer(parameters, mode, **kwargs):
     """Return an inistantiated optimizer.
 
     Parameters
     ----------
     optimizer : {"gdn"}U{any torch.optim optimizer}
         Optimizer to use.mode
-
-    is_lars : bool, optional
-        Whether to use a LARS optimizer which can improve when using large batch sizes.
 
     kwargs :
         Additional arguments to the optimzier.
@@ -569,8 +565,6 @@ def get_optimizer(parameters, mode, is_lars=False, **kwargs):
     if "lr_factor" in kwargs:
         kwargs["lr"] = kwargs["lr"] * kwargs.pop("lr_factor")
     optimizer = Optimizer(parameters, **kwargs)
-    if is_lars:
-        optimizer = LARSWrapper(optimizer)
     return optimizer
 
 

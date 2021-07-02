@@ -49,7 +49,7 @@ online_evaluator.arch_kwargs.n_hid_layers=1,2
 optimizer@optimizer_feat=Adam,AdamW
 optimizer_feat.kwargs.weight_decay=tag(log,interval(1e-8,5e-4))
 optimizer_feat.kwargs.lr=tag(log,interval(1e-4,3e-3))
-optimizer_feat.kwargs.is_lars=true,false
+
 optimizer@optimizer_online=SGD_likeadam,Adam,AdamW
 optimizer_online.kwargs.weight_decay=tag(log,interval(1e-8,1e-4))
 optimizer_online.kwargs.lr=tag(log,interval(1e-4,1e-3))
