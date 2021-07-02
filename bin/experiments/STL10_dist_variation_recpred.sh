@@ -52,7 +52,6 @@ featurizer.loss.beta_anneal=linear,constant
 featurizer.loss.beta=tag(log,interval(1e-8,1e0))
 distortion.factor_beta=tag(log,interval(1e-5,100))
 rate.kwargs.warmup_k_epoch=int(interval(0,3))
-rate.kwargs.invertible_processing=null,diag,psd
 optimizer@optimizer_feat=Adam,AdamW
 optimizer_feat.kwargs.weight_decay=tag(log,interval(1e-8,5e-4))
 optimizer_feat.kwargs.lr=tag(log,interval(1e-4,3e-3))

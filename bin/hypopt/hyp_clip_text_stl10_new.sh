@@ -59,7 +59,6 @@ optimizer_coder.kwargs.lr=1e-4
 scheduler@scheduler_feat=expdecay100
 scheduler@scheduler_coder=expdecay100
 rate.kwargs.warmup_k_epoch=0,1
-rate.kwargs.invertible_processing=diag
 distortion=ince_text_basic
 distortion.kwargs.is_batch_neg=false
 distortion.kwargs.is_train_temperature=false

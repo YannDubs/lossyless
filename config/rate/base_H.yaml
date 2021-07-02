@@ -4,7 +4,6 @@ defaults:
   
 rate:
   kwargs:
-    invertible_processing: diag
     kwargs_ent_bottleneck:
       init_scale: 10 # input should be at initialization in [-init_scale, init_scale]. Larger might create overhead. You can use something like 10 for large images but smaller for smaller 
       filters: [3, 3, 3, 3] # size of the entropy model (quite robust to that)

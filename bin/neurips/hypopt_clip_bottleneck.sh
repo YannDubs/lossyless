@@ -53,7 +53,6 @@ optimizer_coder.kwargs.weight_decay=tag(log,interval(1e-7,1e-5))
 optimizer_coder.kwargs.lr=tag(log,interval(1e-4,5e-4))
 scheduler@scheduler_feat=expdecay1000,expdecay100,unifmultistep100,unifmultistep1000,cosine_restart,plateau_quick
 scheduler@scheduler_coder=expdecay1000,expdecay100
-rate.kwargs.invertible_processing=diag
 rate.kwargs.is_endToEnd=False
 distortion.p_norm=1,2
 seed=0,1,2,3,4,5,6,7,8,9

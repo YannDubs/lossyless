@@ -56,7 +56,6 @@ optimizer_coder.kwargs.weight_decay=1e-6
 optimizer_coder.kwargs.lr=1e-4
 scheduler@scheduler_feat=expdecay1000,expdecay100,unifmultistep100,unifmultistep1000
 scheduler@scheduler_coder=expdecay100
-rate.kwargs.invertible_processing=diag
 distortion.kwargs.is_train_temperature=false
 " 
 # distortion.factor_beta : instead of deacreasing weight given to rate will increase weight given to distortion

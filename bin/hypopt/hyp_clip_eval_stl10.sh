@@ -26,7 +26,6 @@ data_feat.kwargs.num_workers=4
 featurizer.is_on_the_fly=false
 optimizer@optimizer_pred=Adam
 featurizer.loss.beta_anneal=linear
-rate.kwargs.invertible_processing=diag
 paths.pretrained.load=/scratch/ssd002/home/yannd/projects/lossyless/pretrained/exp_hyp_clip_lossyZ_cifar10/datafeat_coco/feat_bottleneck_clip_lossyZ/dist_lossyZ/enc_clip/rate_H_hyper/optfeat_Adam_lr7.9e-05_w2.2e-06/schedfeat_plateau_quick/zdim_512/zs_1/beta_3.4e-02/seed_4/addfeat_None/jid_2_2727892_2
 featurizer.is_train=false
 evaluation.communication.ckpt_path=null

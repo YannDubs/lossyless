@@ -3,10 +3,11 @@ import logging
 import math
 from contextlib import closing
 
-import compressai
-import einops
 import numpy as np
 import torch
+
+import compressai
+import einops
 from compressai.entropy_models import EntropyBottleneck as CompressaiEntropyBottleneck
 from compressai.entropy_models.entropy_models import (
     EntropyModel,
@@ -413,16 +414,6 @@ class HRateEstimator(RateEstimator):
     kwargs_ent_bottleneck : dict, optional
         Additional arguments to `EntropyBottleneck`.
 
-    invertible_processing : {None, "psd", "diag"}, optional
-        Wether to apply an invertible linear layer before the bottleneck and then undo it (apply inverse).
-        This is especially important when the encoder is pretrained, indeed the entropy bottleneck
-        adds  noise in [-0.5,0.5] to z and treats all dimensions as independent. THis is theoretically
-        fine as the previous layer can learn to perform all processing that is needed such that those
-        2 (arbitrary) conventions are met. But in practice this can (1) make learning harder for
-        the distortion; (2) cannot be changed when the encoder is pretrained. "diag" applies a
-        diagonal matrix. "psd" applies a positive definite matrix (better but a little slower).
-        None doesn't apply anything.
-
     kwargs :
         Additional arguments to `RateEstimator`
     """
@@ -430,72 +421,29 @@ class HRateEstimator(RateEstimator):
     is_can_compress = True
 
     def __init__(
-        self,
-        z_dim,
-        kwargs_ent_bottleneck={},
-        invertible_processing="diag",
-        **kwargs,
+        self, z_dim, kwargs_ent_bottleneck={}, **kwargs,
     ):
-        self.invertible_processing = invertible_processing
         super().__init__(z_dim, **kwargs)
 
         self.kwargs_ent_bottleneck = kwargs_ent_bottleneck
 
-        if self.invertible_processing == "diag":
-            self.scaling = torch.nn.Parameter(torch.ones(z_dim))
-            self.biasing = torch.nn.Parameter(torch.zeros(z_dim))
-        elif self.invertible_processing == "psd":
-            self.scaling = torch.nn.Parameter(torch.randn(z_dim, z_dim))
-            self.biasing = torch.nn.Parameter(torch.zeros(z_dim))
-            self.register_buffer("eye", torch.eye(z_dim), persistent=False)
-        elif self.invertible_processing is None:
-            pass
-        else:
-            raise ValueError(
-                f"Unkown invertible_processing={self.invertible_processing}."
-            )
+        # => as if you use entropy coding that uses different scales in each dim
+        self.scaling = torch.nn.Parameter(torch.ones(z_dim))
+        self.biasing = torch.nn.Parameter(torch.zeros(z_dim))
 
     aux_loss = compressai.models.CompressionModel.aux_loss
 
     def reset_parameters(self):
         weights_init(self)
 
-        if self.invertible_processing == "diag":
-            self.scaling = torch.nn.Parameter(torch.ones(self.z_dim))
-            self.biasing = torch.nn.Parameter(torch.zeros(self.z_dim))
-        elif self.invertible_processing == "psd":
-            self.scaling = torch.nn.Parameter(torch.randn(self.z_dim, self.z_dim))
-            self.biasing = torch.nn.Parameter(torch.zeros(self.z_dim))
+        self.scaling = torch.nn.Parameter(torch.ones(self.z_dim))
+        self.biasing = torch.nn.Parameter(torch.zeros(self.z_dim))
 
     def process_z_in(self, z):
-        z = z.float()
-        kwargs = dict()
+        return (z.float() + self.biasing) * self.scaling.exp()
 
-        # TODO remove flag and only keep the simple "diag" if work well
-        if self.invertible_processing == "diag":
-            z = (z + self.biasing) * self.scaling.exp()
-
-        elif self.invertible_processing == "psd":
-            mat = torch.mm(self.scaling, self.scaling.T) + 1e-1 * self.eye
-            z = z + self.biasing
-            z = torch.matmul(z, mat)
-
-            kwargs["mat"] = mat
-
-        return z, kwargs
-
-    def process_z_out(self, z_hat, mat=None):
-        if self.invertible_processing == "diag":
-            z_hat = (z_hat / self.scaling.exp()) - self.biasing
-
-        elif self.invertible_processing == "psd":
-            if mat is None:
-                mat = torch.mm(self.scaling, self.scaling.T) + 1e-1 * self.eye
-            chol = torch.cholesky(mat)
-            z_hat = torch.cholesky_solve(z_hat.T, chol).T
-            z_hat = z_hat - self.biasing
-
-        return z_hat
+    def process_z_out(self, z_hat):
+        return (z_hat / self.scaling.exp()) - self.biasing
 
     def _load_from_state_dict(
         self,
@@ -593,7 +541,7 @@ class HRateFactorizedPrior(HRateEstimator):
 
     def forward_help(self, z, _, parent=None):
 
-        z_in, kwargs = self.process_z_in(z)
+        z_in = self.process_z_in(z)
 
         z_hat, q_z = self.entropy_bottleneck(z_in)
 
@@ -609,12 +557,12 @@ class HRateFactorizedPrior(HRateEstimator):
 
         other = dict()
 
-        z_hat = self.process_z_out(z_hat, **kwargs)
+        z_hat = self.process_z_out(z_hat)
 
         return z_hat, neg_log_q_z, logs, other
 
     def compress(self, z, parent=None):
-        z_in, _ = self.process_z_in(z)
+        z_in = self.process_z_in(z)
         # list for generality when hyperprior
         return [self.entropy_bottleneck.compress(z_in)]
 
@@ -659,12 +607,7 @@ class HRateHyperprior(HRateEstimator):
     """
 
     def __init__(
-        self,
-        z_dim,
-        factor_dim=5,
-        side_z_dim=None,
-        is_pred_mean=True,
-        **kwargs,
+        self, z_dim, factor_dim=5, side_z_dim=None, is_pred_mean=True, **kwargs,
     ):
         super().__init__(z_dim, **kwargs)
 
@@ -701,7 +644,7 @@ class HRateHyperprior(HRateEstimator):
         return scales_hat, means_hat
 
     def forward_help(self, z, _, __):
-        z_in, kwargs = self.process_z_in(z)
+        z_in = self.process_z_in(z)
 
         # shape: [ batch_shape, side_z_dim]
         side_z = self.side_encoder(z_in)
@@ -738,7 +681,7 @@ class HRateHyperprior(HRateEstimator):
 
         other = dict()
 
-        z_hat = self.process_z_out(z_hat, **kwargs)
+        z_hat = self.process_z_out(z_hat)
 
         return z_hat, neg_log_q_zs, logs, other
 
@@ -760,7 +703,7 @@ class HRateHyperprior(HRateEstimator):
         return indexes, means_hat
 
     def compress(self, z, parent=None):
-        z_in, _ = self.process_z_in(z)
+        z_in = self.process_z_in(z)
 
         # side_z and side_z_hat. shape: [batch_shape, side_z_dim]
         side_z = self.side_encoder(z_in)
@@ -842,10 +785,7 @@ class HRateHyperpriorSpatial(HRateHyperprior):
     """
 
     def __init__(
-        self,
-        z_dim,
-        P_ZlX,
-        **kwargs,
+        self, z_dim, P_ZlX, **kwargs,
     ):
         self.raw_z_dim = z_dim
         self.n_channels = P_ZlX.mapper.channel_out_dim
