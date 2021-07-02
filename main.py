@@ -23,36 +23,23 @@ import omegaconf
 import pl_bolts
 import pytorch_lightning as pl
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
-from lossyless.callbacks import (
-    CodebookPlot,
-    LatentDimInterpolator,
-    MaxinvDistributionPlot,
-    ReconstructImages,
-)
+from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
+                                 MaxinvDistributionPlot, ReconstructImages)
 from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
-from pytorch_lightning.plugins import DDPPlugin, DDPSpawnPlugin
+from pytorch_lightning.plugins import DDPSpawnPlugin
 from pytorch_lightning.utilities import rank_zero_warn
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from pytorch_lightning.utilities.exceptions import MisconfigurationException
 from utils.data import get_datamodule
 from utils.data.images import GalaxyDataset
-from utils.helpers import (
-    ModelCheckpoint,
-    apply_featurizer,
-    cfg_save,
-    format_resolver,
-    get_latest_match,
-    getattr_from_oneof,
-    log_dict,
-    omegaconf2namespace,
-    remove_rf,
-    replace_keys,
-    set_debug,
-)
+from utils.helpers import (ModelCheckpoint, apply_featurizer, cfg_save,
+                           format_resolver, get_latest_match,
+                           getattr_from_oneof, log_dict, omegaconf2namespace,
+                           remove_rf, replace_keys, set_debug)
 
 try:
     import wandb
@@ -326,7 +313,7 @@ def instantiate_datamodule_(cfg, pre_featurizer=None):
     cfgd = cfg.data
     cfgt = cfg.trainer
 
-    if cfg.trainer.gpus > 1 and cfg.trainer.get("accelerator", "ddp") == "ddp_spawn":
+    if cfg.trainer.gpus > 1:
         # ddp_spawn very slow with multi workers
         cfgd.kwargs.num_workers = 0  # TODO test if true
 
@@ -463,24 +450,14 @@ def get_trainer(cfg, module, is_featurizer):
     kwargs = dict(**cfg.trainer)
 
     # PARALLEL PROCESSING
-    # TODOnly one)
     if kwargs["gpus"] > 1:
         kwargs["sync_batchnorm"] = True
         accelerator = kwargs.get("accelerator", "ddp")
         parallel_devices = [torch.device(f"cuda:{i}") for i in range(kwargs["gpus"])]
-
         #! ddp does not work yet with compressai https://github.com/InterDigitalInc/CompressAI/issues/30
-        if accelerator == "ddp":
-            kwargs["accelerator"] = "ddp"
-            kwargs["plugins"] = DDPPlugin(
-                parallel_devices=parallel_devices, find_unused_parameters=True
-            )
-
-        elif accelerator == "ddp_spawn":
-            kwargs["accelerator"] = "ddp"
-            kwargs["plugins"] = DDPSpawnPlugin(
-                parallel_devices=parallel_devices, find_unused_parameters=True,
-            )
+        kwargs["plugins"] = DDPSpawnPlugin(
+            parallel_devices=parallel_devices, find_unused_parameters=True,
+        )
 
     # TRAINER
     trainer = pl.Trainer(

@@ -44,11 +44,6 @@ while getopts ':s:p:m:t:v:a:c:' flag; do
       prfx=${OPTARG}
       echo "Visualization/plotting only ..."
       ;;
-    p ) 
-      main="parallel.py"
-      add_kwargs="${add_kwargs} +parallel=${OPTARG}"
-      echo "Parallel=${OPTARG} ..."
-      ;;
     t ) 
       time=${OPTARG}
       echo "Time ${OPTARG} minutes"
