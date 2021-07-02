@@ -15,13 +15,13 @@ from time import sleep
 
 import matplotlib.pyplot as plt
 import pandas as pd
+import torch
 
 import hydra
 import lossyless
 import omegaconf
 import pl_bolts
 import pytorch_lightning as pl
-import torch
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
 from lossyless.callbacks import (
     CodebookPlot,
@@ -117,7 +117,11 @@ def main(cfg):
         save_pretrained(comp_cfg, comp_trainer, stage)
     else:
         logger.info("Load pretrained compressor ...")
-        compressor = load_pretrained(comp_cfg, LearnableCompressor, stage)
+        if comp_cfg.featurizer.is_use_init:
+            # some models do not have to be trained or loaded
+            compressor = LearnableCompressor(hparams=comp_cfg)
+        else:
+            compressor = load_pretrained(comp_cfg, LearnableCompressor, stage)
         comp_trainer = get_trainer(comp_cfg, compressor, is_featurizer=True)
         placeholder_fit(comp_trainer, compressor, comp_datamodule)
         comp_cfg.evaluation.featurizer.ckpt_path = None  # eval loaded model
@@ -178,6 +182,11 @@ def main(cfg):
     pred_cfg = set_cfg(cfg, stage)
     pred_datamodule = instantiate_datamodule_(pred_cfg, pre_featurizer=pre_featurizer)
     pred_cfg = omegaconf2namespace(pred_cfg)
+
+    if pred_cfg.is_feat_pred:
+        finalize_kwargs["datamodules"][stage] = pred_datamodule
+        finalize_kwargs["cfgs"][stage] = pred_cfg
+        return finalize(**finalize_kwargs)
 
     if pred_cfg.predictor.is_train and not is_trained(comp_cfg, stage):
         predictor = Predictor(hparams=pred_cfg, featurizer=onfly_featurizer)
@@ -544,6 +553,7 @@ def load_pretrained(cfg, Module, stage, **kwargs):
 
 def evaluate(trainer, datamodule, cfg, stage):
     """Evaluate the trainer by loging all the metrics from the test set from the best model."""
+    test_res = dict()
     try:
         trainer.lightning_module.stage = cfg.stage  # logging correct stage
         eval_dataloader = datamodule.eval_dataloader(cfg.evaluation.is_eval_on_test)
@@ -579,7 +589,6 @@ def evaluate(trainer, datamodule, cfg, stage):
 
     except:
         logger.exception("Failed to evaluate. Skipping this error:")
-        test_res = dict()
 
     return test_res
 
@@ -630,7 +639,7 @@ def finalize_stage_(
         remove_rf(cfg.checkpoint.kwargs.dirpath, not_exist_ok=True)
 
         # don't keep the pretrained model
-        if not is_save_best:
+        if not is_save_best and "hub" not in cfg.paths.pretrained.save:
             remove_rf(cfg.paths.pretrained.save, not_exist_ok=True)
 
     if not cfg.is_no_save:
@@ -671,7 +680,7 @@ def finalize(modules, trainers, datamodules, cfgs, results):
         all_results.update(partial_results)
 
     if cfg.is_return:
-        return modules, trainers, datamodules, cfgs
+        return modules, trainers, datamodules, cfgs, all_results
     else:
         return get_hypopt_monitor(cfg, all_results)
 

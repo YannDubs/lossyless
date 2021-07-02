@@ -54,7 +54,7 @@ seed=int(interval(0,10))
 
 
 if [ "$is_plot_only" = false ] ; then
-  for data in  "cars196" "imagenet" "stl10" "caltech101" "cifar10"   "food101"  "pcam" "pets37"  #"cifar100"   
+  for data in  "cifar100"    #"cars196" "imagenet" "stl10" "caltech101" "cifar10"   "food101"  "pcam" "pets37"  
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi data@data_pred=$data hydra.sweeper.study_name=$data -m &
@@ -64,11 +64,3 @@ if [ "$is_plot_only" = false ] ; then
   done
 fi
 
-wait 
-
-# for featurizer
-col_val_subset=""
-python aggregate.py \
-       experiment=$experiment  \
-       $col_val_subset \
-       agg_mode=[summarize_metrics]

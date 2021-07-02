@@ -1,0 +1,20 @@
+defaults:
+  - main # load all the config that were used for pretraining => makes sure that same model
+
+
+is_feat_pred: True # return featurized pred dataset
+featurizer:
+  is_on_the_fly: false
+
+evaluation:
+  communication:
+    ckpt_path: Null
+    is_evaluate: True
+
+load_pretrained:
+  collect_data:
+    is_force_cpu: False
+    is_only_feat: False
+
+clip_linear:
+  n_predictors: 16

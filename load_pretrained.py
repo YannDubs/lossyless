@@ -7,9 +7,10 @@ import logging
 from copy import deepcopy
 from pathlib import Path
 
+import torch
+
 import einops
 import hydra
-import torch
 from lossyless.callbacks import (
     CodebookPlot,
     LatentDimInterpolator,
@@ -83,6 +84,7 @@ class PretrainedAnalyser(PostPlotter):
         self.modules = dict()
         self.trainers = dict()
         self.datamodules = dict()
+        self.results = dict()
 
     def collect_data(self, cfg, is_only_feat=True, is_force_cpu=False):
         """Collects all the data.
@@ -120,6 +122,7 @@ class PretrainedAnalyser(PostPlotter):
                     self.trainers,
                     self.datamodules,
                     self.cfgs,
+                    self.results,
                 ) = main_training(cfg)
             except Exception as e:
                 raise e

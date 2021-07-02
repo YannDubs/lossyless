@@ -93,9 +93,6 @@ predictor.arch_kwargs.dropout_p=interval(0.,0.5)
 seed=int(interval(0,10))
 " 
 
-kwargs_multi="
-$kwargs_hypopt
-" 
 
 if [ "$is_plot_only" = false ] ; then
   for data in  "stl10" "caltech101"  "food101"  "pcam" "pets37" "cifar10"    "cifar100"  "imagenet"  "cars196"    "galaxy"      

@@ -42,6 +42,7 @@ hydra.sweeper.n_trials=10
 hydra.sweeper.n_jobs=10
 monitor_direction=[minimize]
 monitor_return=[test/pred/loss]
+hydra.sweeper.sampler.seed=1
 "
 
 # PREDICTOR
@@ -59,9 +60,9 @@ seed=int(interval(0,10))
 
 
 if [ "$is_plot_only" = false ] ; then
-  for data in "stl10" "imagenet" "cars196"  "caltech101"  "food101"  "pcam" "pets37" "cifar10"    "cifar100"   # "galaxy"      
+  for data in "imagenet" #"pets37" "cifar10"    "cifar100"    
   do
-    for beta in     "1e-1"  "5e-2"   "1e-2"        
+    for beta in   "1e-1"      "5e-2"  # "1e-2"        
     do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi data@data_pred=$data featurizer.loss.beta=$beta paths.pretrained.load=$pretrained_path/beta$beta hydra.sweeper.study_name=$data_$beta -m &

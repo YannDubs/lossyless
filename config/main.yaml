@@ -48,6 +48,7 @@ long_name_feat: exp_${experiment}/datafeat_${data_feat.name}/feat_${featurizer.n
 long_name_comm: ${long_name_feat}/datapred_${data_pred.name}
 long_name_pred: ${long_name_comm}/optpred_${optimizer_pred.name}/schedpred_${scheduler_pred.name}/addpred_${other.add_pred}
 is_only_feat: false # run rpredicotr?
+is_feat_pred: false # whether to return the featurized prediction data
 is_return: false # will return everything (the data, the models, ...)
 monitor_return: [] # normal return of the functio. THis is especially useful for hyperparameter tuning
 monitor_direction: [] # whether the monitor should be maximized or minimized. usefule for hyperparameter tuning

@@ -42,7 +42,7 @@ monitor_return=[test/pred/loss]
 # parameters for the predictor
 kwargs_multi="
 $kwargs_hypopt
-featurizer.loss.beta=tag(log,interval(1e-3,1e1))
+featurizer.loss.beta=tag(log,interval(1e-3,1e0))
 data_pred.kwargs.batch_size=tag(log,int(interval(32,64)))
 optimizer@optimizer_pred=Adam,SGD_likeadam,AdamW
 optimizer_pred.kwargs.weight_decay=tag(log,interval(1e-7,1e-4))

@@ -25,7 +25,7 @@ featurizer:
   name: bottleneck_clip_lossyZ
   loss:
     beta_anneal: linear
-    beta: 7e-2
+    beta: 5e-2
 
 encoder:
   z_dim: 512

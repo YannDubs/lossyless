@@ -1,8 +1,9 @@
 import logging
 import math
 
-import pytorch_lightning as pl
 import torch
+
+import pytorch_lightning as pl
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.core.decorators import auto_move_data
 
@@ -69,9 +70,7 @@ class LearnableCompressor(pl.LightningModule):
         """Return the correct rate estimator. Contains the prior and the coder."""
         cfg_rate = self.hparams.rate
         rate_estimator = get_rate_estimator(
-            cfg_rate.mode,
-            p_ZlX=self.p_ZlX,
-            **cfg_rate.kwargs,
+            cfg_rate.mode, p_ZlX=self.p_ZlX, **cfg_rate.kwargs,
         )
         # ensure that pickable before DataDistributed
         rate_estimator.make_pickable_()
@@ -108,7 +107,7 @@ class LearnableCompressor(pl.LightningModule):
             y = y[0]  # only return the real label assumed to be first
 
         x_hat = self(x)
-        return x_hat, y
+        return x_hat.cpu(), y
 
     def predict(self, *args, **kwargs):  # TODO remove in newer version of lightning
         return self.predict_step(*args, **kwargs)
@@ -250,6 +249,7 @@ class LearnableCompressor(pl.LightningModule):
             distortion=distortion / math.log(BASE_LOG),
             beta=curr_beta,
         )
+
         # if both are entropies this will say how good the model is
         logs["ratedist"] = logs["rate"] + logs["distortion"]
         other = dict()

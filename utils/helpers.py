@@ -9,12 +9,12 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
+import torch
+from torch.utils.data import Subset
 
 import pl_bolts
 import pytorch_lightning as pl
-import torch
 from omegaconf import OmegaConf
-from torch.utils.data import Subset
 
 logger = logging.getLogger(__name__)
 
@@ -275,11 +275,13 @@ def apply_featurizer(datamodule, featurizer, is_eval_on_test=True, **kwargs):
         train_dataset.curr_split = "validation"
 
     out_train = featurizer.predict(
-        dataloaders=[datamodule.train_dataloader(train_dataset=train_dataset)]
+        dataloaders=[
+            datamodule.train_dataloader(batch_size=64, train_dataset=train_dataset)
+        ]
     )
-    out_val = featurizer.predict(dataloaders=[datamodule.val_dataloader()])
+    out_val = featurizer.predict(dataloaders=[datamodule.val_dataloader(batch_size=64)])
     out_test = featurizer.predict(
-        dataloaders=[datamodule.eval_dataloader(is_eval_on_test)]
+        dataloaders=[datamodule.eval_dataloader(is_eval_on_test, batch_size=64)]
     )
 
     X_train, Y_train = zip(*out_train)
