@@ -122,7 +122,7 @@ python aggregate.py \
        agg_mode=[summarize_metrics,summarize_RD_curves,plot_all_RD_curves,plot_invariance_RD_curve]
 
 col_val_subset=""
-python load_pretrained.py \
+python utils/load_pretrained.py \
        load_pretrained.experiment=$experiment  \
        $col_val_subset \
        $kwargs  \

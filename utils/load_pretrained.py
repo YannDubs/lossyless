@@ -1,9 +1,11 @@
 """Entry point to load a pretrained model for inference / plotting.
 
-This should be called by `python load_pretrained.py <conf>` where <conf> sets all configs from the cli, see 
-the file `config/load_pretrained.yaml` for details about the configs. or use `python load_pretrained.py -h`.
+This should be called by `python utils/load_pretrained.py <conf>` where <conf> sets all configs from the cli, see 
+the file `config/load_pretrained.yaml` for details about the configs. or use `python utils/load_pretrained.py -h`.
 """
 import logging
+import os
+import sys
 from copy import deepcopy
 from pathlib import Path
 
@@ -16,23 +18,29 @@ from lossyless.callbacks import (
     LatentDimInterpolator,
     MaxinvDistributionPlot,
 )
-from lossyless.helpers import (
+from omegaconf import OmegaConf
+
+MAIN_DIR = os.path.abspath(str(Path(__file__).parents[1]))
+CURR_DIR = os.path.abspath(str(Path(__file__).parents[0]))
+sys.path.append(MAIN_DIR)
+sys.path.append(CURR_DIR)
+
+from lossyless.helpers import (  # isort:skip
     UnNormalizer,
     is_colored_img,
     plot_config,
     tensors_to_fig,
     tmp_seed,
 )
-from main import main as main_training
-from omegaconf import OmegaConf
-from utils.helpers import all_logging_disabled, format_resolver
-from utils.postplotting import PRETTY_RENAMER, PostPlotter
-from utils.postplotting.helpers import save_fig
+from main import main as main_training  # isort:skip
+from utils.helpers import all_logging_disabled, format_resolver  # isort:skip
+from utils.postplotting import PRETTY_RENAMER, PostPlotter  # isort:skip
+from utils.postplotting.helpers import save_fig  # isort:skip
 
 logger = logging.getLogger(__name__)
 
 
-@hydra.main(config_name="load_pretrained", config_path="config")
+@hydra.main(config_name=f"{MAIN_DIR}/config", config_path="config")
 def main_cli(cfg):
     # uses main_cli sot that `main` can be called from notebooks.
     try:

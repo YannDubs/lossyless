@@ -30,7 +30,7 @@ sys.path.append(CURR_DIR)
 from lossyless import CondDist, LearnableCompressor, get_Architecture  # isort:skip
 from utils.data import get_datamodule  # isort:skip
 from main import begin, set_cfg, RESULTS_FILE  # isort:skip
-from load_pretrained import PretrainedAnalyser  # isort:skip
+from utils.load_pretrained import PretrainedAnalyser  # isort:skip
 from utils.helpers import (  # isort:skip
     format_resolver,
     omegaconf2namespace,

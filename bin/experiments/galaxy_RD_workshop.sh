@@ -68,7 +68,7 @@ python aggregate.py \
 # plot loaded model
 # this will load each model that you saved and do some plotting (non aggregated)
 col_val_subset=""
-python load_pretrained.py \
+python utils/load_pretrained.py \
        load_pretrained.experiment=$experiment  \
        $col_val_subset \
        $kwargs  \

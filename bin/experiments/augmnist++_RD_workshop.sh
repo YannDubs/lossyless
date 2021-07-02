@@ -76,7 +76,7 @@ python aggregate.py \
 
 #plot loaded model
 col_val_subset=""
-python load_pretrained.py \
+python utils/load_pretrained.py \
       load_pretrained.experiment=$experiment  \
       $col_val_subset \
       $kwargs  \
@@ -87,7 +87,7 @@ python load_pretrained.py \
       -m 
 
 # col_val_subset=""
-# python load_pretrained.py \
+# python utils/load_pretrained.py \
 #       load_pretrained.experiment=$experiment  \
 #       $col_val_subset \
 #       $kwargs  \
@@ -103,7 +103,7 @@ python load_pretrained.py \
 #       -m
 
 # col_val_subset=""
-# python load_pretrained.py \
+# python utils/load_pretrained.py \
 #       load_pretrained.experiment=$experiment  \
 #       $col_val_subset \
 #       $kwargs  \
