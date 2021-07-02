@@ -106,7 +106,7 @@ col_val_subset=""
 rate_cols="['test/feat/rate']"
 distortion_cols="['test/feat/distortion','test/feat/online_loss']"
 compare="dist"
-python aggregate.py \
+python utils/aggregate.py \
        experiment=$experiment  \
        collect_data.predictor=null \
        $col_val_subset \

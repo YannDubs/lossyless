@@ -54,7 +54,7 @@ rate_cols="['test/feat/rate']"
 distortion_cols="['test/feat/distortion','test/feat/online_loss','test/feat/online_err','test/pred/loss','test/pred/err']"
 compare="dist"
 data="merged" # want to access both ther featurizer data and the  predictor data
-python aggregate.py \
+python utils/aggregate.py \
        experiment=$experiment  \
        $col_val_subset \
        +summarize_RD_curves.data="${data}" \

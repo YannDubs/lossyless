@@ -95,7 +95,7 @@ wait
 
 # for featurizer
 col_val_subset=""
-python aggregate.py \
+python utils/aggregate.py \
        experiment=$experiment  \
        $col_val_subset \
        agg_mode=[summarize_metrics]

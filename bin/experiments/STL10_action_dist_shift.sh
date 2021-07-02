@@ -85,12 +85,12 @@ fi
 
 
 data="merged" # want to access both ther featurizer data and the  predictor data
-python aggregate.py \
+python utils/aggregate.py \
        experiment=$experiment  \
        agg_mode=[summarize_metrics] \
        collect_data.params_to_add.p_augment=data_pred.kwargs.dataset_kwargs.p_augment
 
-python aggregate.py \
+python utils/aggregate.py \
        experiment=$experiment  \
        $col_val_subset \
        +plot_pareto_front.data="${data}" \

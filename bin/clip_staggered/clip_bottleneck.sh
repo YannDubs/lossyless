@@ -109,7 +109,7 @@ wait
 
 # for featurizer
 col_val_subset=""
-python aggregate.py \
+python utils/aggregate.py \
        experiment=$experiment  \
        patterns.featurizer=null \
        $col_val_subset \

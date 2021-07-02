@@ -81,11 +81,11 @@ if [ "$is_plot_only" = false ] ; then
 fi
 
 data="merged" # want to access both ther featurizer data and the  predictor data
-python aggregate.py \
+python utils/aggregate.py \
        experiment=$experiment  \
        agg_mode=[summarize_metrics]
 
-python aggregate.py \
+python utils/aggregate.py \
        experiment=$experiment  \
        $col_val_subset \
        +plot_pareto_front.data="${data}" \

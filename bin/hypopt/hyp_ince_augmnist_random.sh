@@ -85,7 +85,7 @@ col_val_subset=""
 rate_cols="['test/feat/rate']"
 distortion_cols="['test/feat/distortion','test/feat/online_loss','test/feat/online_err']"
 data="featurizer" # want to access both ther featurizer data and the  predictor data
-python aggregate.py \
+python utils/aggregate.py \
        experiment=$experiment  \
        $col_val_subset \
        collect_data.predictor=null \

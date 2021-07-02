@@ -1,28 +1,22 @@
 """Entry point to aggregate a series of results obtained using `main.py` in a nice plot / table.
 
-This should be called by `python aggregate.py <conf>` where <conf> sets all configs from the cli, see 
-the file `config/aggregate.yaml` for details about the configs. or use `python aggregate.py -h`.
+This should be called by `python utils/aggregate.py <conf>` where <conf> sets all configs from the cli, see 
+the file `config/aggregate.yaml` for details about the configs. or use `python utils/aggregate.py -h`.
 """
 
 import glob
 import logging
+import os
+import sys
 from pathlib import Path
 
-import hydra
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from omegaconf import OmegaConf
 
-from lossyless.helpers import BASE_LOG, check_import
-from main import CONFIG_FILE, get_stage_name
-from utils.helpers import (cfg_load, cfg_save, getattr_from_oneof,
-                           omegaconf2namespace)
-from utils.postplotting import (PRETTY_RENAMER, PostPlotter, data_getter,
-                                folder_split, single_plot, table_summarizer)
-from utils.postplotting.helpers import aggregate, save_fig
-from utils.visualizations.helpers import kwargs_log_scale
+import hydra
+from omegaconf import OmegaConf
 
 try:
     import sklearn.metrics
@@ -34,10 +28,34 @@ try:
 except:
     pass
 
+MAIN_DIR = os.path.abspath(str(Path(__file__).parents[1]))
+CURR_DIR = os.path.abspath(str(Path(__file__).parents[0]))
+sys.path.append(MAIN_DIR)
+sys.path.append(CURR_DIR)
+
+from lossyless.helpers import BASE_LOG, check_import  # isort:skip
+from main import CONFIG_FILE, get_stage_name  # isort:skip
+from utils.helpers import (  # isort:skip
+    cfg_load,
+    cfg_save,
+    getattr_from_oneof,
+    omegaconf2namespace,
+)
+from utils.postplotting import (  # isort:skip
+    PRETTY_RENAMER,
+    PostPlotter,
+    data_getter,
+    folder_split,
+    single_plot,
+    table_summarizer,
+)
+from utils.postplotting.helpers import aggregate, save_fig  # isort:skip
+from utils.visualizations.helpers import kwargs_log_scale  # isort:skip
+
 logger = logging.getLogger(__name__)
 
 
-@hydra.main(config_name="aggregate", config_path="config")
+@hydra.main(config_name="{MAIN_DIR}/config", config_path="config")
 def main_cli(cfg):
     # uses main_cli sot that `main` can be called from notebooks.
     return main(cfg)
@@ -727,10 +745,7 @@ class ResultAggregator(PostPlotter):
 
         elif mode == "lmplot":
             used_kwargs = dict(
-                legend="full",
-                sharey=sharey,
-                sharex=sharex,
-                legend_out=legend_out,
+                legend="full", sharey=sharey, sharex=sharex, legend_out=legend_out,
             )
             used_kwargs.update(kwargs)
 

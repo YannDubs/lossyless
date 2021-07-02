@@ -98,7 +98,7 @@ wait
 
 # for featurizer
 col_val_subset=""
-python aggregate.py \
+python utils/aggregate.py \
        experiment=$experiment  \
        collect_data.predictor=null \
        $col_val_subset \
