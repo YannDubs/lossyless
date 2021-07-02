@@ -1,15 +1,23 @@
 import logging
 import math
 
-import einops
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
+import einops
+
 from .architectures import MLP, get_Architecture
 from .distributions import Deterministic, DiagGaussian
-from .helpers import (BASE_LOG, UnNormalizer, gather_from_gpus, is_colored_img,
-                      kl_divergence, prediction_loss, weights_init)
+from .helpers import (
+    BASE_LOG,
+    UnNormalizer,
+    gather_from_gpus,
+    is_colored_img,
+    kl_divergence,
+    prediction_loss,
+    weights_init,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -317,7 +325,6 @@ class ContrastiveDistortion(nn.Module):
         zs = torch.cat([z, z_pos], dim=0)
 
         if self.is_cosine:
-            # Note: simclr head projector already normalizes, but no issue if normalize twice
             zs = F.normalize(zs, dim=1, p=2)
 
         # shape: [2*batch_size, 2*batch_size]

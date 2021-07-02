@@ -1,34 +1,22 @@
 from pathlib import Path
 
+import clip
 import h5py
 import numpy as np
-from sklearn.linear_model import LogisticRegression
-from tqdm import tqdm
-
-import clip
 import torch
 import torch.multiprocessing
-from lossyless.helpers import to_numpy
-from pl_bolts.models.self_supervised import SimCLR
-from pl_bolts.models.self_supervised.simclr import SimCLREvalDataTransform
-from pl_bolts.transforms.dataset_normalizations import (cifar10_normalization,
-                                                        imagenet_normalization)
+from sklearn.linear_model import LogisticRegression
 from torch.utils.data import DataLoader
 from torchvision.datasets import CIFAR10, CIFAR100, STL10, ImageFolder
+from tqdm import tqdm
+
+from lossyless.helpers import to_numpy
+from pl_bolts.transforms.dataset_normalizations import (
+    cifar10_normalization,
+    imagenet_normalization,
+)
 
 DATA_DIR = Path(__file__).parents[1].joinpath("data")
-PREPROCESSES = dict(
-    CIFAR10=SimCLREvalDataTransform(normalize=cifar10_normalization()).online_transform,
-    CIFAR100=SimCLREvalDataTransform(
-        normalize=cifar10_normalization()
-    ).online_transform,
-    ImagenetteDataset=SimCLREvalDataTransform(
-        normalize=imagenet_normalization()
-    ).online_transform,
-    ImagenetDataset=SimCLREvalDataTransform(
-        normalize=imagenet_normalization()
-    ).online_transform,
-)
 
 
 class ImagenetteDataset(ImageFolder):
@@ -104,25 +92,10 @@ def load_features(file):
 
 def get_encoder_preprocess(model, data, is_half=True, device="cpu"):
 
-    if model == "SimCLR":
-        weight_path = "https://pl-bolts-weights.s3.us-east-2.amazonaws.com/simclr/bolts_simclr_imagenet/simclr_imagenet.ckpt"
-        simclr = SimCLR.load_from_checkpoint(weight_path, strict=False)
-        simclr_resnet50 = simclr.encoder.eval().to(device)
-        if is_half:
-            simclr_resnet50.half()
-        encoder = lambda x: simclr_resnet50(x)[0]
-        preprocess = PREPROCESSES[data]
-
-    elif model == "CLIP_ViT":
+    if model == "CLIP_ViT":
         entire_model, preprocess = clip.load("ViT-B/32", device)
         # if is_half:
         #     entire_model.half()
-        encoder = entire_model.encode_image
-
-    elif model == "CLIP_RN50":
-        entire_model, preprocess = clip.load("RN50", device)
-        if is_half:
-            entire_model.half()
         encoder = entire_model.encode_image
 
     return encoder, preprocess
@@ -175,7 +148,7 @@ def get_featurized_data(
 
 
 if __name__ == "__main__":
-    for model in ["CLIP_ViT"]:  # ["CLIP_ViT", "CLIP_RN50","SimCLR"]:
+    for model in ["CLIP_ViT"]:
         Datasets = dict(
             CIFAR10=CIFAR10,
             # CIFAR100=CIFAR100,
