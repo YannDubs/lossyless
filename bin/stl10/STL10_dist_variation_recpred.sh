@@ -26,7 +26,7 @@ kwargs="
 $kwargs
 is_only_feat=False
 architecture@predictor=resnet18
-data@data_feat=stl10unlabeled
+data@data_feat=stl10_unlabeled
 data@data_pred=stl10_aug
 rate=H_hyper
 trainer.max_epochs=100
@@ -70,7 +70,7 @@ scheduler@scheduler_pred=cosine,plateau_quick,cosine_restart,expdecay100,expdeca
 
 # sweeping arguments
 kwargs_hypopt_jpeg="
-featurizer=jpeg++,png,webp++
+featurizer=jpeg,png,webp
 evaluation.featurizer.is_evaluate=False
 featurizer.quality=1,3,5,10,20,30,40,70,95
 hydra.sweeper.n_trials=300

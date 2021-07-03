@@ -7,18 +7,26 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import torch
+import torchvision
 from matplotlib.lines import Line2D
 
 import einops
-import torch
-import torchvision
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
-from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
+from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.utilities import rank_zero_only
 
-from .helpers import (BASE_LOG, UnNormalizer, is_colored_img, plot_config,
-                      plot_density, setup_grid, tensors_to_fig, to_numpy)
+from .helpers import (
+    BASE_LOG,
+    UnNormalizer,
+    is_colored_img,
+    plot_config,
+    plot_density,
+    setup_grid,
+    tensors_to_fig,
+    to_numpy,
+)
 
 try:
     import wandb
@@ -29,21 +37,14 @@ logger = logging.getLogger(__name__)
 
 
 def save_img(pl_module, trainer, img, name, caption):
-    """Save an image on logger. Currently only Tensorboard and wandb."""
+    """Save an image on logger. Currently only  wandb."""
     experiment = trainer.logger.experiment
     if isinstance(trainer.logger, WandbLogger):
         wandb_img = wandb.Image(img, caption=caption)
         experiment.log({name: [wandb_img]}, commit=False)
 
-    elif isinstance(trainer.logger, TensorBoardLogger):
-        # TODO @karen the following is not tested
-        if isinstance(img, matplotlib.figure.Figure):
-            experiment.add_figure(name, img, global_step=trainer.global_step)
-        else:
-            experiment.add_image(name, img, global_step=trainer.global_step)
-
     else:
-        err = f"Plotting images is only available on tensorboard and Wandb but you are using {type(trainer.logger)}."
+        err = f"Plotting images is only available on  Wandb but you are using {type(trainer.logger)}."
         raise ValueError(err)
 
 

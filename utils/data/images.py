@@ -101,7 +101,6 @@ __all__ = [
     "STL10DataModule",
     "STL10UnlabeledDataModule",
     "Food101DataModule",
-    "Sun397DataModule",
     "Cars196DataModule",
     "Pets37DataModule",
     "PCamDataModule",
@@ -866,32 +865,6 @@ class Food101DataModule(LossylessImgDataModule):
     @property
     def Dataset(self):
         return Food101Dataset
-
-
-# Sun 397 #
-class Sun397Dataset(TensorflowBaseDataset):
-    min_size = 256
-
-    @property
-    def shapes(self):
-        shapes = super().shapes
-        shapes["input"] = shapes.get("input", (3, 224, 224))
-        shapes["target"] = (397,)
-        return shapes
-
-    @property
-    def dataset_name(self):
-        return "sun397"
-
-    @classmethod
-    def get_available_splits(cls):
-        return ["train", "test", "validation"]
-
-
-class Sun397DataModule(LossylessImgDataModule):
-    @property
-    def Dataset(self):
-        return Sun397Dataset
 
 
 # Cars #

@@ -9,15 +9,8 @@ import einops
 
 from .architectures import MLP, get_Architecture
 from .distributions import Deterministic, DiagGaussian
-from .helpers import (
-    BASE_LOG,
-    UnNormalizer,
-    gather_from_gpus,
-    is_colored_img,
-    kl_divergence,
-    prediction_loss,
-    weights_init,
-)
+from .helpers import (BASE_LOG, UnNormalizer, gather_from_gpus, is_colored_img,
+                      kl_divergence, prediction_loss, weights_init)
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +68,7 @@ class DirectDistortion(nn.Module):
         z_dim,
         y_shape,
         arch=None,
-        arch_kwargs=dict(complexity=2),
+        arch_kwargs=dict(),
         dataset=None,
         is_normalized=True,
         data_mode="image",

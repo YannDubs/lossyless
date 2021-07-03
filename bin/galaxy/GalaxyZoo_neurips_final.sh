@@ -35,7 +35,7 @@ trainer.max_epochs=100
 
 # classical sweeping arguments
 kwargs_hypopt_jpeg="
-featurizer=jpeg++
+featurizer=jpeg
 evaluation.featurizer.is_evaluate=False
 featurizer.quality=1,2,3,5,10,20,50,70,95
 hydra/sweeper=optuna

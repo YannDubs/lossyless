@@ -21,14 +21,14 @@ source `dirname $0`/../utils.sh
 
 # Encoder
 encoder_kwargs="
-architecture@encoder=fancymlp
+architecture@encoder=mlp_fancy
 encoder.z_dim=2
 "
 
 # Distortion
 distortion_kwargs="
 distortion.factor_beta=1
-architecture@distortion.kwargs=fancymlp
+architecture@distortion.kwargs=mlp_fancy
 "
 # like in their paper we are using softplus activation which gives slightly more smooth decision boundaries 
 

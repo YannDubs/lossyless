@@ -1,4 +1,4 @@
-name: fancymlp
+name: mlp_fancy
 arch: mlp 
 arch_kwargs:
   hid_dim: 1024

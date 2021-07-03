@@ -34,7 +34,7 @@ while getopts ':s:p:m:t:v:a:c:' flag; do
       fi
 
       # overwrite max_epochs with the one from the mode
-      if  [[ "$mode" == "dev" || "$mode" == "nano" ]]; then
+      if  [[ "$mode" == "dev"  ]]; then
         add_kwargs="${add_kwargs} trainer.max_epochs=2"
       fi
       
@@ -63,7 +63,7 @@ while getopts ':s:p:m:t:v:a:c:' flag; do
 done
 
 
-if  [[ "$mode" == "dev" || "$mode" == "test" || "$mode" == "debug" || "$mode" == "nano" ]]; then
+if  [[ "$mode" == "dev" || "$mode" == "test" || "$mode" == "debug" ]]; then
   case "$server" in
     learnfair) 
       add_kwargs="${add_kwargs} hydra.launcher.partition=dev"

@@ -15,14 +15,12 @@ def get_datamodule(datamodule):
         return ImagenetDataModule
     elif datamodule == "stl10":
         return STL10DataModule
-    elif datamodule == "stl10unlabeled":
+    elif datamodule == "stl10_unlabeled":
         return STL10UnlabeledDataModule
     elif datamodule == "coco":
         return CocoClipDataModule
     elif datamodule == "food101":
         return Food101DataModule
-    elif datamodule == "sun397":  # download does not seem to be working
-        return Sun397DataModule
     elif datamodule == "cars196":
         return Cars196DataModule
     elif datamodule == "pets37":

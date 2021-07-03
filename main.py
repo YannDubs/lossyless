@@ -29,7 +29,7 @@ from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
-from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
+from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from pytorch_lightning.plugins import DDPSpawnPlugin
 from pytorch_lightning.utilities import rank_zero_warn
 from pytorch_lightning.utilities.cloud_io import load as pl_load
@@ -426,9 +426,6 @@ def get_logger(cfg, module, is_featurizer):
         except Exception:
             cfg.logger.kwargs.offline = True
             pllogger = WandbLogger(**kwargs)
-
-    elif cfg.logger.name == "tensorboard":
-        pllogger = TensorBoardLogger(**kwargs)
 
     elif cfg.logger.name is None:
         pllogger = False

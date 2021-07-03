@@ -1,6 +1,6 @@
 defaults:
   - base_classical
 
-name: webp++
-mode: webp
+name: jpeg
+mode: jpeg
 quality: 70

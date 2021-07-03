@@ -10,7 +10,7 @@ source `dirname $0`/../utils.sh
 
 # Encoder
 encoder_kwargs="
-architecture@encoder=fancymlp
+architecture@encoder=mlp_fancy
 encoder.z_dim=2
 "
 
