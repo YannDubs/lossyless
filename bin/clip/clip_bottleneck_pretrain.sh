@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-experiment="clip_linear_eval"
+experiment="clip_pretrain_betas"
 notes="
-**Goal**: Linear evaluation of our CLIP compressor at different points on RI curve.
+**Goal**: Pretrain compressors for different values of beta.
 "
 
 
@@ -15,41 +15,32 @@ pretrained_path="$SCRIPTPATH"/../../hub
 
 # define all the arguments modified or added to `conf`. If they are added use `+`
 kwargs="
-logger=none
+logger.kwargs.project=clip_staggered
 experiment=$experiment 
 timeout=$time
 encoder.z_dim=512
+is_only_feat=True
 data@data_feat=coco
 checkpoint@checkpoint_feat=bestValLoss
 trainer.max_epochs=30
-data_feat.kwargs.num_workers=4
 featurizer=bottleneck_clip_lossyZ
 $add_kwargs
 "
 
-kwargs_multi="
-data@data_pred=stl10,cars196,caltech101,food101,pcam,pets37,cifar10,cifar100,imagenet
-" 
-
-
-
-kwargs_multi="
-data@data_pred=imagenet
-" 
+kwargs_multi="" 
 
 if [ "$is_plot_only" = false ] ; then
-  for beta in    "1e-1"  #"5e-2"  "1e-2"
+  for beta in  "1e-1"   "5e-2"    "1e-2"          
   do
 
-    python utils/Z_linear_eval.py  $kwargs $kwargs_multi featurizer.loss.beta=$beta paths.pretrained.load=$pretrained_path/beta$beta  $kwargs_dep -m &
+    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi featurizer.loss.beta=$beta paths.pretrained.save=$pretrained_path/beta$beta -m &
 
-    sleep 30
-
+    sleep 3
 
   done
 fi
 
-
+wait
 
 
 

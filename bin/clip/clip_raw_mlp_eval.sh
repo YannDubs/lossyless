@@ -1,35 +1,30 @@
 #!/usr/bin/env bash
 
-experiment="clip_bottleneck"
+experiment="clip_raw"
 notes="
-**Goal**: Add an entropy bottleneck to CLIP and evaluates on all data.
+**Goal**: CLIP without entropy bottleneck MLP evaluation
 "
-
-
 
 # parses special mode for running the script
 source `dirname $0`/../utils.sh
 
-SCRIPT=`realpath $0`
-SCRIPTPATH=`dirname $SCRIPT`
-pretrained_path="$SCRIPTPATH"/../../hub
-
-
 # define all the arguments modified or added to `conf`. If they are added use `+`
 kwargs="
-logger.kwargs.project=clip_staggered
+logger.kwargs.project=lossyless
+wandb_entity=${env:USER}
 experiment=$experiment 
 timeout=$time
 encoder.z_dim=512
 data@data_feat=coco
+data@data_pred=stl10
 trainer.max_epochs=100
-featurizer=bottleneck_clip_lossyZ
++update_trainer_feat.max_epochs=1
++update_trainer_feat.limit_train_batches=1
+featurizer=clip_freeze
 featurizer.is_on_the_fly=false
 data_feat.kwargs.num_workers=4
 architecture@predictor=mlp_probe
 checkpoint@checkpoint_pred=bestValLoss
-featurizer.is_train=false
-evaluation.communication.ckpt_path=null
 $add_kwargs
 "
 
@@ -38,8 +33,8 @@ kwargs_hypopt="
 hydra/sweeper=optuna
 hydra/sweeper/sampler=random
 hypopt=optuna
-hydra.sweeper.n_trials=10
-hydra.sweeper.n_jobs=10
+hydra.sweeper.n_trials=30
+hydra.sweeper.n_jobs=30
 monitor_direction=[minimize]
 monitor_return=[test/pred/loss]
 "
@@ -58,17 +53,23 @@ seed=int(interval(0,10))
 " 
 
 
+
 if [ "$is_plot_only" = false ] ; then
-  for data in "stl10" "imagenet" "cars196"  "caltech101"  "food101"  "pcam" "pets37" "cifar10"    "cifar100"   # "galaxy"      
+  for data in "stl10" "caltech101"  "food101"  "pcam" "pets37" "cifar10"    "cifar100"  "imagenet"  "cars196" 
   do
-    for beta in     "1e-1"  "5e-2"   "1e-2"        
-    do
 
-    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi data@data_pred=$data featurizer.loss.beta=$beta paths.pretrained.load=$pretrained_path/beta$beta hydra.sweeper.study_name=$data_$beta -m &
+    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi data@data_pred=$data hydra.sweeper.study_name=$data -m &
 
-    sleep 30
+    sleep 7
 
-    done
-    
   done
 fi
+
+wait 
+
+# for featurizer
+col_val_subset=""
+python utils/aggregate.py \
+       experiment=$experiment  \
+       $col_val_subset \
+       agg_mode=[summarize_metrics]

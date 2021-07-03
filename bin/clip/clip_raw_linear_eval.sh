@@ -2,7 +2,7 @@
 
 experiment="clip_raw_linear_eval"
 notes="
-**Goal**: Linear evaluation of our CLIP compressor at different points on RI curve.
+**Goal**: CLIP without entropy bottleneck linear evaluation
 "
 
 

@@ -5,10 +5,6 @@ notes="
 **Goal**: download all data
 "
 
-pip install tensorflow-datasets -U
-
-wait
-
 # parses special mode for running the script
 source `dirname $0`/../utils.sh
 
