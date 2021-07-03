@@ -125,7 +125,6 @@ trainer:
 
   # DEBUGGING #
   fast_dev_run: false # use true to make a quick test (not full epoch)
-  track_grad_norm: -1 # use 2 to track L2 norms of grad
   overfit_batches: 0.0 # use 0.01 to make sure you can overfit 1% of training data => training works
   weights_summary: full # full to print show the entire model, top nly prints the top module
   profiler: null # use `simple` or `"advanced"` to find bottleneck
