@@ -4,8 +4,3 @@ defaults:
 
 name: imagenet
 dataset: imagenet 
-
-kwargs:
-  dataset_kwargs:
-    equivalence: [simclr_imagenet]
-    is_augment_val: false 

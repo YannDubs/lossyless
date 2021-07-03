@@ -48,14 +48,7 @@ from tqdm import tqdm
 from lossyless.helpers import BASE_LOG, Normalizer, check_import, to_numpy
 from utils.helpers import remove_rf
 
-from .augmentations import (
-    CIFAR10Policy,
-    EquivariantRandomResizedCrop,
-    EquivariantRandomRotation,
-    ImageNetPolicy,
-    get_finetune_augmentations,
-    get_simclr_augmentations,
-)
+from .augmentations import EquivariantRandomResizedCrop, EquivariantRandomRotation
 from .base import LossylessDataModule, LossylessDataset
 from .helpers import (
     Caltech101BalancingWeights,
@@ -254,7 +247,6 @@ class LossylessImgDataset(LossylessDataset):
         return dict(
             PIL={
                 "rotation": RandomRotation(45),
-                "360_rotation": RandomRotation(360),
                 "D4_group": Compose(
                     [
                         RandomHorizontalFlip(p=0.5),
@@ -282,11 +274,6 @@ class LossylessImgDataset(LossylessDataset):
                 ),
                 "resize": Resize(min(shape[1], shape[2]), interpolation=Image.BICUBIC),
                 "crop": RandomCrop(size=(shape[1], shape[2])),
-                "auto_cifar10": CIFAR10Policy(),
-                "auto_imagenet": ImageNetPolicy(),
-                "simclr_cifar10": get_simclr_augmentations("cifar10", shape[-1]),
-                "simclr_imagenet": get_simclr_augmentations("imagenet", shape[-1]),
-                "simclr_finetune": get_finetune_augmentations(shape[-1]),
             },
             tensor={"erasing": RandomErasing(value=0.5),},
         )
@@ -301,46 +288,14 @@ class LossylessImgDataset(LossylessDataset):
 
         return dict(
             PIL={
-                "equiv_rotation_0": EquivariantRandomRotation(
-                    equivariant_degrees=10, invariant_degrees=5, p=0
-                ),
-                "equiv_rotation_0.05": EquivariantRandomRotation(
-                    equivariant_degrees=10, invariant_degrees=5, p=0.05
-                ),
-                "equiv_rotation_0.2": EquivariantRandomRotation(
-                    equivariant_degrees=10, invariant_degrees=5, p=0.2
-                ),
-                "equiv_rotation_0.5": EquivariantRandomRotation(
-                    equivariant_degrees=10, invariant_degrees=5, p=0.5
-                ),
-                "equiv_resize_crop_0": EquivariantRandomResizedCrop(
+                f"equiv_resize_crop_{p}": EquivariantRandomResizedCrop(
                     size=(shape[1], shape[2]),
                     equivariant_scale=(0.3, 1.0),
                     invariant_scale=(0.5, 1.0),
                     ratio=(0.7, 1.4),
-                    p=0.0,
-                ),
-                "equiv_resize_crop_0.05": EquivariantRandomResizedCrop(
-                    size=(shape[1], shape[2]),
-                    equivariant_scale=(0.3, 1.0),
-                    invariant_scale=(0.5, 1.0),
-                    ratio=(0.7, 1.4),
-                    p=0.05,
-                ),
-                "equiv_resize_crop_0.2": EquivariantRandomResizedCrop(
-                    size=(shape[1], shape[2]),
-                    equivariant_scale=(0.3, 1.0),
-                    invariant_scale=(0.5, 1.0),
-                    ratio=(0.7, 1.4),
-                    p=0.2,
-                ),
-                "equiv_resize_crop_0.5": EquivariantRandomResizedCrop(
-                    size=(shape[1], shape[2]),
-                    equivariant_scale=(0.3, 1.0),
-                    invariant_scale=(0.5, 1.0),
-                    ratio=(0.7, 1.4),
-                    p=0.5,
-                ),
+                    p=p,
+                )
+                for p in [0.0, 0.05, 0.2, 0.5]
             },
             tensor={},
         )

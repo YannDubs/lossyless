@@ -1,14 +1,15 @@
 """ Joint augmentations for input and target. When augmentations are out of the invariant range, targets may change.
 """
 
+import numbers
+from collections.abc import Sequence
+
 import numpy as np
 import numpy.random as random
-from collections.abc import Sequence
-import numbers
 import torch
-from torchvision.transforms import RandomRotation, RandomResizedCrop
+from torchvision.transforms import RandomResizedCrop, RandomRotation
 
-__all__ = ["EquivariantRandomRotation", "EquivariantRandomResizedCrop"]
+__all__ = ["EquivariantRandomResizedCrop"]
 
 
 def _check_sequence_input(x, name, req_sizes):
@@ -112,44 +113,6 @@ class EquivariantTransformation(torch.nn.Module):
                 label = torch.randint(high = self.num_classes, size=(1,)).numpy()[0]
 
         return img, label
-
-class EquivariantRandomRotation(EquivariantTransformation):
-    """EquivariantTransformation based on random rotation.
-
-        If the image is torch Tensor, it is expected to have [..., H, W] shape, where ... means an arbitrary number of
-        leading dimensions. This class refers to torch.transforms.RandomRotation, args and kwargs apply.
-
-        Args:
-            invariant_degrees (sequence or number): Range of degrees to select invariant actions from (label stays the
-                same). If degrees is a number instead of sequence like (min, max), the range of degrees will be
-                (-degrees, +degrees). This should contain the interval invariant_degrees.
-            equivariant_degrees (sequence or number): Range of degrees to select equivariant actions from (label can
-                change change with propability p). If degrees is a number instead of sequence like (min, max), the range
-                of degrees will be (-degrees, +degrees).
-        """
-
-    def __init__(self, invariant_degrees, equivariant_degrees, p=1.0, num_classes=10, *args, **kwargs):
-
-        super().__init__(p=p, num_classes=num_classes)
-
-        self.invariant_aug = RandomRotation(degrees=invariant_degrees, *args, **kwargs)
-
-        invariant_degrees = _setup_angle(invariant_degrees, name="EquivariantRandomRotation angles")
-        equivariant_degrees = _setup_angle(equivariant_degrees, name="EquivariantRandomRotation angles")
-
-        assert equivariant_degrees[0] <= invariant_degrees[0], "Problem with data augmentations: Range of " \
-                                                               "equivariant degrees should entail invariant degrees."
-        assert invariant_degrees[1] <= equivariant_degrees[1], "Problem with data augmentations: Range of " \
-                                                               "equivariant degrees should entail invariant degrees."
-
-        self.equivariant_aug_left = RandomRotation(degrees=(equivariant_degrees[0], invariant_degrees[0])
-                                                   , *args, **kwargs)
-        self.equivariant_aug_right = RandomRotation(degrees=(invariant_degrees[1], equivariant_degrees[1])
-                                                    , *args, **kwargs)
-
-        self.pdf = [invariant_degrees[0]-equivariant_degrees[0],
-                  invariant_degrees[1]-invariant_degrees[0],
-                  equivariant_degrees[1]-invariant_degrees[1]]
 
 
 class EquivariantRandomResizedCrop(EquivariantTransformation):
