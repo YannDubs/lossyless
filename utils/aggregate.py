@@ -769,15 +769,6 @@ class ResultAggregator(PostPlotter):
         if logbase_x != 1 or logbase_y != 1:
             sns_plot.map_dataframe(set_log_scale, basex=logbase_x, basey=logbase_y)
 
-        # TODO remove when waiting for https://github.com/mwaskom/seaborn/issues/2456
-        if xlabel != "":
-            for ax in sns_plot.fig.axes:
-                ax.set_xlabel(xlabel)
-
-        if ylabel != "":
-            for ax in sns_plot.fig.axes:
-                ax.set_ylabel(ylabel)
-
         sns_plot.tight_layout()
 
         return sns_plot

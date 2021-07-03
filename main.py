@@ -23,8 +23,12 @@ import omegaconf
 import pl_bolts
 import pytorch_lightning as pl
 from lossyless import ClassicalCompressor, LearnableCompressor, Predictor
-from lossyless.callbacks import (CodebookPlot, LatentDimInterpolator,
-                                 MaxinvDistributionPlot, ReconstructImages)
+from lossyless.callbacks import (
+    CodebookPlot,
+    LatentDimInterpolator,
+    MaxinvDistributionPlot,
+    ReconstructImages,
+)
 from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
@@ -36,10 +40,19 @@ from pytorch_lightning.utilities.cloud_io import load as pl_load
 from pytorch_lightning.utilities.exceptions import MisconfigurationException
 from utils.data import get_datamodule
 from utils.data.images import GalaxyDataset
-from utils.helpers import (ModelCheckpoint, apply_featurizer, cfg_save,
-                           format_resolver, get_latest_match,
-                           getattr_from_oneof, log_dict, omegaconf2namespace,
-                           remove_rf, replace_keys, set_debug)
+from utils.helpers import (
+    ModelCheckpoint,
+    apply_featurizer,
+    cfg_save,
+    format_resolver,
+    get_latest_match,
+    getattr_from_oneof,
+    log_dict,
+    omegaconf2namespace,
+    remove_rf,
+    replace_keys,
+    set_debug,
+)
 
 try:
     import wandb
@@ -464,7 +477,7 @@ def get_trainer(cfg, module, is_featurizer):
         **kwargs,
     )
 
-    #! lightning automatically detects clurm and tries to handle checkpoiting but we want touside
+    #! lightning automatically detects slurm and tries to handle checkpoiting but we want outside
     # so simply remove hpc save until  #6204 #6389 #5225
     trainer.checkpoint_connector.hpc_save = lambda *args, **kwargs: None
 
