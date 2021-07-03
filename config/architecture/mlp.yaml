@@ -1,4 +1,0 @@
-name: mlp
-arch: mlp 
-arch_kwargs:
-  complexity: 2

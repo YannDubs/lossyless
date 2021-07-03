@@ -21,14 +21,14 @@ source `dirname $0`/../utils.sh
 
 # Encoder
 encoder_kwargs="
-architecture@encoder=fancymlp
+architecture@encoder=mlp_fancy
 encoder.z_dim=2
 "
 
 # Distortion
 distortion_kwargs="
 distortion.factor_beta=1
-architecture@distortion.kwargs=fancymlp
+architecture@distortion.kwargs=mlp_fancy
 "
 # like in their paper we are using softplus activation which gives slightly more smooth decision boundaries 
 
@@ -95,14 +95,14 @@ wait
 
 # for featurizer
 col_val_subset=""
-python aggregate.py \
+python utils/aggregate.py \
        experiment=$experiment  \
        $col_val_subset \
        agg_mode=[summarize_metrics]
 
 
 col_val_subset=""
-python load_pretrained.py \
+python utils/load_pretrained.py \
        load_pretrained.experiment=$experiment  \
        $col_val_subset \
        $kwargs  \

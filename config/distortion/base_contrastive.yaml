@@ -10,7 +10,6 @@ distortion:
     effective_batch_size: ${data.length} # new but seems to work better use `null` if want to deactivate
     is_project: true # strongly recommended
     is_cosine: true # recommended
-    is_batch_neg: true # recommended for images but not used for CLIP. TODO : test whether can help there
     project_kwargs:
       mode: mlp
       out_shape: 0.5

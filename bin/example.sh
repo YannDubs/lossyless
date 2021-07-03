@@ -19,9 +19,9 @@ $add_kwargs
 
 # every arguments that you are sweeping over
 kwargs_multi="
-encoder=mlp
+encoder=mlp_probe
 distortion=ivae,ince
-rate=H_hyper,MI_vamp
+rate=H_hyper
 data=mnist,bananaRot
 " 
 

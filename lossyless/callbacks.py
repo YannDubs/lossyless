@@ -7,14 +7,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import torch
+import torchvision
 from matplotlib.lines import Line2D
 
 import einops
-import torch
-import torchvision
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
-from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
+from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.utilities import rank_zero_only
 
 from .helpers import (BASE_LOG, UnNormalizer, is_colored_img, plot_config,
@@ -29,21 +29,14 @@ logger = logging.getLogger(__name__)
 
 
 def save_img(pl_module, trainer, img, name, caption):
-    """Save an image on logger. Currently only Tensorboard and wandb."""
+    """Save an image on logger. Currently only  wandb."""
     experiment = trainer.logger.experiment
     if isinstance(trainer.logger, WandbLogger):
         wandb_img = wandb.Image(img, caption=caption)
         experiment.log({name: [wandb_img]}, commit=False)
 
-    elif isinstance(trainer.logger, TensorBoardLogger):
-        # TODO @karen the following is not tested
-        if isinstance(img, matplotlib.figure.Figure):
-            experiment.add_figure(name, img, global_step=trainer.global_step)
-        else:
-            experiment.add_image(name, img, global_step=trainer.global_step)
-
     else:
-        err = f"Plotting images is only available on tensorboard and Wandb but you are using {type(trainer.logger)}."
+        err = f"Plotting images is only available on  Wandb but you are using {type(trainer.logger)}."
         raise ValueError(err)
 
 
@@ -528,158 +521,3 @@ class Freezer(BaseFinetuning):
 
     def finetune_function(self, pl_module, current_epoch, optimizer, optimizer_idx):
         pass
-
-
-class ResnetFinetuning(BaseFinetuning):
-    """Finetuner for a resnet.
-
-    Parameters
-    ----------
-    model_name : string
-        Name of the model from pl module. Can use dots.
-
-    unfreeze_last_layer : int, optional
-        Epoch at which to unfreeze last layer.
-
-    unfreeze_last_block : int, optional
-        Epoch at which to unfreeze last block.
-
-    unfreeze_penult_block : int, optional
-        Epoch at which to unfreeze penultimate block.
-
-    lr_factor_last_layer : int, optional
-        Learning rate factor (how much to decrease compared to normal lr) to use for last layer.
-
-    lr_factor_last_block : int, optional
-        Learning rate factor (how much to decrease compared to normal lr) to use for last block.
-
-    lr_factor_penult_block : int, optional
-        Learning rate factor (how much to decrease compared to normal lr) to use for penultimate layer.
-
-    train_bn : bool, optional
-        Whether to unfreeze batchnorm.
-    """
-
-    def __init__(
-        self,
-        model_name,
-        unfreeze_last_layer=0,
-        unfreeze_last_block=3,
-        unfreeze_penult_block=5,
-        lr_factor_last_layer=10,
-        lr_factor_last_block=100,
-        lr_factor_penult_block=1000,
-        train_bn=False,
-    ):
-        super().__init__()
-        self.model_name = model_name.split(".")
-        self.unfreeze_last_layer = unfreeze_last_layer
-        self.unfreeze_last_block = unfreeze_last_block
-        self.unfreeze_penult_block = unfreeze_penult_block
-        self.lr_factor_last_layer = lr_factor_last_layer
-        self.lr_factor_last_block = lr_factor_last_block
-        self.lr_factor_penult_block = lr_factor_penult_block
-        self.train_bn = train_bn
-        self.loaded_epoch = -1
-
-    def get_model(self, pl_module):
-        model = pl_module
-
-        for model_name in self.model_name:
-            model = getattr(model, model_name)
-
-        return model
-
-    def freeze_before_training(self, pl_module):
-        model = self.get_model(pl_module)
-        self.freeze(modules=model, train_bn=self.train_bn)
-
-    def is_unfreeze(self, curr_epoch, target_epoch):
-        # TODO rm when https://github.com/PyTorchLightning/pytorch-lightning/issues/6891
-        return (curr_epoch == target_epoch) or (self.loaded_epoch >= target_epoch)
-
-    def finetune_function(self, pl_module, curr_epoch, optimizer, opt_idx):
-
-        if opt_idx == 0 and self.is_unfreeze(curr_epoch, self.unfreeze_last_layer):
-            resnet = self.get_model(pl_module)
-
-            if hasattr(resnet, "attnpool"):
-                last_layer = resnet.attnpool
-            elif hasattr(resnet, "fc"):
-                last_layer = resnet.fc
-            else:
-                raise ValueError(
-                    f"Unkown resnet architecture {resnet} which has no attnpool nor fc."
-                )
-
-            self.unfreeze_and_add_param_group(
-                modules=last_layer,
-                optimizer=optimizer,
-                train_bn=self.train_bn,
-                initial_denom_lr=self.lr_factor_last_layer,
-            )
-
-        if opt_idx == 0 and self.is_unfreeze(curr_epoch, self.unfreeze_last_block):
-            resnet = self.get_model(pl_module)
-            last_block = resnet.layer4
-            self.unfreeze_and_add_param_group(
-                modules=last_block,
-                optimizer=optimizer,
-                train_bn=self.train_bn,
-                initial_denom_lr=self.lr_factor_last_block,
-            )
-
-        if opt_idx == 0 and self.is_unfreeze(curr_epoch, self.unfreeze_penult_block):
-            resnet = self.get_model(pl_module)
-            penult_block = resnet.layer3
-            self.unfreeze_and_add_param_group(
-                modules=penult_block,
-                optimizer=optimizer,
-                train_bn=self.train_bn,
-                initial_denom_lr=self.lr_factor_penult_block,
-            )
-
-
-class ViTFinetuning(ResnetFinetuning):
-    # finetuning of CLIP visual tranformer
-    def finetune_function(self, pl_module, curr_epoch, optimizer, opt_idx):
-
-        if opt_idx == 0 and self.is_unfreeze(curr_epoch, self.unfreeze_last_layer):
-
-            vit = self.get_model(pl_module)
-            last_layer = vit.proj
-
-            # last layer is just a matrix of parameters, not a layer
-            last_layer.requires_grad = True
-            lr = optimizer.param_groups[0]["lr"] / self.lr_factor_last_layer
-
-            if any(
-                torch.equal(p, last_layer)
-                for group in optimizer.param_groups
-                for p in group["params"]
-            ):
-                logger.warning("Skipping last_layer freezing as already in optimizer.")
-            else:
-                optimizer.add_param_group({"params": [last_layer], "lr": lr})
-
-        if opt_idx == 0 and self.is_unfreeze(curr_epoch, self.unfreeze_last_block):
-
-            vit = self.get_model(pl_module)
-            last_block = vit.transformer.resblocks[-1]
-            self.unfreeze_and_add_param_group(
-                modules=[last_block.attn, last_block.mlp],  # don't add layer norms
-                optimizer=optimizer,
-                train_bn=self.train_bn,
-                initial_denom_lr=self.lr_factor_last_block,
-            )
-
-        if opt_idx == 0 and self.is_unfreeze(curr_epoch, self.unfreeze_penult_block):
-
-            vit = self.get_model(pl_module)
-            penult_block = vit.transformer.resblocks[-2]
-            self.unfreeze_and_add_param_group(
-                modules=[penult_block.attn, penult_block.mlp],
-                optimizer=optimizer,
-                train_bn=self.train_bn,
-                initial_denom_lr=self.lr_factor_penult_block,
-            )

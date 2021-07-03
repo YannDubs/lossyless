@@ -13,17 +13,16 @@ from numbers import Number
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-from matplotlib.cbook import MatplotlibDeprecationWarning
-
-import einops
 import torch
-from pl_bolts.optimizers.lars_scheduling import LARSWrapper
+from matplotlib.cbook import MatplotlibDeprecationWarning
 from torch import nn
 from torch.distributions import Distribution, constraints
 from torch.distributions.utils import broadcast_all
 from torch.nn import functional as F
 from torch.nn.utils.rnn import PackedSequence
 from torchvision import transforms as transform_lib
+
+import einops
 
 BASE_LOG = 2
 
@@ -209,21 +208,6 @@ def prod(iterable):
     return reduce(operator.mul, iterable, 1)
 
 
-def mean(array):
-    """Take mean of array like."""
-    return sum(array) / len(array)
-
-
-def is_pow2(n):
-    """Check if a number is a power of 2."""
-    return (n != 0) and (n & (n - 1) == 0)
-
-
-def closest_pow(n, base=2):
-    """Return the closest (in log space) power of 2 from a number."""
-    return base ** round(math.log(n, base))
-
-
 def kl_divergence(p, q, z_samples=None, is_lower_var=False):
     """Computes KL[p||q], analytically if possible but with MC."""
     try:
@@ -252,7 +236,7 @@ MEANS = dict(
     galaxy=[0.03294565, 0.04387402, 0.04995899],
     clip=[0.48145466, 0.4578275, 0.40821073],
     stl10=[0.43, 0.42, 0.39],
-    stl10unlabeled=[0.43, 0.42, 0.39],
+    stl10_unlabeled=[0.43, 0.42, 0.39],
 )
 STDS = dict(
     imagenet=[0.229, 0.224, 0.225],
@@ -260,7 +244,7 @@ STDS = dict(
     galaxy=[0.07004886, 0.07964786, 0.09574898],
     clip=[0.26862954, 0.26130258, 0.27577711],
     stl10=[0.27, 0.26, 0.27],
-    stl10unlabeled=[0.27, 0.26, 0.27],
+    stl10_unlabeled=[0.27, 0.26, 0.27],
 )
 
 
@@ -551,16 +535,13 @@ def get_lr_scheduler(
     return dict(scheduler=scheduler, name=name, **kwargs_config_scheduler)
 
 
-def get_optimizer(parameters, mode, is_lars=False, **kwargs):
+def get_optimizer(parameters, mode, **kwargs):
     """Return an inistantiated optimizer.
 
     Parameters
     ----------
     optimizer : {"gdn"}U{any torch.optim optimizer}
         Optimizer to use.mode
-
-    is_lars : bool, optional
-        Whether to use a LARS optimizer which can improve when using large batch sizes.
 
     kwargs :
         Additional arguments to the optimzier.
@@ -569,8 +550,6 @@ def get_optimizer(parameters, mode, is_lars=False, **kwargs):
     if "lr_factor" in kwargs:
         kwargs["lr"] = kwargs["lr"] * kwargs.pop("lr_factor")
     optimizer = Optimizer(parameters, **kwargs)
-    if is_lars:
-        optimizer = LARSWrapper(optimizer)
     return optimizer
 
 

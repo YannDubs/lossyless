@@ -1,14 +1,14 @@
 import math
 from functools import partial
 
-import einops
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
-from torch.distributions import (Categorical, Independent, MixtureSameFamily,
-                                 Normal)
+from torch.distributions import Categorical, Independent, MixtureSameFamily, Normal
 from torch.nn.modules.conv import Conv2d
+
+import einops
 
 from .helpers import Delta, batch_flatten, batch_unflatten, prod, weights_init
 
@@ -154,8 +154,6 @@ class Deterministic(Distributions, Independent):
 
 
 ### MARGINAL DISTRIBUTIONS ###
-
-
 def get_marginalDist(family, cond_dist, **kwargs):
     """Return an approximate marginal distribution.
 
@@ -166,8 +164,6 @@ def get_marginalDist(family, cond_dist, **kwargs):
     """
     if family == "unitgaussian":
         marginal = MarginalUnitGaussian(cond_dist.out_dim, **kwargs)
-    elif family == "vamp":
-        marginal = MarginalVamp(cond_dist.out_dim, cond_dist, **kwargs)
     else:
         raise ValueError(f"Unkown family={family}.")
     return marginal
@@ -185,77 +181,3 @@ class MarginalUnitGaussian(nn.Module):
 
     def forward(self):
         return Independent(Normal(self.loc, self.scale), 1)
-
-
-class MarginalDiagGaussian(nn.Module):
-    """Trained Gaussian with diag covariance."""
-
-    def __init__(self, out_dim):
-        super().__init__()
-        self.out_dim = out_dim
-        self.loc = nn.Parameter(torch.as_tensor([0.0] * self.out_dim))
-        self.scale = nn.Parameter(torch.as_tensor([0.0] * self.out_dim))
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.uniform_(self.loc, -0.05, 0.05)
-        nn.init.uniform_(self.scale, -0.05, 0.05)
-
-    def forward(self):
-        return Independent(Normal(self.loc, self.scale), 1)
-
-
-# TODO remove as not used
-class MarginalVamp(nn.Module):
-    """
-    Trained Gaussian using VampPrior [1], i.e. approximates the REAL marginal using
-    pseudoinputs p(z) ~= 1/k \sum p(z|u^k) where x^k are trained.
-
-    Parameters
-    ----------
-    out_dim : int
-        Size event.
-
-    p_ZlX : CondDist
-        Instantiated conditional distribution.
-
-    is_train_mixture : bool, optional
-        Whether to train the mixture model. This was not considered in [1],
-
-    References
-    ---------
-    [1] Tomczak, Jakub, and Max Welling. "VAE with a VampPrior." International Conference on
-    Artificial Intelligence and Statistics. PMLR, 2018.
-    """
-
-    def __init__(self, out_dim, p_ZlX, n_pseudo=64, is_train_mixture=True):
-        super().__init__()
-        self.out_dim = out_dim
-        self.p_ZlX = p_ZlX
-        self.n_pseudo = n_pseudo
-        self.is_train_mixture = is_train_mixture
-
-        self.pseudoinputs = None
-        self.mixtures = torch.nn.Parameter(
-            torch.ones(self.n_pseudo), requires_grad=self.is_train_mixture
-        )
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        torch.nn.init.constant_(self.mixtures, 1)
-        self.pseudoinputs = None  # set_pseudoinput should always be called after reset
-
-    def set_pseudoinput_(self, X):
-        """Set the initial pseudo inputs to be like the data."""
-        self.pseudoinputs = torch.nn.Parameter(X)
-
-    def forward(self):
-
-        # batch shape: [n_pseudo] ; event shape: [z_dim]
-        p_Zlu = self.p_ZlX(self.pseudoinputs)
-
-        # p_Z. batch shape: [] ; event shape: [z_dim]
-        mixtures = Categorical(logits=self.mixtures)
-        p_Z = MixtureSameFamily(mixtures, p_Zlu)
-
-        return p_Z

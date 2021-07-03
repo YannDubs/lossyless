@@ -1,9 +1,0 @@
-# @package _global_
-defaults:
-  - base@parallel
-  
-seed: [1,2,3]
-
-parallel:
-  key: "seed"
-  to_sweep: [1,2,3]

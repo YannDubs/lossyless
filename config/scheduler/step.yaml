@@ -1,7 +1,0 @@
-name: step
-modes: ["StepLR"] # list of scheduler to use
-kwargs:
-  # all kwargs
-  StepLR:
-    step_size: 70
-    gamma: 0.1

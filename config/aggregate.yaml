@@ -3,7 +3,7 @@ defaults:
   - override hydra/hydra_logging: colorlog
 
 experiment: ???
-agg_mode: [summarize_metrics] # summarize_RD_curves, plot_all_RD_curves, plot_invariance_RD_curve, plot_scatter_lines, plot_superpose
+agg_mode: [summarize_metrics] # summarize_RD_curves, plot_all_RD_curves, plot_invariance_RD_curve, plot_scatter_lines
 col_val_subset : {}
 
 patterns:

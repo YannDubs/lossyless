@@ -29,13 +29,12 @@ from lossyless.callbacks import (
     MaxinvDistributionPlot,
     ReconstructImages,
 )
-from lossyless.distributions import MarginalVamp
 from lossyless.helpers import check_import
 from lossyless.predictors import get_featurizer_predictor
 from omegaconf import OmegaConf
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
-from pytorch_lightning.loggers import CSVLogger, TensorBoardLogger, WandbLogger
-from pytorch_lightning.plugins import DDPPlugin, DDPSpawnPlugin
+from pytorch_lightning.loggers import CSVLogger, WandbLogger
+from pytorch_lightning.plugins import DDPSpawnPlugin
 from pytorch_lightning.utilities import rank_zero_warn
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from pytorch_lightning.utilities.exceptions import MisconfigurationException
@@ -327,7 +326,7 @@ def instantiate_datamodule_(cfg, pre_featurizer=None):
     cfgd = cfg.data
     cfgt = cfg.trainer
 
-    if cfg.trainer.gpus > 1 and cfg.trainer.get("accelerator", "ddp") == "ddp_spawn":
+    if cfg.trainer.gpus > 1:
         # ddp_spawn very slow with multi workers
         cfgd.kwargs.num_workers = 0  # TODO test if true
 
@@ -368,19 +367,6 @@ def instantiate_datamodule_(cfg, pre_featurizer=None):
 
 def initialize_compressor_(module, datamodule, trainer, cfg):
     """Additional steps needed for intitalization of the compressor + logging."""
-
-    # TODO remove if not using vampprior
-    # marginal vampprior
-    rate_est = module.rate_estimator
-    if hasattr(rate_est, "q_Z") and isinstance(rate_est.q_Z, MarginalVamp):
-        # initialize vamprior such that pseudoinputs are some random images
-        real_batch_size = datamodule.batch_size
-        datamodule.batch_size = rate_est.q_Z.n_pseudo
-        dataloader = datamodule.train_dataloader()
-        X, _ = iter(dataloader).next()
-        rate_est.q_Z.set_pseudoinput_(X)
-        datamodule.batch_size = real_batch_size
-
     # LOGGING
     # save number of parameters for the main model (not online optimizer but with coder)
     n_param = sum(
@@ -454,9 +440,6 @@ def get_logger(cfg, module, is_featurizer):
             cfg.logger.kwargs.offline = True
             pllogger = WandbLogger(**kwargs)
 
-    elif cfg.logger.name == "tensorboard":
-        pllogger = TensorBoardLogger(**kwargs)
-
     elif cfg.logger.name is None:
         pllogger = False
 
@@ -477,24 +460,14 @@ def get_trainer(cfg, module, is_featurizer):
     kwargs = dict(**cfg.trainer)
 
     # PARALLEL PROCESSING
-    # TODOnly one)
     if kwargs["gpus"] > 1:
         kwargs["sync_batchnorm"] = True
         accelerator = kwargs.get("accelerator", "ddp")
         parallel_devices = [torch.device(f"cuda:{i}") for i in range(kwargs["gpus"])]
-
         #! ddp does not work yet with compressai https://github.com/InterDigitalInc/CompressAI/issues/30
-        if accelerator == "ddp":
-            kwargs["accelerator"] = "ddp"
-            kwargs["plugins"] = DDPPlugin(
-                parallel_devices=parallel_devices, find_unused_parameters=True
-            )
-
-        elif accelerator == "ddp_spawn":
-            kwargs["accelerator"] = "ddp"
-            kwargs["plugins"] = DDPSpawnPlugin(
-                parallel_devices=parallel_devices, find_unused_parameters=True,
-            )
+        kwargs["plugins"] = DDPSpawnPlugin(
+            parallel_devices=parallel_devices, find_unused_parameters=True,
+        )
 
     # TRAINER
     trainer = pl.Trainer(
@@ -504,7 +477,7 @@ def get_trainer(cfg, module, is_featurizer):
         **kwargs,
     )
 
-    #! lightning automatically detects clurm and tries to handle checkpoiting but we want touside
+    #! lightning automatically detects slurm and tries to handle checkpoiting but we want outside
     # so simply remove hpc save until  #6204 #6389 #5225
     trainer.checkpoint_connector.hpc_save = lambda *args, **kwargs: None
 

@@ -10,14 +10,14 @@ source `dirname $0`/../utils.sh
 
 # Encoder
 encoder_kwargs="
-architecture@encoder=fancymlp
+architecture@encoder=mlp_fancy
 encoder.z_dim=2
 "
 
 # Distortion
 distortion_kwargs="
 distortion.factor_beta=1
-architecture@distortion.kwargs=fancymlp
+architecture@distortion.kwargs=mlp_fancy
 "
 # like in their paper we are using softplus activation which gives slightly more smooth decision boundaries 
 
@@ -90,7 +90,7 @@ rate_cols="['test/feat/rate']"
 distortion_cols="['test/feat/distortion','test/feat/online_loss','test/pred/loss']"
 compare="dist"
 data="merged" # want to access both ther featurizer data and the  predictor data
-python aggregate.py \
+python utils/aggregate.py \
        experiment=$experiment  \
        $col_val_subset \
        +summarize_RD_curves.data="${data}" \
@@ -110,7 +110,7 @@ python aggregate.py \
 
 # plot loaded model
 col_val_subset=""
-python load_pretrained.py \
+python utils/load_pretrained.py \
        load_pretrained.experiment=$experiment  \
        $col_val_subset \
        $kwargs  \

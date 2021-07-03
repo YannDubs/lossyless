@@ -1,6 +1,0 @@
-defaults:
-  - base_classical
-
-name: webp--
-mode: webp
-quality: 90

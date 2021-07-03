@@ -1,15 +1,23 @@
 import logging
 import math
 
-import einops
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
+import einops
+
 from .architectures import MLP, get_Architecture
 from .distributions import Deterministic, DiagGaussian
-from .helpers import (BASE_LOG, UnNormalizer, gather_from_gpus, is_colored_img,
-                      kl_divergence, prediction_loss, weights_init)
+from .helpers import (
+    BASE_LOG,
+    UnNormalizer,
+    gather_from_gpus,
+    is_colored_img,
+    kl_divergence,
+    prediction_loss,
+    weights_init,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +75,7 @@ class DirectDistortion(nn.Module):
         z_dim,
         y_shape,
         arch=None,
-        arch_kwargs=dict(complexity=2),
+        arch_kwargs=dict(),
         dataset=None,
         is_normalized=True,
         data_mode="image",
@@ -199,11 +207,6 @@ class ContrastiveDistortion(nn.Module):
         In this case `p_ZlX` will be replaced by a placeholder distribution. Useful
         for clip, where the positive examples are text sentences that are already featuized.
 
-    is_batch_neg : bool, optional
-        Whether to treat all the examples in the batch also as negatives. This double the nubmer
-        of negatives and should thus be used when possible. CLIP treats images and text separately
-        and thus does not do that.
-
     is_project : bool, optional
         Whether to use a porjection head. True seems to work better.
 
@@ -224,7 +227,6 @@ class ContrastiveDistortion(nn.Module):
         is_cosine=True,
         effective_batch_size=None,
         is_already_featurized=False,
-        is_batch_neg=True,  # TODO rm if CLIP does not need False
         is_project=True,
         project_kwargs={"mode": "mlp", "out_shape": 128, "in_shape": 128},
     ):
@@ -234,7 +236,6 @@ class ContrastiveDistortion(nn.Module):
         self.is_cosine = is_cosine
         self.effective_batch_size = effective_batch_size
         self.is_already_featurized = is_already_featurized
-        self.is_batch_neg = is_batch_neg
         self.is_project = is_project
         if self.is_project:
             if project_kwargs["out_shape"] <= 1:
@@ -317,7 +318,6 @@ class ContrastiveDistortion(nn.Module):
         zs = torch.cat([z, z_pos], dim=0)
 
         if self.is_cosine:
-            # Note: simclr head projector already normalizes, but no issue if normalize twice
             zs = F.normalize(zs, dim=1, p=2)
 
         # shape: [2*batch_size, 2*batch_size]
@@ -343,38 +343,21 @@ class ContrastiveDistortion(nn.Module):
         batch_size = new_batch_size // 2
         device = logits.device
 
-        if self.is_batch_neg:
-            # whether the rest of the batch should also be viewed as negative examples
-            # this doubles the number of negatives and should be used for image SSL
+        # select all but current example.
+        mask = ~torch.eye(new_batch_size, device=device).bool()
+        n_to_add = n_classes - new_batch_size
+        ones = torch.ones(new_batch_size, n_to_add, device=device).bool()
+        # shape: [2*batch_size, 2*batch_size * world_size]
+        mask = torch.cat([mask, ones], dim=1)
+        n_classes -= 1  # remove the current example due to masking
+        logits = logits[mask].view(new_batch_size, n_classes)
 
-            # select all but current example.
-            mask = ~torch.eye(new_batch_size, device=device).bool()
-            n_to_add = n_classes - new_batch_size
-            ones = torch.ones(new_batch_size, n_to_add, device=device).bool()
-            # shape: [2*batch_size, 2*batch_size * world_size]
-            mask = torch.cat([mask, ones], dim=1)
-            n_classes -= 1  # remove the current example due to masking
-            logits = logits[mask].view(new_batch_size, n_classes)
-
-            # infoNCE is essentially the same as a softmax (where wights are other z => try to predict
-            # index of positive z). The label is the index of the positive z, which for each z is the
-            # index that comes batch_size - 1 after it (batch_size because you concatenated) -1 because
-            # you masked select all but the current z. arange takes care of idx of z which increases
-            arange = torch.arange(batch_size, device=device)
-            pos_idx = torch.cat([arange + batch_size - 1, arange], dim=0)
-
-        else:
-            #! does not currently work with multi GPU
-            # TODO test if necessary for CLIP and if not remove
-            # does not use the batch as negative examples. This is what CLIP does: images have
-            # to discriminate which text is associated with it and vis versa, but do not have to
-            # discriminate betweeen the images and the text !
-            logits_img2text = logits[:batch_size, batch_size:]
-            logits_text2img = logits[batch_size:, :batch_size]
-            logits = torch.cat([logits_img2text, logits_text2img], dim=0)
-            arange = torch.arange(batch_size, device=device)
-            pos_idx = torch.cat([arange, arange], dim=0)
-            n_classes = batch_size
+        # infoNCE is essentially the same as a softmax (where wights are other z => try to predict
+        # index of positive z). The label is the index of the positive z, which for each z is the
+        # index that comes batch_size - 1 after it (batch_size because you concatenated) -1 because
+        # you masked select all but the current z. arange takes care of idx of z which increases
+        arange = torch.arange(batch_size, device=device)
+        pos_idx = torch.cat([arange + batch_size - 1, arange], dim=0)
 
         if self.effective_batch_size is not None:
             # want the reweighting so that as if the batchsize was entire dataset

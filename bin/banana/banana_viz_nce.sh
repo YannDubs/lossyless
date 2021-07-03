@@ -10,7 +10,7 @@ source `dirname $0`/../utils.sh
 
 # Encoder
 encoder_kwargs="
-architecture@encoder=fancymlp
+architecture@encoder=mlp_fancy
 encoder.z_dim=2
 "
 
@@ -84,14 +84,14 @@ wait
 
 # for featurizer
 col_val_subset=""
-python aggregate.py \
+python utils/aggregate.py \
        experiment=$experiment  \
        patterns.predictor=null \
        $col_val_subset \
        agg_mode=[summarize_metrics]
 
 col_val_subset=""
-python load_pretrained.py \
+python utils/load_pretrained.py \
        load_pretrained.experiment=$experiment  \
        $col_val_subset \
        $kwargs  \

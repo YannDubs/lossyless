@@ -1,6 +1,0 @@
-defaults:
-  - base_classical
-
-name: jpeg--
-mode: jpeg
-quality: 90

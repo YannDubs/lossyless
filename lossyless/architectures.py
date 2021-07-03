@@ -6,18 +6,11 @@ from typing import Iterable
 import torch
 import torch.nn as nn
 import torchvision
-from compressai.layers import GDN
-from pl_bolts.models.self_supervised import SimCLR
 from torchvision import transforms as transform_lib
 
-from .helpers import (
-    batch_flatten,
-    batch_unflatten,
-    closest_pow,
-    is_pow2,
-    prod,
-    weights_init,
-)
+from compressai.layers import GDN
+
+from .helpers import batch_flatten, batch_unflatten, prod, weights_init
 
 try:
     import clip
@@ -28,16 +21,12 @@ logger = logging.getLogger(__name__)
 __all__ = ["get_Architecture"]
 
 
-def get_Architecture(mode, complexity=None, **kwargs):
+def get_Architecture(mode, **kwargs):
     """Return the (uninstantiated) correct architecture.
 
     Parameters
     ----------
-    mode : {"mlp","flattenmlp","resnet","cnn"}
-
-    complexity : {0,...,4,None}, optional
-        Complexity of the architecture. For `mlp` and `cnn` this is the width, for resnet this is
-        the depth. None lets `kwargs` have the desired argument.
+    mode : {"mlp","linear","resnet","identity", "balle", "clip"}
 
     kwargs :
         Additional arguments to the Module.
@@ -48,9 +37,6 @@ def get_Architecture(mode, complexity=None, **kwargs):
         Architecture that can be instantiated by `Architecture(in_shape, out_shape)`
     """
     if mode == "mlp":
-        if complexity is not None:
-            # width 64,256,1024,4096
-            kwargs["hid_dim"] = 32 * (4 ** (complexity))
         return partial(FlattenMLP, **kwargs)
 
     elif mode == "linear":
@@ -60,29 +46,14 @@ def get_Architecture(mode, complexity=None, **kwargs):
         return torch.nn.Identity
 
     elif mode == "resnet":
-        if complexity is not None:
-            base = ["resnet18", "resnet34", "resnet50", "resnet101", "resnet150"]
-            kwargs["base"] = base[complexity]
         return partial(Resnet, **kwargs)
-
-    elif mode == "cnn":
-        if complexity is not None:
-            # width of first layer 2,8,32,128,512
-            # width of last layer 16,64,256,1024,4096
-            kwargs["hid_dim"] = 2 * (4 ** (complexity))
-
-        return partial(CNN, **kwargs)
 
     elif mode == "balle":
         return partial(BALLE, **kwargs)
-    elif mode == "simclr":
-        return partial(SimCLRResnet50, **kwargs)
-    elif mode == "simclr_projector":
-        return partial(SimCLRProjector, **kwargs)
+
     elif mode == "clip":
         return partial(CLIPViT, **kwargs)
-    elif mode == "mlp_clip":
-        return partial(MLPCLIPViT, **kwargs)
+
     else:
         raise ValueError(f"Unkown mode={mode}.")
 
@@ -300,131 +271,6 @@ class Resnet(nn.Module):
             weights_init(self.resnet.conv1)
 
 
-# TODO remove and keep only clip ViT
-
-
-class SimCLRResnet50(nn.Module):
-    """Pretrained Resnet50 using self supervised learning (simclr).
-
-    Parameters
-    ----------
-    in_shape : tuple of int
-        Size of the inputs (channels first). This is used to see whether to change the underlying
-        resnet or not. If first dim < 100, then will decrease the kernel size  and stride of the
-        first conv, and remove the max pooling layer as done (for cifar10) in
-        https://gist.github.com/y0ast/d91d09565462125a1eb75acc65da1469.
-
-    out_shape : int or tuple, optional
-        Size of the output.
-
-    is_post_project : bool, optional
-        Whether to return the output after projection head instead of before.
-
-    kwargs :
-        Additional argument to the pl_bolts model.
-    """
-
-    def __init__(self, in_shape, out_shape, is_post_project=False, **kwargs):
-        super().__init__()
-        self.in_shape = in_shape
-        self.out_shape = [out_shape] if isinstance(out_shape, int) else out_shape
-        self.out_dim = prod(self.out_shape)
-        self.is_post_project = is_post_project
-        self.kwargs = kwargs
-
-        self.load_weights_()
-
-        if self.is_post_project and self.out_dim != 128:
-            self.resizer = nn.Linear(128, self.out_dim)
-        elif (not self.is_post_project) and self.out_dim != 2048:
-            self.resizer = nn.Linear(2048, self.out_dim)
-        else:
-            self.resizer = nn.Identity()
-
-        self.reset_parameters()
-
-    def forward(self, X):
-        z = self.resnet(X)
-
-        if isinstance(z, (list, tuple)):
-            z = z[-1]  # bolts resnet currently returns list
-
-        z = self.projector(z)
-        z = self.resizer(z)
-        z = z.unflatten(dim=-1, sizes=self.out_shape)
-        return z
-
-    def load_weights_(self):
-        if self.in_shape[1] < 100:
-            maxpool1 = False
-            first_conv = False
-        else:
-            maxpool1 = True
-            first_conv = True
-
-        module = SimCLR(
-            gpus=0,
-            nodes=1,
-            num_samples=1,
-            batch_size=64,
-            maxpool1=maxpool1,
-            first_conv=first_conv,
-            dataset="",  # not importnant,
-            **self.kwargs,
-        )
-
-        ckpt_path = "https://pl-bolts-weights.s3.us-east-2.amazonaws.com/simclr/bolts_simclr_imagenet/simclr_imagenet.ckpt"
-        module = module.load_from_checkpoint(ckpt_path, strict=False)
-
-        self.resnet = module.encoder
-
-        if self.is_post_project:
-            self.projector = module.projection
-        else:
-            self.projector = nn.Identity()
-
-    def reset_parameters(self):
-        weights_init(self.resizer)
-        self.load_weights_()
-
-
-class SimCLRProjector(nn.Module):
-    """Pretrained simclr projector head."""
-
-    def __init__(self, in_shape, out_shape, **kwargs):
-        super().__init__()
-        self.kwargs = kwargs
-
-        if isinstance(in_shape, int):
-            in_shape = [in_shape]
-        if isinstance(out_shape, int):
-            out_shape = [out_shape]
-        assert in_shape[0] == prod(in_shape) == 2048
-        assert out_shape[0] == prod(out_shape) == 128
-
-        self.load_weights_()
-        self.reset_parameters()
-
-    def forward(self, X):
-        #  make sure only 2 dims
-        X, shape = batch_flatten(X)
-        X = self.projection(X)
-        X = batch_unflatten(X, shape)
-        return X
-
-    def load_weights_(self):
-        # give random non important args
-        module = SimCLR(
-            gpus=0, nodes=1, num_samples=1, batch_size=64, dataset="", **self.kwargs
-        )
-        ckpt_path = "https://pl-bolts-weights.s3.us-east-2.amazonaws.com/simclr/bolts_simclr_imagenet/simclr_imagenet.ckpt"
-        module.load_from_checkpoint(ckpt_path, strict=False)
-        self.projection = module.projection
-
-    def reset_parameters(self):
-        self.load_weights_()
-
-
 class CLIPViT(nn.Module):
     """Pretrained visual transformer using multimodal self supervised learning (CLIP).
 
@@ -485,182 +331,6 @@ class MLPCLIPViT(CLIPViT):
     def reset_parameters(self):
         weights_init(self)
         super().reset_parameters()
-
-
-class CNN(nn.Module):
-    """CNN in shape of pyramid, which doubles hidden after each layer but decreases image size by 2.
-
-    Notes
-    -----
-    - if some of the sides of the inputs are not power of 2 they will be resized to the closest power
-    of 2 for prediction.
-    - If `in_shape` and `out_dim` are reversed (i.e. `in_shape` is int) then will transpose the CNN.
-
-    Parameters
-    ----------
-    in_shape : tuple of int
-        Size of the inputs (channels first). If integer and `out_dim` is a tuple of int, then will
-        transpose ("reverse") the CNN.
-
-    out_dim : int
-        Number of output channels. If tuple of int  and `in_shape` is an int, then will transpose
-        ("reverse") the CNN.
-
-    hid_dim : int, optional
-        Base number of temporary channels (will be multiplied by 2 after each layer).
-
-    norm_layer : callable or {"batchnorm", "identity"}
-        Layer to return.
-
-    activation : {"gdn"}U{any torch.nn activation}, optional
-        Activation to use.
-
-    n_layers : int, optional
-        Number of layers. If `None` uses the required number of layers so that the smallest side
-        is 2 after encoding (i.e. one less than the maximum).
-
-    kwargs :
-        Additional arguments to `ConvBlock`.
-    """
-
-    def __init__(
-        self,
-        in_shape,
-        out_dim,
-        hid_dim=32,
-        norm_layer="batchnorm",
-        activation="ReLU",
-        n_layers=None,
-        **kwargs,
-    ):
-
-        super().__init__()
-
-        in_shape, out_dim, resizer = self.validate_sizes(out_dim, in_shape)
-
-        self.in_shape = in_shape
-        self.out_dim = out_dim
-        self.hid_dim = hid_dim
-        self.norm_layer = norm_layer
-        self.activation = activation
-        self.n_layers = n_layers
-
-        if self.n_layers is None:
-            # divide length by 2 at every step until smallest is 2
-            min_side = min(self.in_shape[1], self.in_shape[2])
-            self.n_layers = int(math.log2(min_side) - 1)
-
-        Norm = get_Normalization(self.norm_layer, 2)
-        # don't use bias with batch_norm https://twitter.com/karpathy/status/1013245864570073090?l...
-        is_bias = Norm == nn.Identity
-
-        # for size 32 will go 32,16,8,4,2
-        # channels for hid_dim=32: 3,32,64,128,256
-        channels = [self.in_shape[0]]
-        channels += [self.hid_dim * (2 ** i) for i in range(0, self.n_layers)]
-        end_h = self.in_shape[1] // (2 ** self.n_layers)
-        end_w = self.in_shape[2] // (2 ** self.n_layers)
-
-        if self.is_transpose:
-            channels.reverse()
-
-        layers = []
-        in_chan = channels[0]
-        for i, out_chan in enumerate(channels[1:]):
-            is_last = i == len(channels[1:]) - 1
-            layers += self.make_block(
-                in_chan, out_chan, Norm, is_bias, is_last, **kwargs
-            )
-            in_chan = out_chan
-
-        if self.is_transpose:
-            pre_layers = [
-                nn.Linear(self.out_dim, channels[0] * end_w * end_h, bias=is_bias),
-                nn.Unflatten(dim=-1, unflattened_size=(channels[0], end_h, end_w)),
-            ]
-            post_layers = [resizer]
-
-        else:
-            pre_layers = [resizer]
-            post_layers = [
-                nn.Flatten(start_dim=1),
-                nn.Linear(channels[-1] * end_w * end_h, self.out_dim),
-                # last layer should always have bias
-            ]
-
-        self.model = nn.Sequential(*(pre_layers + layers + post_layers))
-
-        self.reset_parameters()
-
-    def validate_sizes(self, out_dim, in_shape):
-        if isinstance(out_dim, int) and not isinstance(in_shape, int):
-            self.is_transpose = False
-        else:
-            in_shape, out_dim = out_dim, in_shape
-            self.is_transpose = True
-
-        resizer = torch.nn.Identity()
-        is_input_pow2 = is_pow2(in_shape[1]) and is_pow2(in_shape[2])
-        if not is_input_pow2:
-            # shape that you will work with which are power of 2
-            in_shape_pow2 = list(in_shape)
-            in_shape_pow2[1] = closest_pow(in_shape[1], base=2)
-            in_shape_pow2[2] = closest_pow(in_shape[2], base=2)
-
-            if self.is_transpose:
-                # the model will output image of `in_shape_pow2` then will reshape to actual
-                resizer = transform_lib.Resize((in_shape[1], in_shape[2]))
-            else:
-                # the model will first resize to power of 2
-                resizer = transform_lib.Resize((in_shape_pow2[1], in_shape_pow2[2]))
-
-            logger.warning(
-                f"The input shape={in_shape} is not powers of 2 so we will rescale it and work with shape {in_shape_pow2}."
-            )
-            # for the rest treat the image as if pow 2
-            in_shape = in_shape_pow2
-
-        return in_shape, out_dim, resizer
-
-    def make_block(self, in_chan, out_chan, Norm, is_bias, is_last, **kwargs):
-
-        if self.is_transpose:
-            Activation = get_Activation(self.activation, inverse=True)
-            return [
-                Norm(in_chan),
-                Activation(in_chan),
-                nn.ConvTranspose2d(
-                    in_chan,
-                    out_chan,
-                    stride=2,
-                    padding=1,
-                    kernel_size=3,
-                    output_padding=1,
-                    bias=is_bias or is_last,
-                    **kwargs,
-                ),
-            ]
-        else:
-            Activation = get_Activation(self.activation, inverse=True)
-            return [
-                nn.Conv2d(
-                    in_chan,
-                    out_chan,
-                    stride=2,
-                    padding=1,
-                    kernel_size=3,
-                    bias=is_bias,
-                    **kwargs,
-                ),
-                Norm(out_chan),
-                Activation(out_chan),
-            ]
-
-    def reset_parameters(self):
-        weights_init(self)
-
-    def forward(self, X):
-        return self.model(X)
 
 
 class BALLE(nn.Module):
@@ -753,12 +423,7 @@ class BALLE(nn.Module):
         self.reset_parameters()
 
     def make_block(
-        self,
-        in_chan,
-        out_chan,
-        is_last=False,
-        kernel_size=5,
-        stride=2,
+        self, in_chan, out_chan, is_last=False, kernel_size=5, stride=2,
     ):
         if is_last:
             Norm = nn.Identity

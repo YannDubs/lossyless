@@ -52,7 +52,7 @@ rate_cols="['test/feat/rate']"
 distortion_cols="['test/feat/distortion','test/feat/online_loss','test/feat/online_err','test/pred/loss','test/pred/err']"
 compare="dist"
 data="merged" # want to access both ther featurizer data and the  predictor data
-python aggregate.py \
+python utils/aggregate.py \
        experiment=$experiment  \
        $col_val_subset \
        +summarize_RD_curves.data="${data}" \
@@ -72,7 +72,7 @@ python aggregate.py \
 
 #plot loaded model
 col_val_subset=""
-python load_pretrained.py \
+python utils/load_pretrained.py \
       load_pretrained.experiment=$experiment  \
       $col_val_subset \
       $kwargs  \
@@ -83,7 +83,7 @@ python load_pretrained.py \
       -m 
 
 col_val_subset=""
-python load_pretrained.py \
+python utils/load_pretrained.py \
       load_pretrained.experiment=$experiment  \
       $col_val_subset \
       $kwargs  \
@@ -99,7 +99,7 @@ python load_pretrained.py \
       -m
 
 col_val_subset=""
-python load_pretrained.py \
+python utils/load_pretrained.py \
       load_pretrained.experiment=$experiment  \
       $col_val_subset \
       $kwargs  \
