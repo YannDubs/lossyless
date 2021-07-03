@@ -154,8 +154,6 @@ class Deterministic(Distributions, Independent):
 
 
 ### MARGINAL DISTRIBUTIONS ###
-
-
 def get_marginalDist(family, cond_dist, **kwargs):
     """Return an approximate marginal distribution.
 
@@ -180,24 +178,6 @@ class MarginalUnitGaussian(nn.Module):
 
         self.register_buffer("loc", torch.as_tensor([0.0] * self.out_dim))
         self.register_buffer("scale", torch.as_tensor([1.0] * self.out_dim))
-
-    def forward(self):
-        return Independent(Normal(self.loc, self.scale), 1)
-
-
-class MarginalDiagGaussian(nn.Module):
-    """Trained Gaussian with diag covariance."""
-
-    def __init__(self, out_dim):
-        super().__init__()
-        self.out_dim = out_dim
-        self.loc = nn.Parameter(torch.as_tensor([0.0] * self.out_dim))
-        self.scale = nn.Parameter(torch.as_tensor([0.0] * self.out_dim))
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.uniform_(self.loc, -0.05, 0.05)
-        nn.init.uniform_(self.scale, -0.05, 0.05)
 
     def forward(self):
         return Independent(Normal(self.loc, self.scale), 1)

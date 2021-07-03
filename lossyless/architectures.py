@@ -10,8 +10,7 @@ from torchvision import transforms as transform_lib
 
 from compressai.layers import GDN
 
-from .helpers import (batch_flatten, batch_unflatten, closest_pow, is_pow2,
-                      prod, weights_init)
+from .helpers import batch_flatten, batch_unflatten, prod, weights_init
 
 try:
     import clip
