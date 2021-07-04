@@ -6,7 +6,7 @@ export HYDRA_FULL_ERROR=1
 
 experiment="STL10_dist_variation_featpred"
 notes="
-**Goal**: Different distortions on STL10: iNCE,iVAE,VAE, predicted on features with MLP, ca. 100 runs for each config
+**Goal**: Different distortions on STL10: iNCE,VIC,VAE, predicted on features with MLP, ca. 100 runs for each config
 "
 
 # parses special mode for running the script
@@ -14,8 +14,6 @@ source `dirname $0`/../utils.sh
 
 # project and server kwargs
 kwargs="
-logger.kwargs.project=lossyless
-wandb_entity=${env:USER}
 experiment=$experiment
 timeout=$time
 $add_kwargs
@@ -41,8 +39,8 @@ monitor_return=[test/pred/err,test/comm/rate]
 "
 
 # sweeping arguments
-kwargs_hypopt_ivae="
-distortion=vae,ivae
+kwargs_hypopt_VIC="
+distortion=VAE,VIC
 hydra.sweeper.n_trials=200
 hydra.sweeper.n_jobs=200
 distortion.factor_beta=1.0
@@ -72,8 +70,8 @@ scheduler@scheduler_pred=cosine,plateau_quick,cosine_restart,expdecay100,expdeca
 "
 
 # sweeping arguments
-kwargs_hypopt_ince="
-distortion=ince
+kwargs_hypopt_BINCE="
+distortion=BINCE
 hydra.sweeper.n_trials=100
 hydra.sweeper.n_jobs=100
 data_feat.kwargs.batch_size=tag(log,int(interval(64,512)))
@@ -105,9 +103,9 @@ if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in ""
   do
 
-    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt_ince $kwargs_dep -m &
+    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt_BINCE $kwargs_dep -m &
 
-    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt_ivae $kwargs_dep -m &
+    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt_VIC $kwargs_dep -m &
 
     sleep 7
   done

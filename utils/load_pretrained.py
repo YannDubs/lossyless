@@ -13,11 +13,6 @@ import torch
 
 import einops
 import hydra
-from lossyless.callbacks import (
-    CodebookPlot,
-    LatentDimInterpolator,
-    MaxinvDistributionPlot,
-)
 from omegaconf import OmegaConf
 
 MAIN_DIR = os.path.abspath(str(Path(__file__).parents[1]))
@@ -36,11 +31,16 @@ from main import main as main_training  # isort:skip
 from utils.helpers import all_logging_disabled, format_resolver  # isort:skip
 from utils.postplotting import PRETTY_RENAMER, PostPlotter  # isort:skip
 from utils.postplotting.helpers import save_fig  # isort:skip
+from lossyless.callbacks import (  # isort:skip
+    CodebookPlot,
+    LatentDimInterpolator,
+    MaxinvDistributionPlot,
+)
 
 logger = logging.getLogger(__name__)
 
 
-@hydra.main(config_name=f"{MAIN_DIR}/config", config_path="config")
+@hydra.main(config_path=f"{MAIN_DIR}/config", config_name="load_pretrained")
 def main_cli(cfg):
     # uses main_cli sot that `main` can be called from notebooks.
     try:

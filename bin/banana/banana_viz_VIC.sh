@@ -1,28 +1,17 @@
 #!/usr/bin/env bash
 
-experiment="banana_viz_vae"
+experiment="banana_viz_VIC"
 notes="
-**Goal**: Run VAE and IVAE on banana distributions to get nice figures.
+**Goal**: Run VAE and VIC on banana distributions with rotation invariance to get nice figures.
 "
 
 # parses special mode for running the script
 source `dirname $0`/../utils.sh
 
 
-# most of these arguments are chose so as to replicate Fig.1.b. from "Non linear Transform coding" paper. 
-# See their code here: https://github.com/tensorflow/compression/blob/master/models/toy_sources/toy_sources.ipynb
-# there are known diferences like:
-# - use batch norm
-# - hidden dim for MLPs is 1024 instead of 100
-# - beta = 0.1 (for no invaraince) instead of 1
-# - not using soft rounding
-# - 200 epochs and scheduler
-# - annealing beta
-
 # Encoder
 encoder_kwargs="
 architecture@encoder=mlp_fancy
-encoder.z_dim=2
 "
 
 # Distortion
@@ -60,10 +49,10 @@ architecture@predictor=mlp_probe
 optimizer@optimizer_pred=Adam
 scheduler@scheduler_pred=unifmultistep100
 optimizer_pred.kwargs.lr=1e-3
+featurizer.loss.beta_anneal=constant
 "
 
 kwargs="
-logger.kwargs.project=banana
 experiment=$experiment 
 $encoder_kwargs
 $distortion_kwargs
@@ -75,13 +64,12 @@ $add_kwargs
 "
 
 kwargs_multi="
-data@data_feat=banana_rot,banana_Xtrnslt,banana_Ytrnslt
-distortion=ivae,vae
+data@data_feat=banana_rot
 featurizer.loss.beta=0.07
 "
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in  "" 
+  for kwargs_dep in  "distortion=VAE encoder.z_dim=2"  "distortion=VIC encoder.z_dim=1" 
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &

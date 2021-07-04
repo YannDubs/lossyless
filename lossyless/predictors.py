@@ -1,8 +1,9 @@
 import logging
 from collections.abc import Sequence
 
-import pytorch_lightning as pl
 import torch
+
+import pytorch_lightning as pl
 from pytorch_lightning.core.decorators import auto_move_data
 from torchmetrics.functional import accuracy
 

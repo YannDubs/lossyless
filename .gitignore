@@ -19,6 +19,7 @@ old
 hub
 *old
 lightning_logs
+results_neurips
 
 # pyotrch
 *.ckpt

@@ -13,8 +13,6 @@ source `dirname $0`/../utils.sh
 
 # project and server kwargs
 kwargs="
-logger.kwargs.project=lossyless
-wandb_entity=${env:USER}
 experiment=$experiment
 timeout=$time
 $add_kwargs
@@ -57,13 +55,13 @@ scheduler@scheduler_pred=plateau_quick,cosine_restart,expdecay100,unifmultistep1
 
 # VAE sweeping arguments
 kwargs_hypopt_vae_balle="
-distortion=vae
+distortion=VAE
 hydra/sweeper=optuna
 hydra/sweeper/sampler=random
 hypopt=optuna
 hydra.sweeper.n_trials=100
 hydra.sweeper.n_jobs=100
-hydra.sweeper.study_name=vae
+hydra.sweeper.study_name=VAE
 monitor_direction=[minimize,minimize]
 monitor_return=[val/feat/rate,val/pred/loss]
 featurizer=neural_rec
@@ -93,9 +91,9 @@ optimizer_pred.kwargs.lr=tag(log,interval(1e-4,1e-3))
 scheduler@scheduler_pred=plateau_quick,cosine_restart,expdecay100,unifmultistep100
 "
 
-# ince sweeping arguments
-kwargs_hypopt_ince="
-distortion=ince,ince_basic
+# BINCE sweeping arguments
+kwargs_hypopt_BINCE="
+distortion=BINCE,BINCE_basic
 data_feat.kwargs.dataset_kwargs.equivalence=[resize_crop,D4_group,color,gray],[resize_crop,D4_group]
 hydra/sweeper=optuna
 hydra/sweeper/sampler=random
@@ -133,7 +131,7 @@ predictor.arch_kwargs.dropout_p=interval(0.,0.5)
 featurizer.is_on_the_fly=false,true
 "
 
-# ince sweeping arguments
+# BINCE sweeping arguments
 kwargs_hypopt_clip="
 featurizer=bottleneck_clip_lossyZ
 data_feat.kwargs.dataset_kwargs.equivalence=[resize_crop,D4_group,color,gray],[resize_crop,D4_group]
@@ -175,7 +173,7 @@ if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in ""
   do
 
-    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt_ince $kwargs_dep -m &
+    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt_BINCE $kwargs_dep -m &
 
     sleep 30
 

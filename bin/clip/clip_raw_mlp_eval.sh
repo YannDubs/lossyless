@@ -10,8 +10,6 @@ source `dirname $0`/../utils.sh
 
 # define all the arguments modified or added to `conf`. If they are added use `+`
 kwargs="
-logger.kwargs.project=lossyless
-wandb_entity=${env:USER}
 experiment=$experiment 
 timeout=$time
 encoder.z_dim=512

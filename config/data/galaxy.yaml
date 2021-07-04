@@ -8,6 +8,6 @@ dataset: galaxy
 
 kwargs:
   dataset_kwargs:
-    equivalence: [resize_crop,D4_group,color,gray] # works better than the kaggle ones (this with ince is best and for ivaer auto_imagenet works best)
+    equivalence: [resize_crop,D4_group,color,gray] # works better than the kaggle ones (this with BINCE is best and for VICr auto_imagenet works best)
     is_normalize: False # normalization makes little sense due to all the black pixels => dividing by small std would explos
     resolution: 128

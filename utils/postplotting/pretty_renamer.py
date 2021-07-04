@@ -20,7 +20,7 @@ PRETTY_RENAMER = StrFormatter(
         # General
         "_": " ",
         "Resnet": "ResNet",
-        "Ivae": "VIC",
+        "Vic": "VIC",
         "Vae": "VC",
         "Dist": "Distortion",
         "Ince": "BINCE",

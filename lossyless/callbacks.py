@@ -17,8 +17,16 @@ from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.utilities import rank_zero_only
 
-from .helpers import (BASE_LOG, UnNormalizer, is_colored_img, plot_config,
-                      plot_density, setup_grid, tensors_to_fig, to_numpy)
+from .helpers import (
+    BASE_LOG,
+    UnNormalizer,
+    is_colored_img,
+    plot_config,
+    plot_density,
+    setup_grid,
+    tensors_to_fig,
+    to_numpy,
+)
 
 try:
     import wandb
@@ -245,7 +253,7 @@ class CodebookPlot(PlottingCallback):
 
     is_plot_codebook : bool, optional
         Whether to plot the codebook or only the quantization space. This can only be true for VAE
-        and iVAE, not iNCE because it doesn't reconstruct an element in X space.
+        and VIC, not BINCE because it doesn't reconstruct an element in X space.
 
     kwargs :
         Additional arguments to PlottingCallback.
@@ -361,7 +369,7 @@ class MaxinvDistributionPlot(PlottingCallback):
     Notes
     -----
     - datamodule has to be `DistributionDataModule`.
-    - distortion should be ivae.
+    - distortion should be VIC.
 
     Parameters
     ----------

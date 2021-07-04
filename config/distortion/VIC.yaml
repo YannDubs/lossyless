@@ -3,7 +3,7 @@ defaults:
   - base_direct@distortion
 
 distortion:
-  name: ivae # VAE reconstructing unaugmented data
+  name: VIC # VAE reconstructing unaugmented data
   factor_beta: 1 # we use this as standard
   
 data_feat:

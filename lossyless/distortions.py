@@ -31,7 +31,7 @@ def get_distortion_estimator(mode, **kwargs):
     elif mode == "contrastive":
         return ContrastiveDistortion(**kwargs)
 
-    elif mode == "lossyZ":
+    elif mode == "lossy_Z":
         return LossyZDistortion(**kwargs)
 
     else:

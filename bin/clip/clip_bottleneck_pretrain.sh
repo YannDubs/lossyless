@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-experiment="clip_pretrain_betas"
+experiment="clip_bottleneck_pretrain"
 notes="
 **Goal**: Pretrain compressors for different values of beta.
 "
@@ -15,7 +15,6 @@ pretrained_path="$SCRIPTPATH"/../../hub
 
 # define all the arguments modified or added to `conf`. If they are added use `+`
 kwargs="
-logger.kwargs.project=clip_staggered
 experiment=$experiment 
 timeout=$time
 encoder.z_dim=512

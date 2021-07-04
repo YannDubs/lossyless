@@ -3,7 +3,7 @@ defaults:
   - base_direct@distortion
 
 distortion:
-  name: vae # vae that reconstructs the augmented images
+  name: VAE # VAE that reconstructs the augmented images
   factor_beta: 0.5 # distortion is always much larger but you prefer having similar distortion
   
 data_feat:

@@ -36,4 +36,4 @@ logger:
 
 callbacks:
   GPUStatsMonitor: 
-    is_use : true
+    is_use : False

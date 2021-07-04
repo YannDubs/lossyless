@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-experiment="augmnist_RD"
+experiment="augmnist_viz_VIC"
 notes="
-**Goal**: RD curves for mnist that is augmented at test and training time (i.e. when we assume we know the augmentations),
+**Goal**: Run VAE and VIC on augmentation invariant MNIST to get nice figures.
 "
 
 # parses special mode for running the script
@@ -19,18 +19,22 @@ architecture@predictor=resnet18
 data@data_feat=mnist_aug
 rate=H_hyper
 trainer.max_epochs=100
+featurizer.loss.beta=0.1
 $add_kwargs
 "
 
 # every arguments that you are sweeping over
 kwargs_multi="
 distortion=VIC,VAE
-featurizer.loss.beta=0.0001,0.001,0.01,0.03,0.1,0.3,1,3,10,100
-seed=1,2,3
+" 
+kwargs_multi="
+distortion=VIC
+optimizer_feat.kwargs.lr=1e-3,1e-4,3e-4
+trainer.max_epochs=20
 " 
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in  ""
+  for kwargs_dep in  "" 
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
@@ -54,19 +58,7 @@ data="merged" # want to access both ther featurizer data and the  predictor data
 python utils/aggregate.py \
        experiment=$experiment  \
        $col_val_subset \
-       +summarize_RD_curves.data="${data}" \
-       +summarize_RD_curves.rate_cols="${rate_cols}" \
-       +summarize_RD_curves.distortion_cols="${distortion_cols}" \
-       +summarize_RD_curves.mse_cols="${distortion_cols}" \
-       +plot_all_RD_curves.data="${data}" \
-       +plot_all_RD_curves.rate_cols="${rate_cols}" \
-       +plot_all_RD_curves.distortion_cols="${distortion_cols}" \
-       +plot_all_RD_curves.hue=$compare \
-       +plot_invariance_RD_curve.data="${data}" \
-       +plot_invariance_RD_curve.noninvariant='VAE' \
-       +plot_invariance_RD_curve.logbase_x=2 \
-       +plot_invariance_RD_curve.desirable_distortion="test/pred/loss" \
-       agg_mode=[summarize_metrics,summarize_RD_curves,plot_all_RD_curves,plot_invariance_RD_curve] || true #  make sure continue even if error
+       agg_mode=[summarize_metrics] 
 
 
 #plot loaded model

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-experiment="banana_RD"
+experiment="banana_viz_VIC_trnslt"
 notes="
-**Goal**: Run rate distortion curve for rotated banana distribution.
+**Goal**: Run VAE and VIC on banana distributions with translation invariance to get nice figures.
 "
 
 # parses special mode for running the script
@@ -28,7 +28,7 @@ rate.factor_beta=1
 
 # Data
 data_kwargs="
-data@data_feat=banana_rot 
+data@data_feat=banana_rot
 trainer.reload_dataloaders_every_epoch=True
 "
 
@@ -63,57 +63,38 @@ $add_kwargs
 "
 
 kwargs_multi="
-featurizer.loss.beta=0.0001,0.001,0.01,0.03,0.1,0.3,1,3,10
-seed=1,2,3
-" 
-
+data@data_feat=banana_Xtrnslt,banana_Ytrnslt
+featurizer.loss.beta=0.07
+"
 
 if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in  "distortion=VAE encoder.z_dim=2"  "distortion=VIC encoder.z_dim=1" 
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &
-
-    sleep 3
     
+    sleep 3
+
   done
 fi
 
-wait
-
+wait 
 
 # for featurizer
 col_val_subset=""
-rate_cols="['test/feat/rate']"
-distortion_cols="['test/feat/distortion','test/feat/online_loss','test/pred/loss']"
-compare="dist"
-data="merged" # want to access both ther featurizer data and the  predictor data
 python utils/aggregate.py \
        experiment=$experiment  \
        $col_val_subset \
-       +summarize_RD_curves.data="${data}" \
-       +summarize_RD_curves.rate_cols="${rate_cols}" \
-       +summarize_RD_curves.distortion_cols="${distortion_cols}" \
-       +summarize_RD_curves.mse_cols="${distortion_cols}" \
-       +plot_all_RD_curves.data="${data}" \
-       +plot_all_RD_curves.rate_cols="${rate_cols}" \
-       +plot_all_RD_curves.distortion_cols="${distortion_cols}" \
-       +plot_all_RD_curves.logbase_x=2 \
-       +plot_all_RD_curves.hue=$compare \
-       +plot_invariance_RD_curve.data="${data}" \
-       +plot_invariance_RD_curve.noninvariant='VAE' \
-       +plot_invariance_RD_curve.logbase_x=2 \
-       +plot_invariance_RD_curve.desirable_distortion="test/pred/loss" \
-       agg_mode=[summarize_metrics,summarize_RD_curves,plot_all_RD_curves,plot_invariance_RD_curve]
+       agg_mode=[summarize_metrics]
 
-# plot loaded model
+
 col_val_subset=""
 python utils/load_pretrained.py \
        load_pretrained.experiment=$experiment  \
        $col_val_subset \
        $kwargs  \
-       server=none \
+       server=local \
        trainer.gpus=0 \
        $kwargs_multi \
-       load_pretrained.mode=[maxinv_distribution_plot,codebook_plot] \
-       -m
+       load_pretrained.mode=[codebook_plot,maxinv_distribution_plot] \
+       -m 

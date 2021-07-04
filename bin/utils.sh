@@ -53,7 +53,7 @@ while getopts ':s:p:m:t:v:a:c:' flag; do
       echo "Adding ${OPTARG}"
       ;;
     \? ) 
-      echo "Usage: "$name".sh [-stpmvac]" 
+      echo "Usage: "$name".sh [-scmvta]" 
       exit 1
       ;;
     : )

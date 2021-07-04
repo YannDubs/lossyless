@@ -139,7 +139,6 @@ class LearnableCompressor(pl.LightningModule):
             X_hat : torch.Tensor of shape=[batch_size,  *data.shape]
                 Reconstructed data. If image it's the unormalized image in [0,1].
         """
-
         if is_features is None:
             is_features = self.is_features
 

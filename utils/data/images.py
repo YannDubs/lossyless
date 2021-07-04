@@ -48,7 +48,7 @@ from tqdm import tqdm
 from lossyless.helpers import BASE_LOG, Normalizer, check_import, to_numpy
 from utils.helpers import remove_rf
 
-from .augmentations import EquivariantRandomResizedCrop, EquivariantRandomRotation
+from .augmentations import EquivariantRandomResizedCrop
 from .base import LossylessDataModule, LossylessDataset
 from .helpers import (
     Caltech101BalancingWeights,
@@ -348,7 +348,7 @@ class LossylessImgDataset(LossylessDataset):
 
     def normalizer(self):
         dataset_name = "clip" if self.base_resize == "clip" else self.dataset_name
-        #! normalization for clip will not affect plotting => if using vae with clip will look wrong
+        #! normalization for clip will not affect plotting => if using VAE with clip will look wrong
         return Normalizer(dataset_name, is_raise=True)
 
     def get_augmentations(self, augmentations):

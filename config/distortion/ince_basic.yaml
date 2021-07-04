@@ -1,7 +1,0 @@
-defaults:
-  - ince
-
-name: ince_basic # usual (invariant) NCE: try to classify augmented image
-
-kwargs:
-  effective_batch_size: null

@@ -2,7 +2,7 @@
 defaults:
   - neural_feat@featurizer
   - override /architecture@encoder: clip
-  - override /distortion: lossyZ
+  - override /distortion: lossy_Z
   - override /rate: lossless
   - override /finetune: freezer
 

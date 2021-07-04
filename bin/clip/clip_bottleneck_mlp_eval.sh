@@ -17,7 +17,6 @@ pretrained_path="$SCRIPTPATH"/../../hub
 
 # define all the arguments modified or added to `conf`. If they are added use `+`
 kwargs="
-logger.kwargs.project=clip_staggered
 experiment=$experiment 
 timeout=$time
 encoder.z_dim=512

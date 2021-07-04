@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-experiment="banana_viz_nce"
+experiment="banana_viz_BINCE"
 notes="
-**Goal**: Run INCE on banana distributions to get nice figures.
+**Goal**: Run BINCE on banana distributions with rotation invariance to get nice figures.
 "
 
 # parses special mode for running the script
@@ -11,12 +11,12 @@ source `dirname $0`/../utils.sh
 # Encoder
 encoder_kwargs="
 architecture@encoder=mlp_fancy
-encoder.z_dim=2
+encoder.z_dim=1
 "
 
 # Distortion
 distortion_kwargs="
-distortion=ince
+distortion=BINCE
 distortion.factor_beta=1
 distortion.kwargs.effective_batch_size=null
 "
@@ -48,10 +48,10 @@ architecture@predictor=mlp_probe
 optimizer@optimizer_pred=Adam
 scheduler@scheduler_pred=unifmultistep100
 optimizer_pred.kwargs.lr=1e-3
+featurizer.loss.beta_anneal=constant
 "
 
 kwargs="
-logger.kwargs.project=banana
 experiment=$experiment 
 $encoder_kwargs
 $distortion_kwargs
@@ -64,7 +64,7 @@ $add_kwargs
 
 kwargs_multi="
 data@data_feat=banana_rot
-distortion=ince
+distortion=BINCE
 featurizer.loss.beta=0.6
 "
 

@@ -208,6 +208,21 @@ def prod(iterable):
     return reduce(operator.mul, iterable, 1)
 
 
+def mean(array):
+    """Take mean of array like."""
+    return sum(array) / len(array)
+
+
+def is_pow2(n):
+    """Check if a number is a power of 2."""
+    return (n != 0) and (n & (n - 1) == 0)
+
+
+def closest_pow(n, base=2):
+    """Return the closest (in log space) power of 2 from a number."""
+    return base ** round(math.log(n, base))
+
+
 def kl_divergence(p, q, z_samples=None, is_lower_var=False):
     """Computes KL[p||q], analytically if possible but with MC."""
     try:

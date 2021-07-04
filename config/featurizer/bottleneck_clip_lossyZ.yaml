@@ -2,8 +2,8 @@
 defaults:
   - neural_feat@featurizer
   - override /architecture@encoder: clip
-  - override /distortion: lossyZ
-  - override /rate: H_hyper
+  - override /distortion: lossy_Z
+  - override /rate: H_factorized
   - override /finetune: freezer
   - override /scheduler@scheduler_feat: unifmultistep1000
   - override /scheduler@scheduler_coder: unifmultistep1000

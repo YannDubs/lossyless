@@ -6,7 +6,7 @@ export HYDRA_FULL_ERROR=1
 
 experiment="STL10_dist_variation_recpred"
 notes="
-**Goal**: Different distortions on STL10: iNCE,iVAE,VAE, predicted on reconstructions with Resnet18, ca. 100 runs for each config
+**Goal**: Different distortions on STL10: iNCE,VIC,VAE, predicted on reconstructions with Resnet18, ca. 100 runs for each config
 "
 
 # parses special mode for running the script
@@ -14,8 +14,6 @@ source `dirname $0`/../utils.sh
 
 # project and server kwargs
 kwargs="
-logger.kwargs.project=lossyless
-wandb_entity=${env:USER}
 experiment=$experiment
 timeout=$time
 $add_kwargs
@@ -37,8 +35,8 @@ hypopt=optuna
 "
 
 # sweeping arguments
-kwargs_hypopt_ivae="
-distortion=vae,ivae
+kwargs_hypopt_VIC="
+distortion=VAE,VIC
 featurizer=neural_rec
 architecture@encoder=resnet18
 hydra.sweeper.n_trials=200
@@ -91,7 +89,7 @@ if [ "$is_plot_only" = false ] ; then
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt_jpeg $kwargs_dep -m &
 
-    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt_ivae $kwargs_dep -m &
+    python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_hypopt_VIC $kwargs_dep -m &
 
     sleep 7
   done

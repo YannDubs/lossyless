@@ -5,7 +5,7 @@ export HYDRA_FULL_ERROR=1
 
 experiment="STL10_action_distribution_shift"
 notes="
-**Goal**: Action distribution shift with iVAE/VAE, predicted on features with MLP, ca. 50 runs for each config
+**Goal**: Action distribution shift with VIC/VAE, predicted on features with MLP, ca. 50 runs for each config
 "
 
 # parses special mode for running the script
@@ -13,8 +13,6 @@ source `dirname $0`/../utils.sh
 
 # project and server kwargs
 kwargs="
-logger.kwargs.project=lossyless
-wandb_entity=${env:USER}
 experiment=$experiment
 timeout=$time
 $add_kwargs
@@ -31,7 +29,7 @@ data@data_feat=stl10_unlabeled
 data@data_pred=stl10_aug
 trainer.max_epochs=100
 +update_trainer_pred.max_epochs=100
-distortion=ivae,vae
+distortion=VIC,VAE
 distortion.factor_beta=1
 rate=H_hyper
 +data_feat.kwargs.dataset_kwargs.p_augment=0.5

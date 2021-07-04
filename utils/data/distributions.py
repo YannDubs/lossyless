@@ -60,9 +60,9 @@ class LossylessDistributionDataset(LossylessDataset, Dataset):
         Mx = self.targets[index]
         x = self.data[index]
 
-        if self.additional_target == "representative": # IVAE
+        if self.additional_target == "representative":  # VIC
             # this makes no difference in terms of loss but will make the plot look slightly nicer
-            # if you don't do that then the plot will be the same where there's mass (i.e. in the 
+            # if you don't do that then the plot will be the same where there's mass (i.e. in the
             # banana) but nothing will push you to look good outside of the banana distribution as
             # you will rarely sample points there. THis ensures that you sample points outside of banana
             # to have more understandable plots for didactic reasons

@@ -55,7 +55,7 @@ from utils.visualizations.helpers import kwargs_log_scale  # isort:skip
 logger = logging.getLogger(__name__)
 
 
-@hydra.main(config_name="{MAIN_DIR}/config", config_path="config")
+@hydra.main(config_path=f"{MAIN_DIR}/config", config_name="aggregate")
 def main_cli(cfg):
     # uses main_cli sot that `main` can be called from notebooks.
     return main(cfg)
@@ -364,7 +364,7 @@ class ResultAggregator(PostPlotter):
         self,
         data="featurizer",
         col_dist_param="dist",
-        noninvariant="vae",
+        noninvariant="VAE",
         rate_col="test/feat/rate",
         upper_distortion="test/feat/distortion",
         desirable_distortion="test/feat/online_loss",

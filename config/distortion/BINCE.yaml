@@ -1,0 +1,5 @@
+defaults:
+  - base_contrastive
+
+name: BINCE # usual (invariant) NCE: try to classify augmented image
+factor_beta: 0.003 # compared to VIC gives importance ++ to rate so decrease it (value taken empirically)
