@@ -2,9 +2,6 @@
 
 [![Minimal code](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YannDubs/lossyless/blob/main/minimal_code.ipynb)
 
-
-https://github.com/YannDubs/lossyless/blob/main/minimal_code.ipynb
-
 This repostiory contains our implementation of the paper: [**Lossy Compression for Lossless Prediction**](https://arxiv.org/abs/2106.10800). That formalizes and empirically inverstigates unsupervised training for task-specific compressors.
 
 ## Install
