@@ -64,6 +64,7 @@ class ClipCompressor(nn.Module):
 
         self.device = device
         self.to(self.device)
+        self.eval()
 
     def to(self, device):
         self.device = device

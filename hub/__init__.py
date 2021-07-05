@@ -1,1 +1,1 @@
-from compressor import *
+from .compressor import *
