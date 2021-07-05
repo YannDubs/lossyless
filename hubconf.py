@@ -12,19 +12,48 @@ import torch
 
 from hub import ClipCompressor as _ClipCompressor
 
+PATH = "https://github.com/YannDubs/lossyless/releases/download/v0.1-alpha/beta{beta:0.0e}_factorized_rate.pt"
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-def clip_compressor(beta=5e-02, pretrained=True, **kwargs):
-    """Load an invariant CLIP compressor.
+
+def clip_compressor_b005(is_jit=False, device=DEVICE):
+    ckpt_path = PATH.format(beta=0.05)
+    pretrained_state_dict = torch.hub.load_state_dict_from_url(
+        ckpt_path, progress=False
+    )
+    compressor = _ClipCompressor(
+        pretrained_state_dict=pretrained_state_dict, is_jit=is_jit, device=device
+    )
+    return compressor, compressor.preprocess
+
+
+def clip_compressor_b001(is_jit=False, device=DEVICE):
+    ckpt_path = PATH.format(beta=0.01)
+    pretrained_state_dict = torch.hub.load_state_dict_from_url(
+        ckpt_path, progress=False
+    )
+    compressor = _ClipCompressor(
+        pretrained_state_dict=pretrained_state_dict, is_jit=is_jit, device=device
+    )
+    return compressor, compressor.preprocess
+
+
+def clip_compressor_b01(is_jit=False, device=DEVICE):
+    ckpt_path = PATH.format(beta=0.1)
+    pretrained_state_dict = torch.hub.load_state_dict_from_url(
+        ckpt_path, progress=False
+    )
+    compressor = _ClipCompressor(
+        pretrained_state_dict=pretrained_state_dict, is_jit=is_jit, device=device
+    )
+    return compressor, compressor.preprocess
+
+
+DOCSTRING = """
+    Load invariant CLIP compressor with beta={beta:.0e} (beta proportional to compression not like in paper).
 
     Parameters
     ----------
-    beta : {1e-02, 5e-02, 1e-01}, optional
-        What beta value to use. Larger means stronger compressor. This
-        correspond to 1/beta in the paper (OOPS).
-
-    pretrained : bool, optional
-        Whether to load pretrained model, currently must be true.
-
     is_jit : bool
         Whether to use just in time compilation => production ready.
 
@@ -44,12 +73,7 @@ def clip_compressor(beta=5e-02, pretrained=True, **kwargs):
         Transforms that can be used directly in place of torchvision transform. It will resize the
         image to (3,224,224), apply clip normalization and convert it to tensor.
     """
-    base = "https://github.com/YannDubs/lossyless/releases/download"
-    ckpt = f"{base}/v0.1-alpha/beta{beta:0.0e}_factorized_rate.pt"
-    pretrained_state_dict = torch.hub.load_state_dict_from_url(ckpt, progress=False)
 
-    assert pretrained
-
-    compressor = _ClipCompressor(pretrained_state_dict=pretrained_state_dict, **kwargs)
-
-    return compressor, compressor.preprocess
+clip_compressor_b005.__doc__ = DOCSTRING.format(beta=0.05)
+clip_compressor_b001.__doc__ = DOCSTRING.format(beta=0.01)
+clip_compressor_b01.__doc__ = DOCSTRING.format(beta=0.1)
