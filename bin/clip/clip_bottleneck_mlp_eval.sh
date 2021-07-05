@@ -60,7 +60,7 @@ seed=int(interval(0,10))
 if [ "$is_plot_only" = false ] ; then
   for data in "stl10" "imagenet" "cars196"  "caltech101"  "food101"  "pcam" "pets37" "cifar10"    "cifar100"        
   do
-    for beta in     "1e-1"  "5e-2"   "1e-2"        
+    for beta in  "1e-01"   "5e-02"    "1e-02"           
     do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi data@data_pred=$data featurizer.loss.beta=$beta paths.pretrained.load=$pretrained_path/beta$beta hydra.sweeper.study_name=$data_$beta -m &

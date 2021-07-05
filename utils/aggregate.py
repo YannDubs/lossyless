@@ -40,6 +40,7 @@ from utils.helpers import (  # isort:skip
     cfg_save,
     getattr_from_oneof,
     omegaconf2namespace,
+    format_resolver,
 )
 from utils.postplotting import (  # isort:skip
     PRETTY_RENAMER,
@@ -955,4 +956,5 @@ def is_pareto_optimal(costs):
 
 
 if __name__ == "__main__":
+    OmegaConf.register_new_resolver("format", format_resolver)
     main_cli()

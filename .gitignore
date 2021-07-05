@@ -16,7 +16,6 @@ notebooks
 .hydra
 old
 .idea
-hub
 *old
 lightning_logs
 results_neurips

@@ -29,7 +29,7 @@ $add_kwargs
 kwargs_multi="" 
 
 if [ "$is_plot_only" = false ] ; then
-  for beta in  "1e-1"   "5e-2"    "1e-2"          
+  for beta in  "1e-01"   "5e-02"    "1e-02"          
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi featurizer.loss.beta=$beta paths.pretrained.save=$pretrained_path/beta$beta -m &

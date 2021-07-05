@@ -38,7 +38,7 @@ general_kwargs="
 is_only_feat=False
 featurizer=neural_feat
 optimizer@optimizer_feat=Adam
-optimizer_feat.kwargs.lr=1e-3
+optimizer_feat.kwargs.lr=3e-4
 scheduler@scheduler_feat=expdecay1000
 optimizer@optimizer_coder=Adam
 scheduler@scheduler_coder=expdecay100
@@ -48,8 +48,9 @@ trainer.precision=32
 architecture@predictor=mlp_probe
 optimizer@optimizer_pred=Adam
 scheduler@scheduler_pred=unifmultistep100
-optimizer_pred.kwargs.lr=1e-3
+optimizer_pred.kwargs.lr=3e-4
 featurizer.loss.beta_anneal=constant
+encoder.z_dim=2
 "
 
 kwargs="
@@ -66,10 +67,14 @@ $add_kwargs
 kwargs_multi="
 data@data_feat=banana_rot
 featurizer.loss.beta=0.07
+distortion=VIC
+encoder.z_dim=1,2
 "
+#VAE
+#encoder.z_dim=1,2
 
 if [ "$is_plot_only" = false ] ; then
-  for kwargs_dep in  "distortion=VAE encoder.z_dim=2"  "distortion=VIC encoder.z_dim=1" 
+  for kwargs_dep in  "" 
   do
 
     python "$main" +hydra.job.env_set.WANDB_NOTES="\"${notes}\"" $kwargs $kwargs_multi $kwargs_dep -m &

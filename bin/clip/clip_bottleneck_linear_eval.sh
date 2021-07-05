@@ -32,7 +32,7 @@ data@data_pred=stl10,cars196,caltech101,food101,pcam,pets37,cifar10,cifar100,ima
 " 
 
 if [ "$is_plot_only" = false ] ; then
-  for beta in    "1e-1"  "5e-2"  "1e-2"
+  for beta in  "1e-01"   "5e-02"    "1e-02"    
   do
 
     python utils/Z_linear_eval.py  $kwargs $kwargs_multi featurizer.loss.beta=$beta paths.pretrained.load=$pretrained_path/beta$beta  $kwargs_dep -m &

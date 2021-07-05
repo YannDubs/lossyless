@@ -27,11 +27,6 @@ $add_kwargs
 kwargs_multi="
 distortion=VIC,VAE
 " 
-kwargs_multi="
-distortion=VIC
-optimizer_feat.kwargs.lr=1e-3,1e-4,3e-4
-trainer.max_epochs=20
-" 
 
 if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in  "" 

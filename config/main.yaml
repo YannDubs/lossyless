@@ -14,7 +14,7 @@ defaults:
   - architecture@encoder: resnet18
   - architecture@online_evaluator: mlp_probe
   - checkpoint@checkpoint_feat: bestValLoss # NB : will not be able to use Val loss for INCE in the case where you don't use data augmentations at test time because validation is meaningless for distortion. 
-  - optimizer@optimizer_feat: AdamW_lr3e-4_w1e-5 # larger learning rate gives smaller rate but smaller acc. should stick to using adam if not changing the  beta will effectively change the lr
+  - optimizer@optimizer_feat: AdamW_lr1e-3_w1e-5 # larger learning rate gives smaller rate but smaller acc. should stick to using adam if not changing the  beta will effectively change the lr
   - scheduler@scheduler_feat: expdecay100 
   - optimizer@optimizer_coder: AdamW_lr3e-4_w1e-5 # quite robust to this but lr shouldn't be to small
   - scheduler@scheduler_coder: expdecay100
