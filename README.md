@@ -1,6 +1,7 @@
 # Lossy Compression for Lossless Prediction [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/YannDubs/lossyless/blob/main/LICENSE) [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/release/python-380/)
 
-[![Using](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YannDubs/lossyless/blob/main/notebooks/Hub.ipynb) [![Training](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YannDubs/lossyless/blob/main/notebooks/minimal_code.ipynb)
+Using: [![Using](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YannDubs/lossyless/blob/main/notebooks/Hub.ipynb) 
+Training: [![Training](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YannDubs/lossyless/blob/main/notebooks/minimal_code.ipynb)
 
 This repostiory contains our implementation of the paper: [**Lossy Compression for Lossless Prediction**](https://arxiv.org/abs/2106.10800). That formalizes and empirically inverstigates unsupervised training for task-specific compressors.
 
@@ -12,11 +13,21 @@ This repostiory contains our implementation of the paper: [**Lossy Compression f
 If you want to use our compressor directly the easiest is to use the model from torch hub as seen in the google colab (or `notebooks/Hub.ipynb`) or th example below.
 
 <details>
-  <summary>Installation details</summary>
-  `pip install torch torchvision tqdm numpy compressai sklearn git+https://github.com/openai/CLIP.git`
+  <summary><b>Installation details</b></summary>
+  ```bash
+  pip install torch torchvision tqdm numpy compressai sklearn git+https://github.com/openai/CLIP.git
+  ```
+
 
   Using pytorch`>1.7.1` : CLIP forces pytorch version `1.7.1`, this is because it needs this version to use JIT. If you don't need JIT (no JIT by default) you can alctually use more recent versions of torch and torchvision `pip install -U torch torchvision`. Make sure to update after having isntalled CLIP.
 </details>
+
+```bash
+pip install torch torchvision tqdm numpy compressai sklearn git+https://github.com/openai/CLIP.git
+```
+
+
+Using pytorch`>1.7.1` : CLIP forces pytorch version `1.7.1`, this is because it needs this version to use JIT. If you don't need JIT (no JIT by default) you can alctually use more recent versions of torch and torchvision `pip install -U torch torchvision`. Make sure to update after having isntalled CLIP.
 
 ```python
 import time
