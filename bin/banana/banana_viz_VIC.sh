@@ -67,11 +67,8 @@ $add_kwargs
 kwargs_multi="
 data@data_feat=banana_rot
 featurizer.loss.beta=0.07
-distortion=VIC
-encoder.z_dim=1,2
+distortion=VIC,VAE
 "
-#VAE
-#encoder.z_dim=1,2
 
 if [ "$is_plot_only" = false ] ; then
   for kwargs_dep in  "" 

@@ -15,36 +15,39 @@ from hub import ClipCompressor as _ClipCompressor
 PATH = "https://github.com/YannDubs/lossyless/releases/download/v0.1-alpha/beta{beta:0.0e}_factorized_rate.pt"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+# TODO: add JIT once https://github.com/InterDigitalInc/CompressAI/issues/72 is resolved
+# possible issue with JIT is that needs version 1.7.1 from pytorch for CLIP
 
-def clip_compressor_b005(is_jit=False, device=DEVICE):
+
+def clip_compressor_b005(device=DEVICE, **kwargs):
     ckpt_path = PATH.format(beta=0.05)
     pretrained_state_dict = torch.hub.load_state_dict_from_url(
         ckpt_path, progress=False
     )
     compressor = _ClipCompressor(
-        pretrained_state_dict=pretrained_state_dict, is_jit=is_jit, device=device
+        pretrained_state_dict=pretrained_state_dict, device=device, **kwargs
     )
     return compressor, compressor.preprocess
 
 
-def clip_compressor_b001(is_jit=False, device=DEVICE):
+def clip_compressor_b001(device=DEVICE, **kwargs):
     ckpt_path = PATH.format(beta=0.01)
     pretrained_state_dict = torch.hub.load_state_dict_from_url(
         ckpt_path, progress=False
     )
     compressor = _ClipCompressor(
-        pretrained_state_dict=pretrained_state_dict, is_jit=is_jit, device=device
+        pretrained_state_dict=pretrained_state_dict, device=device, **kwargs
     )
     return compressor, compressor.preprocess
 
 
-def clip_compressor_b01(is_jit=False, device=DEVICE):
+def clip_compressor_b01(device=DEVICE, **kwargs):
     ckpt_path = PATH.format(beta=0.1)
     pretrained_state_dict = torch.hub.load_state_dict_from_url(
         ckpt_path, progress=False
     )
     compressor = _ClipCompressor(
-        pretrained_state_dict=pretrained_state_dict, is_jit=is_jit, device=device
+        pretrained_state_dict=pretrained_state_dict, device=device, **kwargs
     )
     return compressor, compressor.preprocess
 
@@ -54,9 +57,6 @@ DOCSTRING = """
 
     Parameters
     ----------
-    is_jit : bool
-        Whether to use just in time compilation => production ready.
-
     device : str
         Device on which to load the model.
 

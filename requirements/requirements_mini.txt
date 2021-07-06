@@ -11,3 +11,4 @@ compressai
 pillow
 einops
 pandas
+sklearn

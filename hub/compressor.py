@@ -23,7 +23,7 @@ class ClipCompressor(nn.Module):
         to load.
 
     is_jit : bool
-        Whether to use just in time compilation => production ready.
+        Whether to use just in time compilation for CLIP. This can break if pytorch version is not 1.7.1.
 
     device : str
         Device on which to load the model.
@@ -36,7 +36,7 @@ class ClipCompressor(nn.Module):
         device="cuda" if torch.cuda.is_available() else "cpu",
     ):
         super().__init__()
-        model, self.preprocess = clip.load("ViT-B/32", jit=is_jit, device=device)
+        model, self.preprocess = clip.load("ViT-B/32", jit=jit, device=device)
         self.clip = model.visual
 
         self.z_dim = 512
@@ -89,15 +89,16 @@ class ClipCompressor(nn.Module):
         else:
             z_hat : torch.Tensor shape=(batch_size,512)
         """
-        z = self.clip(X)
+        with torch.no_grad():
+            z = self.clip(X)
 
-        z_in = self.process_z_in(z)
+            z_in = self.process_z_in(z)
 
-        if is_compress:
-            out = self.entropy_bottleneck.compress(z_in)
-        else:
-            z_hat, _ = self.entropy_bottleneck(z_in)
-            out = self.process_z_out(z_hat)
+            if is_compress:
+                out = self.entropy_bottleneck.compress(z_in)
+            else:
+                z_hat, _ = self.entropy_bottleneck(z_in)
+                out = self.process_z_out(z_hat)
 
         return out
 
@@ -115,8 +116,7 @@ class ClipCompressor(nn.Module):
 
     def compress(self, X):
         """Return comrpessed features (byte string)."""
-        with torch.no_grad():
-            return self(X, is_compress=True)
+        return self(X, is_compress=True)
 
     def decompress(self, byte_str):
         """Decompressed the byte strings."""
@@ -169,6 +169,10 @@ class ClipCompressor(nn.Module):
             
         label_file : str or Path, optional
             File to which to save the labels (if given).
+
+        kwargs_dataloader : dict, optional
+            Arguments to the dataloader. For example batch_size and num_workers will 
+            directly impact the compression speed.
             
         is_info : bool, optional
             Whether to print compression time and mean rate per image.

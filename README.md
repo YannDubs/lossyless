@@ -1,47 +1,99 @@
 # Lossy Compression for Lossless Prediction [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/YannDubs/lossyless/blob/main/LICENSE) [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/release/python-380/)
 
-[![Minimal code](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YannDubs/lossyless/blob/main/minimal_code.ipynb)
+[![Using](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YannDubs/lossyless/blob/main/notebooks/Hub.ipynb) [![Training](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YannDubs/lossyless/blob/main/notebooks/minimal_code.ipynb)
 
 This repostiory contains our implementation of the paper: [**Lossy Compression for Lossless Prediction**](https://arxiv.org/abs/2106.10800). That formalizes and empirically inverstigates unsupervised training for task-specific compressors.
 
-## Install
 
-0. Clone repository
-1. Install [PyTorch](https://pytorch.org/) >=  1.7
-2. `pip install -r requirements.txt`
+## Using the compressor 
 
-Nota Bene: 
-- For conda: use  `conda env update --file requirements/environment.yaml`.
-- For the bare minimum packages in pip use `pip install -r requirements_mini.txt`
-- For docker: we provide a dockerfile at `requirements/Dockerfile`.
-- For better logging: `hydra` and `pytorch lightning` logging don't work great together, to have a better logging experience you should comment out the folowing lines in `pytorch_lightning/__init__.py` :
+[![Using](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YannDubs/lossyless/blob/main/notebooks/Hub.ipynb)
+
+If you want to use our compressor directly the easiest is to use the model from torch hub as seen in the google colab (or `notebooks/Hub.ipynb`) or th example below.
+
+<details>
+  <summary>Installation details</summary>
+  `pip install torch torchvision tqdm numpy compressai sklearn git+https://github.com/openai/CLIP.git`
+
+  Using pytorch`>1.7.1` : CLIP forces pytorch version `1.7.1`, this is because it needs this version to use JIT. If you don't need JIT (no JIT by default) you can alctually use more recent versions of torch and torchvision `pip install -U torch torchvision`. Make sure to update after having isntalled CLIP.
+</details>
 
 ```python
-if not _root_logger.hasHandlers():
-     _logger.addHandler(logging.StreamHandler())
-     _logger.propagate = False
+import time
+
+import torch
+from sklearn.svm import LinearSVC
+from torchvision.datasets import STL10
+
+DATA_DIR = "data/"
+
+# list available compressors. b01 compresses the most (b01 > b005 > b001)
+torch.hub.list('YannDubs/lossyless:main') 
+# ['clip_compressor_b001', 'clip_compressor_b005', 'clip_compressor_b01']
+
+# Load the desired compressor and transformation to apply to images (by default on GPU if available)
+compressor, transform = torch.hub.load('YannDubs/lossyless:main','clip_compressor_b005')
+
+# Load some data to compress and apply transformation
+stl10_train = STL10(
+    DATA_DIR, download=True, split="train", transform=transform
+)
+stl10_test = STL10(
+    DATA_DIR, download=True, split="test", transform=transform
+)
+
+# Compresses the datasets and save them to file (this requires GPU)
+# Rate: 1506.50 bits/img | Encoding: 347.82 img/sec
+compressor.compress_dataset(
+    stl10_train,
+    f"{DATA_DIR}/stl10_train_Z.bin",
+    label_file=f"{DATA_DIR}/stl10_train_Y.npy",
+)
+compressor.compress_dataset(
+    stl10_test,
+    f"{DATA_DIR}/stl10_test_Z.bin",
+    label_file=f"{DATA_DIR}/stl10_test_Y.npy",
+)
+
+# Load and decompress the datasets from file the datasets (does not require GPU)
+# Decoding: 1062.38 img/sec
+Z_train, Y_train = compressor.decompress_dataset(
+    f"{DATA_DIR}/stl10_train_Z.bin", label_file=f"{DATA_DIR}/stl10_train_Y.npy"
+)
+Z_test, Y_test = compressor.decompress_dataset(
+    f"{DATA_DIR}/stl10_test_Z.bin", label_file=f"{DATA_DIR}/stl10_test_Y.npy"
+)
+
+# Downstream STL10 evaluation. Accuracy: 98.65% | Training time: 0.5 sec
+clf = LinearSVC(C=7e-3)
+start = time.time()
+clf.fit(Z_train, Y_train)
+delta_time = time.time() - start
+acc = clf.score(Z_test, Y_test)
+print(
+    f"Downstream STL10 accuracy: {acc*100:.2f}%.  \t Training time: {delta_time:.1f} "
+)
 ```
 
-## Test
 
-To test your installation and that everything works as desired you can run `bin/test.sh`, which will run an epoch of BICNE and VIC on MNIST.
+## Minimal training code
 
-## Run
+[![Training](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YannDubs/lossyless/blob/main/notebooks/minimal_code.ipynb)
 
-### Using the compressor 
+If your goal is to look at a minimal version of the code to simply understand what is going on, I would highly recommend starting from `notebooks/minimal_compressor.ipynb` (or google colab link above). This is a notebook version of the code provided in Appendix E.7. of the paper, to quickly train and evaluate our compressor. 
 
-... TODO pytorch hub... 
+<details>
+  <summary>Installation details</summary>
+  1. `pip install git+https://github.com/openai/CLIP.git`
+  2. `pip uninstall -y torchtext` (probably not necessary but can cause issues if got installed as wrong pytorch version)
+  3. `pip install scikit-learn==0.24.2 lightning-bolts==0.3.4 compressai==1.1.5 pytorch-lightning==1.3.8`
 
+  Using pytorch`>1.7.1` : CLIP forces pytorch version `1.7.1` you should be able to use a more recent versions.  E.g.:
+  1. `pip install git+https://github.com/openai/CLIP.git`
+  2. `pip install -U torch torchvision scikit-learn lightning-bolts compressai pytorch-lightning`
+</details>
 
-### Minimal code
-
-If your goal is to look at a minimal version of the code to simply understand what is going on, I would highly recommend starting by `minimal_compressor.py`. This is a script version of the code provided in Appendix E.7. of the paper, to quickly train and evaluate our compressor. To run it simply use 
-
-```bash
-python minimal_compressor.py
-```
-
-### Results from the paper
+## Results from the paper
 
 We provide scripts to essentially replicate many of the results from the paper. The exact results will be a little different as we simplified and cleaned some of the code to help readability.
 
@@ -58,6 +110,43 @@ Generally speaking you can change any of the parameters either directly in `conf
 
 If you are using [Slurm](https://slurm.schedmd.com/documentation.html) you can submit directly the script on servers by adding a config file under `conf/slurm/<myserver>.yaml`, and then running the script as `bin/*/<experiment>.sh -s <myserver>`. For example configurations files for slurm see `conf/slurm/vector.yaml` or `conf/slurm/learnfair.yaml`. For more information check the documentation from [submitit's plugin](https://hydra.cc/docs/plugins/submitit_launcher) which we are using.
 
+
+
+
+
+
+<details>
+  <summary>Installation details</summary>
+
+### 
+
+0. Clone repository
+1. Install [PyTorch](https://pytorch.org/) >=  1.7
+2. `pip install -r requirements.txt`
+
+
+
+### Other installation
+- For the bare minimum packages: use `pip install -r requirements_mini.txt` instead.
+- For conda: use  `conda env update --file requirements/environment.yaml`.
+- For docker: we provide a dockerfile at `requirements/Dockerfile`.
+
+### Notes 
+
+- CLIP forces pytorch version `1.7.1`, this is because it needs this version to use JIT. We don't use JIT so you can alctually use more recent versions of torch and torchvision `pip install -U torch torchvision`.
+- For better logging: `hydra` and `pytorch lightning` logging don't work great together, to have a better logging experience you should comment out the folowing lines in `pytorch_lightning/__init__.py` :
+
+```python
+if not _root_logger.hasHandlers():
+     _logger.addHandler(logging.StreamHandler())
+     _logger.propagate = False
+```
+
+### Test installation
+
+To test your installation and that everything works as desired you can run `bin/test.sh`, which will run an epoch of BICNE and VIC on MNIST.
+
+</details>
 
 
 
