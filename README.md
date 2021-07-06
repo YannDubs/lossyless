@@ -21,6 +21,8 @@ If you want to use our compressor directly the easiest is to use the model from 
   ```
 
   Using pytorch`>1.7.1` : CLIP forces pytorch version `1.7.1`, this is because it needs this version to use JIT. If you don't need JIT (no JIT by default) you can alctually use more recent versions of torch and torchvision `pip install -U torch torchvision`. Make sure to update after having isntalled CLIP.
+
+----------------------
 </details>
 
 ```python
@@ -101,15 +103,15 @@ If your goal is to look at a minimal version of the code to simply understand wh
 
 ## Results from the paper
 
-We provide scripts to essentially replicate some results from the paper. The exact results will be a little different as we simplified and cleaned some of the code to help readability.
+We provide scripts to essentially replicate some results from the paper. The exact results will be a little different as we simplified and cleaned some of the code to help readability. All scripts can be found in `bin` and run using the command `bin/*/<experiment>.sh`.
 
 
 <details>
 <summary><b>Installation details</b></summary>
 
-0. Clone repository
-1. Install [PyTorch](https://pytorch.org/) >=  1.7
-2. `pip install -r requirements.txt`
+1. Clone repository
+2. Install [PyTorch](https://pytorch.org/) >=  1.7
+3. `pip install -r requirements.txt`
 
 ### Other installation
 - For the bare minimum packages: use `pip install -r requirements_mini.txt` instead.
@@ -131,7 +133,12 @@ if not _root_logger.hasHandlers():
 
 To test your installation and that everything works as desired you can run `bin/test.sh`, which will run an epoch of BICNE and VIC on MNIST.
 
+----------------------
+
 </details>
+
+<details>
+<summary><b>Scripts details</b></summary>
 
 All scripts can be found in `bin` and run using the command `bin/*/<experiment>.sh`. This will save all results, checkpoints, logs... The most important results (including summary resutls and figures) will be saved at `results/exp_<experiment>`. Most important are the summarized metrics `results/exp_<experiment>*/summarized_metrics_merged.csv` and any figures `results/exp_<experiment>*/*.png`.
 
@@ -147,11 +154,19 @@ Generally speaking you can change any of the parameters either directly in `conf
 If you are using [Slurm](https://slurm.schedmd.com/documentation.html) you can submit directly the script on servers by adding a config file under `conf/slurm/<myserver>.yaml`, and then running the script as `bin/*/<experiment>.sh -s <myserver>`. For example configurations files for slurm see `conf/slurm/vector.yaml` or `conf/slurm/learnfair.yaml`. For more information check the documentation from [submitit's plugin](https://hydra.cc/docs/plugins/submitit_launcher) which we are using.
 
 
+----------------------
+
+</details>
+
+
 ### VIC/VAE on rotation invariant Banana
 
-The following figures are saved automatically at `restults/exp_banana_viz_VIC/**/quantization.png` after running `bin/banana/banana_viz_VIC.sh`. 
+Command: 
+```bash
+bin/banana/banana_viz_VIC.sh
+``` 
 
-On the left we see the quantization of the Banana distribution by a standard compressor (called `VAE` in code but VC in paper). On the right, by our (rotation) invariant compressor (`VIC`).
+The following figures are saved automatically at `results/exp_banana_viz_VIC/**/quantization.png`. On the left we see the quantization of the Banana distribution by a standard compressor (called `VAE` in code but VC in paper). On the right, by our (rotation) invariant compressor (`VIC`).
 
 
 <p float="left" align="middle">
@@ -161,13 +176,33 @@ On the left we see the quantization of the Banana distribution by a standard com
 
 ### VIC/VAE on augmentend MNIST
 
-The following figure is saved automatically at `restults/exp_augmnist_viz_VIC/**/rec_imgs.png` after running `bin/banana/augmnist_viz_VIC.sh`. It shows source augmented MNIST images as well as the reconstructions using our invariant compressor.
+Command: 
+```bash
+bin/banana/augmnist_viz_VIC.sh
+``` 
+
+The following figure is saved automatically at `results/exp_augmnist_viz_VIC/**/rec_imgs.png`. It shows source augmented MNIST images as well as the reconstructions using our invariant compressor.
 
 ![Invariant compression of augmented MNIST](/results/exp_augmnist_viz_VIC/datafeat_mnist_aug/feat_neural_rec/dist_VIC/enc_resnet18/rate_H_hyper/optfeat_AdamW_lr1.0e-03_w1.0e-05/schedfeat_expdecay100/zdim_128/zs_1/beta_1.0e-01/seed_123/addfeat_None/rec_imgs.png
 )
 
 
+### CLIP compressor
 
+
+Command: 
+```bash
+bin/clip/main_small.sh
+``` 
+
+The following table comes directly from the results which are automatically saved at `results/exp_clip_bottleneck_linear_eval/**/datapred_*/**/results_predictor.csv`. It shows the result of compression from our CLIP compressor on many datasets.
+
+|               | Cars196 | STL10 | Caltech101 | Food101 | PCam | Pets37 | CIFAR10 |
+|---------------|:-------:|:-----:|:----------:|:-------:|:----:|:------:|:-------:|
+| Rate [bits]   |   1468  |  1344 |    1341    |   1269  | 1491 |  1211  |   1408  |
+| Test Acc. [%] |   79.9  |  98.7 |    93.7    |   83.6  | 81.1 |  88.3  |   94.8  |
+
+Note: ImageNet is too large for training a SVM using SKlearn. You need to run MLP evaluation with `bin/clip/clip_bottleneck_mlp_eval`.
 
 
 ## Cite

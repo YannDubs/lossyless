@@ -11,7 +11,6 @@ source `dirname $0`/../utils.sh
 
 SCRIPT=`realpath $0`
 SCRIPTPATH=`dirname $SCRIPT`
-pretrained_path="$SCRIPTPATH"/../../hub
 
 # define all the arguments modified or added to `conf`. If they are added use `+`
 kwargs="
@@ -29,7 +28,7 @@ $add_kwargs
 "
 
 kwargs_multi="
-data@data_pred=stl10,cars196,stl10,caltech101,food101,pcam,pets37,cifar10,cifar100,imagenet
+data@data_pred=stl10,cars196,stl10,caltech101,food101,pcam,pets37,cifar10,cifar100
 " 
 
 

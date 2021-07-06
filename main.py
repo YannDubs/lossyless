@@ -35,7 +35,7 @@ from omegaconf import OmegaConf
 from pytorch_lightning.callbacks.finetuning import BaseFinetuning
 from pytorch_lightning.loggers import CSVLogger, WandbLogger
 from pytorch_lightning.plugins import DDPSpawnPlugin
-from pytorch_lightning.utilities import rank_zero_warn
+from pytorch_lightning.utilities import parsing, rank_zero_warn
 from pytorch_lightning.utilities.cloud_io import load as pl_load
 from pytorch_lightning.utilities.exceptions import MisconfigurationException
 from utils.data import get_datamodule
@@ -486,7 +486,20 @@ def get_trainer(cfg, module, is_featurizer):
 
 def placeholder_fit(trainer, module, datamodule):
     """Necessary setup of trainer before testing if you don't fit it."""
-    trainer.train_loop.setup_fit(module, None, None, datamodule)
+
+    # links data to the trainer
+    trainer.data_connector.attach_data(module, datamodule=datamodule)
+
+    # clean hparams
+    if hasattr(module, "hparams"):
+        parsing.clean_namespace(module.hparams)
+
+    # check that model is configured correctly
+    trainer.config_validator.verify_loop_configurations(module)
+
+    # attach model log function to callback
+    trainer.callback_connector.attach_model_logging_functions(module)
+
     trainer.model = module
 
 

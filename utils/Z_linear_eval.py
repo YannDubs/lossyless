@@ -42,20 +42,12 @@ logger = logging.getLogger(__name__)
 
 @hydra.main(config_path=f"{MAIN_DIR}/config", config_name="clip_linear")
 def main(cfg):
+
     analyser = PretrainedAnalyser()
     logger.info(f"Collecting the data ..")
     stage = "predictor"
 
     analyser.collect_data(cfg, **cfg.load_pretrained.collect_data)
-
-    # DEV (not working)
-    path = Path(analyser.cfgs[stage].paths.results)
-    path.mkdir(parents=True, exist_ok=True)
-    with open(path / "dir.txt", "a") as the_file:
-        the_file.write(os.getcwd())  # know where you are for debugging
-    results_file = path / RESULTS_FILE.format(stage=stage)
-    if results_file.is_file():
-        return
 
     Z_train = analyser.datamodules["predictor"].train_dataset.X
     Y_train = analyser.datamodules["predictor"].train_dataset.Y

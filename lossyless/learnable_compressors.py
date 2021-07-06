@@ -107,7 +107,7 @@ class LearnableCompressor(pl.LightningModule):
             y = y[0]  # only return the real label assumed to be first
 
         x_hat = self(x)
-        return x_hat.cpu(), y
+        return x_hat.cpu(), y.cpu()
 
     def predict(self, *args, **kwargs):  # TODO remove in newer version of lightning
         return self.predict_step(*args, **kwargs)

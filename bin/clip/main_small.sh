@@ -1,22 +1,18 @@
 #!/usr/bin/env bash
 
 
-# # Ensures that all data is downloaded
+# Ensures that all data is downloaded
 # echo "Ensures that all data is downloaded."
-# bin/clip/download_data.sh
+# `dirname $0`/../clip/download_data.sh "$@"
 
-# wait
+wait
 
-# ### OUR CLIP ###
-echo "Pretrains the 3 different clips (for different values of beta)."
+# Pretrain our CLIP
+echo "Pretrains the CLIP compressor."
 `dirname $0`/clip_bottleneck_pretrain.sh "$@"
 
-# wait
+wait
 
-# echo "Evaluates the pretrained CLIP models with linear classifiers"
-# bin/clip/clip_bottleneck_linear_eval.sh "$@"
-
-# wait 
-
-# echo "Evaluates the pretrained CLIP models with linear classifiers"
-# bin/clip/clip_raw_linear_eval.sh "$@"
+# Evaluate our CLIP
+echo "Evaluates the pretrained CLIP compressor with linear classifiers"
+`dirname $0`/clip_bottleneck_linear_eval.sh "$@"

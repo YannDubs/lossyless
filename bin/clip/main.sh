@@ -7,26 +7,26 @@ echo "Ensures that all data is downloaded"
 wait
 
 ### OUR CLIP ###
-echo "Pretrains the 3 different clips (for different values of beta)"
+echo "Pretrains our CLIP compressor."
 `dirname $0`/clip_bottleneck_pretrain.sh "$@"
 
 wait
 
-echo "Evaluates the pretrained CLIP models with linear classifiers"
+echo "Evaluates our pretrained CLIP compressor with linear classifiers"
 `dirname $0`/clip_bottleneck_linear_eval.sh "$@"
 
 wait 
 
-echo "Evaluates the pretrained CLIP models with MLP classifiers"
+echo "Evaluates our pretrained CLIP compressor with MLP classifiers"
 `dirname $0`/clip_bottleneck_mlp_eval.sh "$@"
 
 wait 
 
 ### BASELINE CLIP ###
-echo "Evaluates the pretrained CLIP models with linear classifiers"
+echo "Evaluates raw pretrained CLIP model with linear classifiers"
 `dirname $0`/clip_raw_linear_eval.sh "$@"
 
 wait 
 
-echo "Evaluates the pretrained CLIP models with MLP classifiers"
+echo "Evaluates raw pretrained CLIP model with MLP classifiers"
 `dirname $0`/clip_raw_mlp_eval.sh "$@"

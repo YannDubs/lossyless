@@ -122,7 +122,7 @@ class Predictor(pl.LightningModule):
         """
         x, y = batch
         y_hat = self(x)
-        return y_hat, y
+        return y_hat.cpu(), y.cpu()
 
     def predict(self, *args, **kwargs):  # TODO remove in newer version of lightning
         return self.predict_step(*args, **kwargs)

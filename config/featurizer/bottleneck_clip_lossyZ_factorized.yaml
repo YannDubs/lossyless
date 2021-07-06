@@ -1,0 +1,5 @@
+# @package _global_
+defaults:
+  - bottleneck_clip_lossyZ@featurizer
+  - override /rate: H_factorized
+  
