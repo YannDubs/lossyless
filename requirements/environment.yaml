@@ -10,13 +10,14 @@ dependencies:
   - backcall=0.2.0=py_0
   - black=19.10b0=py_0
   - blas=1.0=mkl
-  - ca-certificates=2020.12.5=ha878542_0
-  - certifi=2020.12.5=py38h578d9bd_1
+  - ca-certificates=2021.4.13=h06a4308_1
+  - certifi=2020.12.5=py38h06a4308_0
   - click=7.1.2=pyhd3eb1b0_0
   - cudatoolkit=10.2.89=hfd86e86_1
   - decorator=4.4.2=py_0
   - flake8=3.8.4=py_0
   - freetype=2.10.4=h5ab3b9f_0
+  - giflib=5.2.1=h7b6447c_0
   - importlib-metadata=2.0.0=py_1
   - intel-openmp=2020.2=254
   - ipykernel=5.3.4=py38h5ca1d4c_0
@@ -37,6 +38,7 @@ dependencies:
   - libstdcxx-ng=9.1.0=hdf63c60_0
   - libtiff=4.1.0=h2733197_1
   - libuv=1.40.0=h7b6447c_0
+  - libwebp=1.2.0=h89dd481_0
   - lz4-c=1.9.3=h2531618_0
   - mccabe=0.6.1=py38_1
   - mkl=2020.2=256
@@ -46,16 +48,13 @@ dependencies:
   - mypy_extensions=0.4.3=py38_0
   - ncurses=6.2=he6710b0_1
   - ninja=1.10.2=py38hff7bd54_0
-  - numpy=1.19.2=py38h54aff64_0
-  - numpy-base=1.19.2=py38hfa32c7d_0
   - olefile=0.46=py_0
   - openjpeg=2.3.1=h981e76c_3
-  - openssl=1.1.1h=h516909a_0
+  - openssl=1.1.1k=h27cfd23_0
   - parso=0.7.1=pyh9f0ad1d_0
   - pathspec=0.7.0=py_0
   - pexpect=4.8.0=pyhd3eb1b0_3
   - pickleshare=0.7.5=pyhd3eb1b0_1003
-  - pillow=8.1.0=py38he98fc37_0
   - pip=21.0.1=pyhd8ed1ab_0
   - prompt-toolkit=3.0.8=py_0
   - ptyprocess=0.7.0=pyhd3eb1b0_2
@@ -65,17 +64,14 @@ dependencies:
   - python=3.8.5=h7579374_1
   - python-dateutil=2.8.1=py_0
   - python_abi=3.8=1_cp38
-  - pytorch=1.7.1=py3.8_cuda10.2.89_cudnn7.6.5_0
   - pyzmq=20.0.0=py38h2531618_1
   - readline=8.0=h7b6447c_0
-  - regex=2020.11.13=py38h27cfd23_0
   - setuptools=51.3.3=py38h06a4308_4
   - six=1.15.0=py38h06a4308_0
   - sqlite=3.33.0=h62c20be_0
   - tk=8.6.10=hbc83047_0
   - toml=0.10.1=py_0
   - torchaudio=0.7.2=py38
-  - torchvision=0.8.2=py38_cu102
   - tornado=6.1=py38h27cfd23_0
   - traitlets=5.0.5=py_0
   - typed-ast=1.4.2=py38h27cfd23_1
@@ -106,7 +102,7 @@ dependencies:
     - cmd2==1.5.0
     - colorama==0.4.4
     - colorlog==4.7.2
-    - compressai==1.1.1
+    - compressai==1.1.5
     - configparser==5.0.2
     - cycler==0.10.0
     - cython==0.29.22
@@ -115,8 +111,8 @@ dependencies:
     - einops==0.3.0
     - fairscale==0.3.1
     - flatbuffers==1.12
-    - fsspec==0.8.7
-    - ftfy==5.9
+    - fsspec==2021.5.0
+    - ftfy==6.0.3
     - future==0.18.2
     - gast==0.3.3
     - gitdb==4.0.5
@@ -128,35 +124,37 @@ dependencies:
     - greenlet==1.0.0
     - grpcio==1.32.0
     - h5py==2.10.0
-    - hydra-colorlog==1.0.0
-    - hydra-core==1.1.0.dev5
+    - hydra-colorlog==1.1.0
+    - hydra-core==1.1.0
     - hydra-nevergrad-sweeper==1.1.0rc1
-    - hydra-optuna-sweeper==1.1.0.dev1
-    - hydra-submitit-launcher==1.1.1
+    - hydra-optuna-sweeper==1.1.0
+    - hydra-submitit-launcher==1.1.5
     - idna==2.10
     - importlib-resources==5.1.2
     - install==1.3.4
     - joblib==1.0.1
-    - kaggle==1.5.10
+    - kaggle==1.5.12
     - keras-preprocessing==1.1.2
     - kiwisolver==1.3.1
-    - lightning-bolts==0.3.2
+    - lightning-bolts==0.3.4
     - mako==1.1.4
     - markdown==3.3.4
     - markupsafe==1.1.1
-    - matplotlib==3.4.0
+    - matplotlib==3.4.2
     - multidict==5.1.0
     - ndd==1.10.6
     - nevergrad==0.4.3.post1
+    - numpy==1.19.5
     - oauthlib==3.1.0
-    - omegaconf==2.1.0.dev24
-    - opencv-python==4.5.1.48
+    - omegaconf==2.1.0
+    - opencv-python==4.5.2.54
     - opt-einsum==3.3.0
     - optuna==2.4.0
     - packaging==20.9
-    - pandas==1.2.3
+    - pandas==1.3.0
     - pathtools==0.1.2
     - pbr==5.5.1
+    - pillow==8.2.0
     - prettytable==2.1.0
     - promise==2.3
     - protobuf==3.15.6
@@ -165,15 +163,17 @@ dependencies:
     - pyasn1-modules==0.2.8
     - pycocotools==2.0.2
     - pycparser==2.20
+    - pydeprecate==0.3.0
     - pyparsing==2.4.7
     - pyperclip==1.8.2
     - python-editor==1.0.4
     - python-slugify==4.0.1
-    - pytorch-lightning==1.2.8
-    - pytorch-lightning-bolts==0.3.0
+    - pytorch-lightning==1.3.8
+    - pytorch-lightning-bolts==0.3.2
     - pytorch-msssim==0.2.1
     - pytz==2021.1
     - pyyaml==5.3.1
+    - regex==2021.7.6
     - requests==2.25.1
     - requests-oauthlib==1.3.0
     - rsa==4.7.2
@@ -190,18 +190,20 @@ dependencies:
     - subprocess32==3.5.4
     - tensorboard==2.4.1
     - tensorboard-plugin-wit==1.8.0
-    - tensorflow==2.4.1
-    - tensorflow-datasets==4.2.0
+    - tensorflow==2.4.2
+    - tensorflow-datasets==4.3.0
     - tensorflow-estimator==2.4.0
     - tensorflow-metadata==0.28.0
     - termcolor==1.1.0
     - text-unidecode==1.3
     - tfds-nightly==4.2.0.dev202104060107
     - threadpoolctl==2.1.0
-    - torchmetrics==0.2.0
-    - tqdm==4.59.0
+    - torch==1.7.1
+    - torchmetrics==0.4.1
+    - torchvision==0.8.2
+    - tqdm==4.61.2
     - urllib3==1.26.3
-    - wandb==0.10.27
+    - wandb==0.10.33
     - werkzeug==1.0.1
     - wrapt==1.12.1
     - yarl==1.6.3

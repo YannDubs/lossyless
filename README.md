@@ -1,7 +1,8 @@
 # Lossy Compression for Lossless Prediction [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/YannDubs/lossyless/blob/main/LICENSE) [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/release/python-380/)
 
-Using: [![Using](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YannDubs/lossyless/blob/main/notebooks/Hub.ipynb) 
-Training: [![Training](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YannDubs/lossyless/blob/main/notebooks/minimal_code.ipynb)
+**Using:** [![Using](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YannDubs/lossyless/blob/main/notebooks/Hub.ipynb) 
+
+**Training:** [![Training](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/YannDubs/lossyless/blob/main/notebooks/minimal_code.ipynb)
 
 This repostiory contains our implementation of the paper: [**Lossy Compression for Lossless Prediction**](https://arxiv.org/abs/2106.10800). That formalizes and empirically inverstigates unsupervised training for task-specific compressors.
 
@@ -14,20 +15,13 @@ If you want to use our compressor directly the easiest is to use the model from 
 
 <details>
   <summary><b>Installation details</b></summary>
+
   ```bash
   pip install torch torchvision tqdm numpy compressai sklearn git+https://github.com/openai/CLIP.git
   ```
 
-
   Using pytorch`>1.7.1` : CLIP forces pytorch version `1.7.1`, this is because it needs this version to use JIT. If you don't need JIT (no JIT by default) you can alctually use more recent versions of torch and torchvision `pip install -U torch torchvision`. Make sure to update after having isntalled CLIP.
 </details>
-
-```bash
-pip install torch torchvision tqdm numpy compressai sklearn git+https://github.com/openai/CLIP.git
-```
-
-
-Using pytorch`>1.7.1` : CLIP forces pytorch version `1.7.1`, this is because it needs this version to use JIT. If you don't need JIT (no JIT by default) you can alctually use more recent versions of torch and torchvision `pip install -U torch torchvision`. Make sure to update after having isntalled CLIP.
 
 ```python
 import time
@@ -94,7 +88,8 @@ print(
 If your goal is to look at a minimal version of the code to simply understand what is going on, I would highly recommend starting from `notebooks/minimal_compressor.ipynb` (or google colab link above). This is a notebook version of the code provided in Appendix E.7. of the paper, to quickly train and evaluate our compressor. 
 
 <details>
-  <summary>Installation details</summary>
+  <summary><b>Installation details</b></summary>
+
   1. `pip install git+https://github.com/openai/CLIP.git`
   2. `pip uninstall -y torchtext` (probably not necessary but can cause issues if got installed as wrong pytorch version)
   3. `pip install scikit-learn==0.24.2 lightning-bolts==0.3.4 compressai==1.1.5 pytorch-lightning==1.3.8`
@@ -106,36 +101,15 @@ If your goal is to look at a minimal version of the code to simply understand wh
 
 ## Results from the paper
 
-We provide scripts to essentially replicate many of the results from the paper. The exact results will be a little different as we simplified and cleaned some of the code to help readability.
-
-All scripts can be found in `bin` and run using the command `bin/*/<experiment>.sh`. This will save all results, checkpoints, logs... The most important results (including summary resutls and figures) will be saved at `results/exp_<experiment>`. Most important are the summarized metrics `results/exp_<experiment>*/summarized_metrics_merged.csv` and any figures `results/exp_<experiment>*/*.png`.
-
-The key experiments that that do not require very large compute are:
-- VIC/VAE on rotation invariant Banana distribution: `bin/banana/banana_viz_VIC.sh`
-- VIC/VAE on augmentation invariant MNIST: `bin/mnist/augmist_viz_VIC.sh`
-- CLIP experiments: `bin/clip/main_linear.sh`
-
-By default all scripts will log results on [weights and biases](https://wandb.ai/site). If you have an account (or make one) you should set your username in `conf/user.yaml` after `wandb_entity:`, the passwod should be set directly in your environment variables. If you prefer not logging, you can use the command `bin/*/<experiment>.sh -a logger=csv` which changes (`-a` is for append) the default `wandb` logger to a `csv` logger.
-
-Generally speaking you can change any of the parameters either directly in `conf/**/<file>.yaml` or by adding `-a` to the script. We are using [Hydra](https://hydra.cc/) to manage our configurations, refer to their documentation if something is unclear.
-
-If you are using [Slurm](https://slurm.schedmd.com/documentation.html) you can submit directly the script on servers by adding a config file under `conf/slurm/<myserver>.yaml`, and then running the script as `bin/*/<experiment>.sh -s <myserver>`. For example configurations files for slurm see `conf/slurm/vector.yaml` or `conf/slurm/learnfair.yaml`. For more information check the documentation from [submitit's plugin](https://hydra.cc/docs/plugins/submitit_launcher) which we are using.
-
-
-
-
+We provide scripts to essentially replicate some results from the paper. The exact results will be a little different as we simplified and cleaned some of the code to help readability.
 
 
 <details>
-  <summary>Installation details</summary>
-
-### 
+<summary><b>Installation details</b></summary>
 
 0. Clone repository
 1. Install [PyTorch](https://pytorch.org/) >=  1.7
 2. `pip install -r requirements.txt`
-
-
 
 ### Other installation
 - For the bare minimum packages: use `pip install -r requirements_mini.txt` instead.
@@ -158,6 +132,40 @@ if not _root_logger.hasHandlers():
 To test your installation and that everything works as desired you can run `bin/test.sh`, which will run an epoch of BICNE and VIC on MNIST.
 
 </details>
+
+All scripts can be found in `bin` and run using the command `bin/*/<experiment>.sh`. This will save all results, checkpoints, logs... The most important results (including summary resutls and figures) will be saved at `results/exp_<experiment>`. Most important are the summarized metrics `results/exp_<experiment>*/summarized_metrics_merged.csv` and any figures `results/exp_<experiment>*/*.png`.
+
+The key experiments that that do not require very large compute are:
+- VIC/VAE on rotation invariant Banana distribution: `bin/banana/banana_viz_VIC.sh`
+- VIC/VAE on augmentation invariant MNIST: `bin/mnist/augmist_viz_VIC.sh`
+- CLIP experiments: `bin/clip/main_linear.sh`
+
+By default all scripts will log results on [weights and biases](https://wandb.ai/site). If you have an account (or make one) you should set your username in `conf/user.yaml` after `wandb_entity:`, the passwod should be set directly in your environment variables. If you prefer not logging, you can use the command `bin/*/<experiment>.sh -a logger=csv` which changes (`-a` is for append) the default `wandb` logger to a `csv` logger.
+
+Generally speaking you can change any of the parameters either directly in `conf/**/<file>.yaml` or by adding `-a` to the script. We are using [Hydra](https://hydra.cc/) to manage our configurations, refer to their documentation if something is unclear.
+
+If you are using [Slurm](https://slurm.schedmd.com/documentation.html) you can submit directly the script on servers by adding a config file under `conf/slurm/<myserver>.yaml`, and then running the script as `bin/*/<experiment>.sh -s <myserver>`. For example configurations files for slurm see `conf/slurm/vector.yaml` or `conf/slurm/learnfair.yaml`. For more information check the documentation from [submitit's plugin](https://hydra.cc/docs/plugins/submitit_launcher) which we are using.
+
+
+### VIC/VAE on rotation invariant Banana
+
+The following figures are saved automatically at `restults/exp_banana_viz_VIC/**/quantization.png` after running `bin/banana/banana_viz_VIC.sh`. 
+
+On the left we see the quantization of the Banana distribution by a standard compressor (called `VAE` in code but VC in paper). On the right, by our (rotation) invariant compressor (`VIC`).
+
+
+<p float="left" align="middle">
+  <img src="/results/exp_banana_viz_VIC/datafeat_banana_rot/feat_neural_feat/dist_VAE/enc_mlp_fancy/rate_H_factorized/optfeat_Adam_lr3.0e-04_w0.0e+00/schedfeat_expdecay1000/zdim_2/zs_1/beta_7.0e-02/seed_123/addfeat_None/quantization.png" width="47%" alt="Standard compression of Banana" />
+  <img src="/results/exp_banana_viz_VIC/datafeat_banana_rot/feat_neural_feat/dist_VIC/enc_mlp_fancy/rate_H_factorized/optfeat_Adam_lr3.0e-04_w0.0e+00/schedfeat_expdecay1000/zdim_2/zs_1/beta_7.0e-02/seed_123/addfeat_None/quantization.png" width="47%"  alt="Invariant compression of Banana" /> 
+</p>
+
+### VIC/VAE on augmentend MNIST
+
+The following figure is saved automatically at `restults/exp_augmnist_viz_VIC/**/rec_imgs.png` after running `bin/banana/augmnist_viz_VIC.sh`. It shows source augmented MNIST images as well as the reconstructions using our invariant compressor.
+
+![Invariant compression of augmented MNIST](/results/exp_augmnist_viz_VIC/datafeat_mnist_aug/feat_neural_rec/dist_VIC/enc_resnet18/rate_H_hyper/optfeat_AdamW_lr1.0e-03_w1.0e-05/schedfeat_expdecay100/zdim_128/zs_1/beta_1.0e-01/seed_123/addfeat_None/rec_imgs.png
+)
+
 
 
 
