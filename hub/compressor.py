@@ -36,7 +36,7 @@ class ClipCompressor(nn.Module):
         device="cuda" if torch.cuda.is_available() else "cpu",
     ):
         super().__init__()
-        model, self.preprocess = clip.load("ViT-B/32", jit=jit, device=device)
+        model, self.preprocess = clip.load("ViT-B/32", jit=is_jit, device=device)
         self.clip = model.visual
 
         self.z_dim = 512

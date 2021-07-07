@@ -12,7 +12,7 @@ import torch
 
 from hub import ClipCompressor as _ClipCompressor
 
-PATH = "https://github.com/YannDubs/lossyless/releases/download/v0.1-alpha/beta{beta:0.0e}_factorized_rate.pt"
+PATH = "https://github.com/YannDubs/lossyless/releases/download/v1.0/beta{beta:0.0e}_factorized_rate.pt"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # TODO: add JIT once https://github.com/InterDigitalInc/CompressAI/issues/72 is resolved
