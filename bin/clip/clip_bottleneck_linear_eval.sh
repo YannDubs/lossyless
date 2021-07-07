@@ -31,6 +31,7 @@ kwargs_multi="
 data@data_pred=stl10,cars196,caltech101,food101,pcam,pets37,cifar10,cifar100
 " 
 
+
 if [ "$is_plot_only" = false ] ; then
   for beta in   "5e-02" 
   do

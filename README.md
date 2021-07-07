@@ -197,22 +197,25 @@ bin/clip/main_small.sh
 
 The following table comes directly from the results which are automatically saved at `results/exp_clip_bottleneck_linear_eval/**/datapred_*/**/results_predictor.csv`. It shows the result of compression from our CLIP compressor on many datasets.
 
-|               | Cars196 | STL10 | Caltech101 | Food101 | PCam | Pets37 | CIFAR10 |
-|---------------|:-------:|:-----:|:----------:|:-------:|:----:|:------:|:-------:|
-| Rate [bits]   |   1468  |  1344 |    1341    |   1269  | 1491 |  1211  |   1408  |
-| Test Acc. [%] |   79.9  |  98.7 |    93.7    |   83.6  | 81.1 |  88.3  |   94.8  |
+|               | Cars196 | STL10 | Caltech101 | Food101 | PCam | Pets37 | CIFAR10 | CIFAR100 |
+|---------------|:-------:|:-----:|:----------:|:-------:|:----:|:------:|:-------:|:--------:|
+| Rate [bits]   |   1471  |  1342 |    1340    |   1266  | 1491 |  1209  |   1407  |   1413   |
+| Test Acc. [%] |   80.3  |  98.5 |    93.3    |   83.8  | 81.1 |  88.8  |   94.6  |   79.0   |
 
-Note: ImageNet is too large for training a SVM using SKlearn. You need to run MLP evaluation with `bin/clip/clip_bottleneck_mlp_eval`.
+Note: ImageNet is too large for training a SVM using SKlearn. You need to run MLP evaluation with `bin/clip/clip_bottleneck_mlp_eval`. Also you have to download ImageNet manually.
 
 
 ## Cite
-```
+
+You can read the full paper [here](https://arxiv.org/abs/2106.10800). Please cite our paper if you use our model:
+
+```bibtex
 @inproceedings{
-dubois2021lossy,
-title={Lossy Compression for Lossless Prediction},
-author={Yann Dubois and Benjamin Bloem-Reddy and Karen Ullrich and Chris J. Maddison},
-booktitle={Neural Compression: From Information Theory to Applications -- Workshop @ ICLR 2021},
-year={2021},
-url={https://arxiv.org/abs/2106.10800}
+    dubois2021lossy,
+    title={Lossy Compression for Lossless Prediction},
+    author={Yann Dubois and Benjamin Bloem-Reddy and Karen Ullrich and Chris J. Maddison},
+    booktitle={Neural Compression: From Information Theory to Applications -- Workshop @ ICLR 2021},
+    year={2021},
+    url={https://arxiv.org/abs/2106.10800}
 }
 ```

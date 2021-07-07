@@ -78,8 +78,10 @@ def main(cfg):
         n_iter=cfg.clip_linear.n_predictors,
     )
 
+    logger.info(f"Training classifier.")
     clf.fit(Z, Y)
 
+    logger.info(f"Evaluating classifier.")
     Y_pred = clf.predict(Z_test)
 
     bacc = balanced_accuracy_score(Y_test, Y_pred)
@@ -91,6 +93,9 @@ def main(cfg):
     analyser.results["test/pred/balanced_err"] = 1 - bacc
 
     # save results
+    path = Path(analyser.cfgs[stage].paths.results)
+    path.mkdir(parents=True, exist_ok=True)
+    results_file = path / RESULTS_FILE.format(stage=stage)
     test_res_rep = replace_keys(analyser.results, "test/", "")
     tosave = dict(test=test_res_rep)
     results = pd.DataFrame.from_dict(tosave)

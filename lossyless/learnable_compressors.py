@@ -10,7 +10,8 @@ from pytorch_lightning.core.decorators import auto_move_data
 from .architectures import get_Architecture
 from .distortions import get_distortion_estimator
 from .distributions import CondDist, Deterministic
-from .helpers import BASE_LOG, Annealer, OrderedSet, Timer, append_optimizer_scheduler_
+from .helpers import (BASE_LOG, Annealer, OrderedSet, Timer,
+                      append_optimizer_scheduler_)
 from .predictors import OnlineEvaluator
 from .rates import get_rate_estimator
 
@@ -112,7 +113,6 @@ class LearnableCompressor(pl.LightningModule):
     def predict(self, *args, **kwargs):  # TODO remove in newer version of lightning
         return self.predict_step(*args, **kwargs)
 
-    @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_compress=False, is_features=None):
         """Represents the data `x`.
 

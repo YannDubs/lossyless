@@ -1,14 +1,14 @@
 import logging
 
 import PIL
-
-import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-from compressai.utils.bench import codecs
-from pytorch_lightning.core.decorators import auto_move_data
 from torch.nn import functional as F
 from torchvision.transforms import ToPILImage, ToTensor
+
+import pytorch_lightning as pl
+from compressai.utils.bench import codecs
+from pytorch_lightning.core.decorators import auto_move_data
 
 from .helpers import UnNormalizer, dict_mean, rename_keys_
 
@@ -165,7 +165,6 @@ class ClassicalCompressor(pl.LightningModule):
 
         self.stage = self.hparams.stage  # allow changing to stages
 
-    @auto_move_data  # move data on correct device for inference
     def forward(self, x, is_return_out=False, **kwargs):
         """Represents the data `x`.
 
