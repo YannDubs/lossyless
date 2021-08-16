@@ -45,7 +45,7 @@ from torchvision.transforms import (
 )
 from tqdm import tqdm
 
-from lossyless.helpers import BASE_LOG, Normalizer, check_import, to_numpy
+from lossyless.helpers import BASE_LOG, Normalizer, check_import, tmp_seed, to_numpy
 from utils.helpers import remove_rf
 
 from .augmentations import EquivariantRandomResizedCrop
@@ -116,6 +116,10 @@ class LossylessImgDataset(LossylessDataset):
     -----------
     equivalence : set of str, optional
         List of equivalence relationship with respect to which to be invariant (or equivariant).
+        It can be augmentations (see self.joint_augmentations and self.augmentations) and/or "label". 
+        In the latter case it samples randomly an image with the same label (slow if too many labels).
+        Note that "label" is treated slightly differently than other augmentations: only used for the
+        second image (i.e. not as transformation of current image).
 
     p_augment : float, optional
         Probability (in [0,1]) of applying the entire augmentation.
@@ -160,9 +164,11 @@ class LossylessImgDataset(LossylessDataset):
 
         self.base_resize = base_resize
         super().__init__(*args, is_normalize=is_normalize, **kwargs)
-        self.equivalence = self.validate_equivalence(equivalence)
-        self.val_equivalence = self.validate_equivalence(val_equivalence)
-        self.is_augment_val = True if len(self.val_equivalence) > 0 else is_augment_val
+        self._aug_equiv, self._is_label_equiv = self.validate_equivalence(equivalence)
+        self._val_aug_equiv, self._is_val_label_equiv = self.validate_equivalence(
+            val_equivalence
+        )
+        self.is_augment_val = True if len(self._val_aug_equiv) > 0 else is_augment_val
         self.p_augment = p_augment
         self.curr_split = curr_split
 
@@ -175,6 +181,17 @@ class LossylessImgDataset(LossylessDataset):
     def curr_split(self, value):
         """Update the current split. Also reloads correct transformation as they are split dependent."""
         self._curr_split = value
+
+        if self.is_train:
+            self.is_label_equiv = self._is_label_equiv
+            self.aug_equiv = self._aug_equiv
+        else:
+            self.is_label_equiv = self._is_val_label_equiv
+
+            if len(self._val_aug_equiv) > 0:
+                self.aug_equiv = self._val_aug_equiv
+            else:
+                self.aug_equiv = self._aug_equiv
 
         # when updating the split has to also reload the transformations as
         self.base_tranform = self.get_base_transform()
@@ -209,16 +226,19 @@ class LossylessImgDataset(LossylessDataset):
 
     def validate_equivalence(self, equivalence):
         """Check that all given augmentations are available."""
-        available = dict(
+        is_label_equiv = False
+        augmentations = dict(
             **self.augmentations["PIL"],
             **self.augmentations["tensor"],
             **self.joint_augmentations["PIL"],
             **self.joint_augmentations["tensor"],
         ).keys()
         for equiv in equivalence:
-            if equiv not in available:
+            if equiv == "label":
+                is_label_equiv = True
+            elif equiv not in augmentations:
                 raise ValueError(f"Unkown `equivalence={equiv}`.")
-        return equivalence
+        return equivalence, is_label_equiv
 
     def get_x_target_Mx(self, index):
         """Return the correct example, target, and maximal invariant."""
@@ -232,7 +252,10 @@ class LossylessImgDataset(LossylessDataset):
         img = self.tensor_aug(img)
         img, target = self.joint_tensor_aug((img, target))
 
-        max_inv = index
+        if self.is_label_equiv:
+            max_inv = target  # when equivalent to Y shifts, Mx is target
+        else:
+            max_inv = index  # when not equivalent to Y, Mx is index
 
         return img, target, max_inv
 
@@ -246,7 +269,11 @@ class LossylessImgDataset(LossylessDataset):
 
         return dict(
             PIL={
-                "rotation": RandomRotation(45),
+                "rotation--": RandomRotation(15),
+                "y_translation--": RandomAffine(0, translate=(0, 0.15)),
+                "x_translation--": RandomAffine(0, translate=(0.15, 0)),
+                "shear--": RandomAffine(0, shear=15),
+                "scale--": RandomAffine(0, scale=(0.8, 1.2)),
                 "D4_group": Compose(
                     [
                         RandomHorizontalFlip(p=0.5),
@@ -254,6 +281,7 @@ class LossylessImgDataset(LossylessDataset):
                         RandomApply([RandomRotation((90, 90))], p=0.5),
                     ]
                 ),
+                "rotation": RandomRotation(45),
                 "y_translation": RandomAffine(0, translate=(0, 0.25)),
                 "x_translation": RandomAffine(0, translate=(0.25, 0)),
                 "shear": RandomAffine(0, shear=25),
@@ -300,13 +328,40 @@ class LossylessImgDataset(LossylessDataset):
             tensor={},
         )
 
-    def get_equiv_x(self, x, index):
-        # to load equivalent image can load a same index (transformations will be different)
-        img, _, __ = self.get_x_target_Mx(index)
+    def get_img_from_target(self, target, is_aug=True):
+        """load randomly images until you find an image desired target."""
+        while True:
+            index = torch.randint(0, len(self), size=[]).item()
+
+            if is_aug:
+                img, curr_target, __ = self.get_x_target_Mx(index)
+            else:
+                img, curr_target = self.get_img_target(index)
+
+            if curr_target == target:
+                return img
+
+    def get_equiv_x(self, x, Mx):
+        if self.is_label_equiv:
+            target = Mx
+            img = self.get_img_from_target(target)
+        else:
+            index = Mx
+            # to load equivalent image can load a same index (transformations will be different)
+            img, _, __ = self.get_x_target_Mx(index)
         return img
 
-    def get_representative(self, index):
-        notaug_img, _ = self.get_img_target(index)
+    def get_representative(self, Mx):
+        if self.is_label_equiv:
+            target = Mx
+            with tmp_seed(self.seed, is_cuda=False):
+                # to fix the representative use the same seed. Note that cannot set seed inside
+                # datalaoder because forked subprocess. In any case we only need non cuda.
+                notaug_img = self.get_img_from_target(target, is_aug=False)
+        else:
+            index = Mx
+            notaug_img, _ = self.get_img_target(index)
+
         notaug_img = self.base_tranform(notaug_img)
         return notaug_img
 
@@ -325,7 +380,7 @@ class LossylessImgDataset(LossylessDataset):
                     Resize((int(shape[1] * 1.1), int(shape[2] * 1.1))),
                     CenterCrop((shape[1], shape[2])),
                 ]
-        elif self.base_resize == "clip":
+        elif self.base_resize in ["clip", "imagenet"]:
             if not self.is_train:
                 trnsfs += [
                     # resize smallest to 224
@@ -347,19 +402,18 @@ class LossylessImgDataset(LossylessDataset):
         return Compose(trnsfs)
 
     def normalizer(self):
-        dataset_name = "clip" if self.base_resize == "clip" else self.dataset_name
+        if self.base_resize in ["clip", "imagenet"]:
+            dataset_name = self.base_resize
+        else:
+            dataset_name = self.dataset_name
+
         #! normalization for clip will not affect plotting => if using VAE with clip will look wrong
         return Normalizer(dataset_name, is_raise=True)
 
     def get_augmentations(self, augmentations):
         """Return the augmentations transorms (tuple for PIL and tensor)."""
-        if (not self.is_train) and (len(self.val_equivalence) > 0):
-            equivalence = self.val_equivalence
-        else:
-            equivalence = self.equivalence
-
         PIL_augment, tensor_augment = [], []
-        for equiv in equivalence:
+        for equiv in self.aug_equiv:
             if equiv in augmentations["PIL"]:
                 PIL_augment += [augmentations["PIL"][equiv]]
             elif equiv in augmentations["tensor"]:
@@ -395,7 +449,7 @@ class LossylessImgDataset(LossylessDataset):
         #! In each child should assign "input" and "target"
         shapes = dict()
 
-        if self.base_resize == "clip":
+        if self.base_resize in ["clip", "imagenet"]:
             # when using clip the shape should always be 224x224
             shapes["input"] = (3, 224, 224)
 
@@ -491,6 +545,22 @@ class MnistDataset(LossylessImgDataset, MNIST):
         img, target = MNIST.__getitem__(self, index)
         return img, target
 
+    def get_img_from_target(self, target, is_aug=True):
+        """Accelarate image from target as all the data is loaded in memory."""
+        targets = self.targets
+        if not isinstance(self.targets, torch.Tensor):
+            targets = torch.tensor(targets)
+
+        choices = (targets == target).nonzero(as_tuple=True)[0]
+        index = choices[torch.randint(len(choices), size=[])]
+
+        if is_aug:
+            img, curr_target, __ = self.get_x_target_Mx(index)
+        else:
+            img, curr_target = self.get_img_target(index)
+
+        return img
+
     @property
     def dataset_name(self):
         return "MNIST"
@@ -507,6 +577,8 @@ class Cifar10Dataset(LossylessImgDataset, CIFAR10):
     def __init__(self, *args, curr_split="train", **kwargs):
         is_train = curr_split == "train"
         super().__init__(*args, curr_split=curr_split, train=is_train, **kwargs)
+
+    get_img_from_target = MnistDataset.get_img_from_target
 
     @property
     def shapes(self):
@@ -535,6 +607,8 @@ class Cifar100Dataset(LossylessImgDataset, CIFAR100):
     def __init__(self, *args, curr_split="train", **kwargs):
         is_train = curr_split == "train"
         super().__init__(*args, curr_split=curr_split, train=is_train, **kwargs)
+
+    get_img_from_target = MnistDataset.get_img_from_target
 
     @property
     def shapes(self):

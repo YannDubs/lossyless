@@ -22,7 +22,6 @@ PRETTY_RENAMER = StrFormatter(
         "Resnet": "ResNet",
         "Vic": "VIC",
         "Vae": "VC",
-        "Dist": "Distortion",
         "Ince": "BINCE",
         "Banana_rot": "Rotation Inv. Banana",
         "Banana_xtrnslt": "X-axis Inv. Banana",

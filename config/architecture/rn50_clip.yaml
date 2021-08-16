@@ -1,0 +1,3 @@
+name: rn50_clip
+arch: clip_rn50
+arch_kwargs: {}

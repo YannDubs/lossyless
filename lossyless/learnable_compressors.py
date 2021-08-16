@@ -1,5 +1,6 @@
 import logging
 import math
+from pathlib import Path
 
 import torch
 
@@ -10,8 +11,7 @@ from pytorch_lightning.core.decorators import auto_move_data
 from .architectures import get_Architecture
 from .distortions import get_distortion_estimator
 from .distributions import CondDist, Deterministic
-from .helpers import (BASE_LOG, Annealer, OrderedSet, Timer,
-                      append_optimizer_scheduler_)
+from .helpers import BASE_LOG, Annealer, OrderedSet, Timer, append_optimizer_scheduler_
 from .predictors import OnlineEvaluator
 from .rates import get_rate_estimator
 
@@ -59,13 +59,20 @@ class LearnableCompressor(pl.LightningModule):
         """Return encoder: a mapping to a torch.Distribution (conditional distribution)."""
         # TODO should remove explicit parameters and only call **cfg_enc.kwargs
         cfg_enc = self.hparams.encoder
-        return CondDist(
+        encoder = CondDist(
             self.hparams.data.shape,
             cfg_enc.z_dim,
             family=cfg_enc.fam,
             Architecture=get_Architecture(cfg_enc.arch, **cfg_enc.arch_kwargs),
             **cfg_enc.fam_kwargs,
         )
+
+        if "stag_step2" in self.hparams.experiment:  # DEV
+            stag_save = Path(self.hparams.paths.pretrained.staggered) / "encoder.ckpt"
+            logger.info(f"Loading staggered encoder at {stag_save}.")
+            encoder.load_state_dict(torch.load(stag_save))
+
+        return encoder
 
     def get_rate_estimator(self):
         """Return the correct rate estimator. Contains the prior and the coder."""
@@ -113,7 +120,7 @@ class LearnableCompressor(pl.LightningModule):
     def predict(self, *args, **kwargs):  # TODO remove in newer version of lightning
         return self.predict_step(*args, **kwargs)
 
-    def forward(self, x, is_compress=False, is_features=None):
+    def forward(self, x, is_compress=False, is_features=None, is_dist=False):
         """Represents the data `x`.
 
         Parameters
@@ -129,6 +136,10 @@ class LearnableCompressor(pl.LightningModule):
             Whether to return the features / codes / representation or the reconstructed example.
             Recontructed image only works for distortions that predict reconctructions (e.g. VAE),
             If `None` uses the default from `hparams`.
+
+        is_dist : bool, optional
+            Whether to return a representation for the distortion estimator. This is used for staggered
+            training.
 
         Returns
         -------
@@ -149,7 +160,9 @@ class LearnableCompressor(pl.LightningModule):
         if is_compress:
             z_hat = self.rate_estimator.compress(z, self)
         else:
-            z_hat, *_ = self.rate_estimator(z, p_Zlx, self)
+            z_hat, rates, r_logs, r_other = self.rate_estimator(z, p_Zlx, self)
+            if is_dist and "z_to_dist" in r_other:
+                z_hat = r_other["z_to_dist"]
 
         if is_features:
             out = z_hat
@@ -189,9 +202,15 @@ class LearnableCompressor(pl.LightningModule):
             r_logs["rate"] = rates.mean() / math.log(BASE_LOG)
             return rates, r_logs, r_other
 
+        # z_to_dist=z_hat all the time, besides when using staggered rate estimator. As the distortion
+        # should be trained regardless of the rate term.
+        z_to_dist = z_hat
+        if "z_to_dist" in r_other:
+            z_to_dist = r_other.pop("z_to_dist")
+
         _, aux_target = targets
         distortions, d_logs, d_other = self.distortion_estimator(
-            z_hat, aux_target, p_Zlx, self
+            z_to_dist, aux_target, p_Zlx, self
         )
 
         loss, logs, other = self.loss(rates, distortions)

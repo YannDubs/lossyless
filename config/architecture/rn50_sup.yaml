@@ -1,0 +1,5 @@
+name: rn50_sup
+arch: resnet
+arch_kwargs:
+  base: resnet50
+  is_pretrained: true

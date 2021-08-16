@@ -80,7 +80,7 @@ def main(cfg):
 
     if len(aggregator.tables) > 1:
         # if multiple tables also add "merged" that contains all
-        aggregator.merge_tables(list(cfg.patterns.keys()))
+        aggregator.merge_tables(list(aggregator.tables.keys()))
 
     aggregator.subset(cfg.col_val_subset)
 
@@ -234,7 +234,7 @@ class ResultAggregator(PostPlotter):
         """
         for col, val in col_val.items():
             logger.debug("Keeping only val={val} for col={col}.")
-            for k in self.table_names:
+            for k in self.tables.keys():
                 self.tables[k] = self.tables[k][(self.tables[k][col]).isin(val)]
                 if self.tables[k].empty:
                     logger.info(f"Empty table after filtering {col}={val}")
@@ -273,7 +273,6 @@ class ResultAggregator(PostPlotter):
         kwargs :
             Additional arguments to `plot_scatter_lines`.
         """
-
         data = merge_rate_distortions(data, rate_cols, distortion_cols)
 
         is_single_col = len(distortion_cols) == 1
@@ -297,6 +296,7 @@ class ResultAggregator(PostPlotter):
             ylabel="Rate (bits)",
             **kwargs,
         )
+
 
     @data_getter
     def plot_pareto_front(
@@ -769,6 +769,15 @@ class ResultAggregator(PostPlotter):
 
         if logbase_x != 1 or logbase_y != 1:
             sns_plot.map_dataframe(set_log_scale, basex=logbase_x, basey=logbase_y)
+
+        # TODO remove when waiting for https://github.com/mwaskom/seaborn/issues/2456
+        if xlabel != "":
+            for ax in sns_plot.fig.axes:
+                ax.set_xlabel(xlabel)
+
+        if ylabel != "":
+            for ax in sns_plot.fig.axes:
+                ax.set_ylabel(ylabel)
 
         sns_plot.tight_layout()
 

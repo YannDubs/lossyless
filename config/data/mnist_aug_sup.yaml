@@ -1,0 +1,10 @@
+defaults:
+  - mnist_aug
+
+name: mnist_aug_sup
+
+kwargs:
+  dataset_kwargs:
+    # IMPORTANT: when using label and representative (i.e. supervised VIC) YOU CANNOT USE VALIDATION TO SELECT MODEL
+    # because the validation representative will be different
+    equivalence: [x_translation, y_translation,rotation,scale,shear,label] # also add label equivalence

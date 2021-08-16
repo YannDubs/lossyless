@@ -1,0 +1,9 @@
+defaults:
+  - mnist_aug
+
+name: mnist_aug_less
+
+kwargs:
+  dataset_kwargs:
+    equivalence: ["x_translation--", "y_translation--","rotation--","scale--","shear--"] # the ones you think
+    val_equivalence: [x_translation, y_translation,rotation,scale,shear] # actual

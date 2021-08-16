@@ -1,0 +1,55 @@
+# @package _global_
+defaults:
+  - neural_feat@featurizer
+  - override /architecture@encoder: rn50_sup
+  - override /distortion: lossy_Z
+  - override /rate: H_hyper
+  - override /finetune: freezer
+  - override /scheduler@scheduler_feat: unifmultistep1000
+  - override /scheduler@scheduler_coder: unifmultistep1000
+
+data_feat:
+  kwargs:
+    batch_size: 64
+    dataset_kwargs:
+      base_resize: imagenet
+      equivalence: ["resize","crop"]
+
+data_pred:
+  kwargs:
+    dataset_kwargs:
+      base_resize: imagenet
+      equivalence: ["resize","crop"]
+
+featurizer:
+  name: bottleneck_rn50sup_lossyZ
+  loss:
+    beta_anneal: linear
+    beta: 5e-2
+
+encoder:
+  z_dim: 2048
+
+rate:
+  kwargs: 
+    is_endToEnd: False # shouldn't be needed becasue already frozen encoder
+
+optimizer_feat:
+  mode: AdamW
+  kwargs:
+    lr: 1e-3
+    weight_decay: 3e-8
+
+optimizer_coder:
+  mode: AdamW
+  kwargs:
+    lr: 3e-4
+    weight_decay: 1e-6
+
+
+
+
+
+
+
+

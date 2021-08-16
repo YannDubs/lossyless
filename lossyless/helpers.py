@@ -129,12 +129,12 @@ def set_seed(seed):
 
 
 @contextlib.contextmanager
-def tmp_seed(seed):
+def tmp_seed(seed, is_cuda=torch.cuda.is_available()):
     """Context manager to use a temporary random seed with `with` statement."""
     np_state = np.random.get_state()
     torch_state = torch.get_rng_state()
     random_state = random.getstate()
-    if torch.cuda.is_available():
+    if is_cuda:
         torch_cuda_state = torch.cuda.get_rng_state()
 
     set_seed(seed)
@@ -146,7 +146,7 @@ def tmp_seed(seed):
             np.random.set_state(np_state)
             torch.set_rng_state(torch_state)
             random.setstate(random_state)
-            if torch.cuda.is_available():
+            if is_cuda:
                 torch.cuda.set_rng_state(torch_cuda_state)
 
 

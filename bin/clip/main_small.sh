@@ -2,8 +2,8 @@
 
 
 # Ensures that all data is downloaded
-# echo "Ensures that all data is downloaded."
-# `dirname $0`/../clip/download_data.sh "$@"
+echo "Ensures that all data is downloaded."
+`dirname $0`/../clip/download_data.sh "$@"
 
 wait
 

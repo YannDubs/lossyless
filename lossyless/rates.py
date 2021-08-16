@@ -5,30 +5,22 @@ from contextlib import closing
 
 import numpy as np
 import torch
+import torch.nn as nn
 
 import compressai
 import einops
-from compressai.entropy_models import EntropyBottleneck as CompressaiEntropyBottleneck
-from compressai.entropy_models.entropy_models import (
-    EntropyModel,
-    GaussianConditional,
-    _EntropyCoder,
-    default_entropy_coder,
-)
+from compressai.entropy_models import \
+    EntropyBottleneck as CompressaiEntropyBottleneck
+from compressai.entropy_models.entropy_models import (EntropyModel,
+                                                      GaussianConditional,
+                                                      _EntropyCoder,
+                                                      default_entropy_coder)
 from compressai.models.utils import update_registered_buffers
 
 from .architectures import MLP
 from .distributions import get_marginalDist
-from .helpers import (
-    BASE_LOG,
-    OrderedSet,
-    Timer,
-    atleast_ndim,
-    kl_divergence,
-    mean,
-    to_numpy,
-    weights_init,
-)
+from .helpers import (BASE_LOG, OrderedSet, Timer, atleast_ndim, kl_divergence,
+                      mean, to_numpy, weights_init)
 
 logger = logging.getLogger(__name__)
 __all__ = ["get_rate_estimator"]

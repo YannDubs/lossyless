@@ -308,7 +308,7 @@ class ContrastiveDistortion(nn.Module):
         if self.is_already_featurized:
             z_pos_hat = x_pos
         else:
-            z_pos_hat = parent(x_pos, is_features=True)
+            z_pos_hat = parent(x_pos, is_features=True, is_dist=True)
 
         # shape: [batch_size, out_shape]
         z = self.projector(z_hat)

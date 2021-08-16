@@ -125,6 +125,13 @@ def main(cfg):
         placeholder_fit(comp_trainer, compressor, comp_datamodule)
         comp_cfg.evaluation.featurizer.ckpt_path = None  # eval loaded model
 
+    if "stag_step1" in comp_cfg.experiment:  # DEV
+        stag_save = Path(comp_cfg.paths.pretrained.staggered) / "encoder.ckpt"
+        logger.info(f"Saving staggered encoder at {stag_save}.")
+        torch.save(
+            compressor.p_ZlX.state_dict(), stag_save,
+        )
+
     if comp_cfg.evaluation.featurizer.is_evaluate:
         logger.info("Evaluate compressor ...")
         feat_res = evaluate(comp_trainer, comp_datamodule, comp_cfg, stage)
@@ -205,7 +212,10 @@ def main(cfg):
 
     if pred_cfg.evaluation.predictor.is_evaluate:
         logger.info("Evaluate predictor ...")
-        pred_res = evaluate(pred_trainer, pred_datamodule, pred_cfg, stage)
+        is_eval_train = pred_cfg.evaluation.predictor.is_eval_train
+        pred_res = evaluate(
+            pred_trainer, pred_datamodule, pred_cfg, stage, is_eval_train=is_eval_train,
+        )
     else:
         pred_res = load_results(pred_cfg, stage)
 
@@ -537,7 +547,7 @@ def load_pretrained(cfg, Module, stage, **kwargs):
     return loaded_module
 
 
-def evaluate(trainer, datamodule, cfg, stage):
+def evaluate(trainer, datamodule, cfg, stage, is_eval_train=False):
     """Evaluate the trainer by loging all the metrics from the test set from the best model."""
     test_res = dict()
     try:
@@ -560,11 +570,25 @@ def evaluate(trainer, datamodule, cfg, stage):
 
         # ensure that select only correct stage (important when communicating)
         test_res = {k: v for k, v in test_res.items() if f"/{cfg.stage}/" in k}
-
         log_dict(trainer, test_res, is_param=False)
-
         test_res_rep = replace_keys(test_res, "test/", "")
         tosave = dict(test=test_res_rep)
+
+        if is_eval_train:
+            try:
+                # also evaluate training set
+                train_dataloader = datamodule.train_dataloader()
+                train_res = trainer.test(
+                    test_dataloaders=train_dataloader, ckpt_path=ckpt_path
+                )[0]
+                train_res = {
+                    k: v for k, v in train_res.items() if f"/{cfg.stage}/" in k
+                }
+                tosave["train"] = replace_keys(train_res, "test/", "")
+            except:
+                logger.exception(
+                    "Failed to evaluate training set. Skipping this error:"
+                )
 
         # save results
         results = pd.DataFrame.from_dict(tosave)
