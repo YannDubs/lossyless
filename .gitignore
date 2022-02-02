@@ -9,17 +9,9 @@ multirun
 pretrained
 checkpoints
 wandb
-test
 /data
 logs
 notebooks
-.hydra
-old
-.idea
-*old
-lightning_logs
-results_neurips
-
 # pyotrch
 *.ckpt
 
@@ -73,3 +65,16 @@ ENV/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# Local History for Visual Studio Code
+.history/
+
+# Built Visual Studio Code Extensions
+*.vsix
+

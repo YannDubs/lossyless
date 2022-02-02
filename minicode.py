@@ -32,31 +32,31 @@ pretrained, preprocess = clip.load("ViT-B/32", device)
 # train data
 cifar = CIFAR10(data_dir, download=True, train=True, transform=preprocess)
 
-label_map_CIFAR10 = {
-    0: 'airplane',
-    1: 'automobile',
-    2: 'bird',
-    3: 'cat',
-    4: 'deer',
-    5: 'dog',
-    6: 'frog',
-    7: 'horse',
-    8: 'ship',
-    9: 'truck',
-}
+# label_map_CIFAR10 = {
+#     0: 'airplane',
+#     1: 'automobile',
+#     2: 'bird',
+#     3: 'cat',
+#     4: 'deer',
+#     5: 'dog',
+#     6: 'frog',
+#     7: 'horse',
+#     8: 'ship',
+#     9: 'truck',
+# }
 
-label_map_STL10 = {
-    0: 'airplane',
-    1: 'bird',
-    2: 'car',
-    3: 'cat',
-    4: 'deer',
-    5: 'dog',
-    6: 'horse',
-    7: 'monkey',
-    8: 'ship',
-    9: 'truck',
-}
+# label_map_STL10 = {
+#     0: 'airplane',
+#     1: 'bird',
+#     2: 'car',
+#     3: 'cat',
+#     4: 'deer',
+#     5: 'dog',
+#     6: 'horse',
+#     7: 'monkey',
+#     8: 'ship',
+#     9: 'truck',
+# }
 
 # eval data
 stl10_train = STL10(data_dir, download=True, split="train", transform=preprocess)
