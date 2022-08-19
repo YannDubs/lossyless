@@ -214,8 +214,7 @@ You can read the full paper [here](https://arxiv.org/abs/2106.10800). Please cit
     dubois2021lossy,
     title={Lossy Compression for Lossless Prediction},
     author={Yann Dubois and Benjamin Bloem-Reddy and Karen Ullrich and Chris J. Maddison},
-    booktitle={Neural Compression: From Information Theory to Applications -- Workshop @ ICLR 2021},
-    year={2021},
-    url={https://arxiv.org/abs/2106.10800}
+    booktitle={Advances in Neural Information Processing Systems (NeurIPS)},
+    year={2021}
 }
 ```
